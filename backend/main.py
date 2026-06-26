@@ -5,6 +5,7 @@ import logging
 import concurrent.futures
 import threading
 import time
+from functools import partial
 
 from dotenv import load_dotenv
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env"), override=True)
@@ -94,9 +95,27 @@ def get_task_status(serial, default=None):
     with _task_status_lock:
         return _task_status.get(serial, default)
 
-def set_task_status(serial, status):
+def set_task_status(serial, status, current_action=None, executed_action=None):
+    """
+    更新设备任务状态。status 字段会与既有状态合并（保留 current_action/executed_actions）。
+    - current_action: 不为 None 时覆盖"当前正在执行"的描述。
+    - executed_action: 不为 None 时追加到"已执行"列表（最多保留 30 条）。
+    """
     with _task_status_lock:
-        _task_status[serial] = status
+        existing = _task_status.get(serial, {})
+        if not isinstance(existing, dict):
+            existing = {}
+        merged = dict(existing)
+        merged.update(status)
+        if current_action is not None:
+            merged["current_action"] = current_action
+        if executed_action is not None:
+            executed_list = list(merged.get("executed_actions") or [])
+            executed_list.append(executed_action)
+            if len(executed_list) > 30:
+                executed_list = executed_list[-30:]
+            merged["executed_actions"] = executed_list
+        _task_status[serial] = merged
 
 def del_task_status(serial):
     with _task_status_lock:
@@ -126,7 +145,30 @@ def is_task_running(serial):
         return status in {"queued", "starting", "running", "paused"}
 
 def set_task_queued(serial, platform):
-    set_task_status(serial, {"status": "queued", "error": None, "platform": platform})
+    """入队时重置动作进度，避免残留上一轮任务的记录。"""
+    with _task_status_lock:
+        _task_status[serial] = {
+            "status": "queued",
+            "error": None,
+            "platform": platform,
+            "current_action": "数字化员工已就绪，等待下达任务指令...",
+            "executed_actions": [],
+        }
+
+def report_device_action(serial, current_action=None, executed_action=None):
+    """供任务流上报"当前动作"与"已执行动作"，不影响 status 枚举。"""
+    with _task_status_lock:
+        existing = _task_status.get(serial)
+        if not isinstance(existing, dict):
+            return
+        if current_action is not None:
+            existing["current_action"] = current_action
+        if executed_action is not None:
+            executed_list = list(existing.get("executed_actions") or [])
+            executed_list.append(executed_action)
+            if len(executed_list) > 30:
+                executed_list = executed_list[-30:]
+            existing["executed_actions"] = executed_list
 
 def request_task_stop(serial):
     with _task_status_lock:
@@ -597,7 +639,11 @@ def run_task_on_device(serial: str, platform: str = "douyin", startup_delay: flo
 
     config_path = _get_config_path()
     try:
-        task_flow = TikTokTaskFlow(serial=serial, config_path=config_path)
+        task_flow = TikTokTaskFlow(
+            serial=serial,
+            config_path=config_path,
+            status_reporter=partial(report_device_action, serial),
+        )
 
         set_running_task(serial, task_flow)
         if is_task_stop_requested(serial):

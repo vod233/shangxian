@@ -2,6 +2,7 @@ import streamlit as st
 import requests
 import time
 import math
+import html as _html
 
 API_BASE_URL = "http://127.0.0.1:8000/api"
 
@@ -1015,7 +1016,7 @@ def _home_rate_card(label, rate, color):
     <div style="text-align:center; padding:28px 12px;">
         <div style="font-size:12px; color:#6B7280; font-weight:500; letter-spacing:0.04em; margin-bottom:12px;">{label}</div>
         <div style="font-size:40px; font-weight:800; color:#E5E7EB; letter-spacing:-0.02em; line-height:1; font-variant-numeric:tabular-nums;">{pct:.1f}<span style="font-size:20px; font-weight:600; color:#6B7280;">%</span></div>
-        <div style="font-family: 'JetBrains Mono', 'Consolas', monospace; font-size: 12px; color:{color}; margin-top:10px; letter-spacing:2px; text-shadow:0 0 8px {color}40;">{filled}{empty}</div>
+        <div style="font-family: 'JetBrains Mono', 'Consolas', monospace; font-size: 12px; color:{color}; margin-top:10px; letter-spacing:2px; line-height:1; text-shadow:0 0 8px {color}40;">{filled}{empty}</div>
     </div>
     """
 
@@ -1046,6 +1047,95 @@ def _render_composite_index(base_floor):
     """, unsafe_allow_html=True)
 
 
+# 状态枚举 -> 默认动作文案（后端未上报 current_action 时回退使用）
+_PHONE_ACTION_FALLBACK = {
+    "queued": "数字化员工已就绪，等待下达任务指令...",
+    "starting": "正在建立安全合规的多信道握手协议...",
+    "running": "AI 矩阵全域品牌渗透中...",
+    "paused": "自动化运营流已安全暂停",
+    "stopped": "自动化作业流已成功安全释放",
+    "completed": "当日智能化引流作业圆满闭环",
+    "error": "触发自适应风控隔离，系统正在智能重试...",
+}
+
+
+def _phone_frame_card(serial, info):
+    """渲染单台设备的手机框动态卡片（外壳为手机 UI，内容仅文字）。"""
+    info = info or {}
+    status = info.get("status") or "idle"
+    current_action = info.get("current_action") or _PHONE_ACTION_FALLBACK.get(status, "数字化员工待命中...")
+    if status == "error" and info.get("error"):
+        current_action = "触发自适应风控隔离，系统正在智能重试..."
+    executed = info.get("executed_actions") or []
+
+    # 已执行列表：最多展示 5 条，超出显示省略
+    if executed:
+        visible = executed[-5:]
+        items = "".join(f"<li>{_html.escape(str(a))}</li>" for a in visible)
+        if len(executed) > 5:
+            items += f"<li style='color:#4B5563;'>...等 {len(executed) - 5} 条</li>"
+        executed_html = f"<ul style='margin:6px 0 0 0; padding-left:18px; list-style:disc;'>{items}</ul>"
+    else:
+        executed_html = "<div style='color:#4B5563; font-size:12px; margin-top:6px;'>—</div>"
+
+    # 状态指示点：运行中绿色脉冲，其他灰色
+    is_running = status == "running"
+    dot_color = "#10B981" if is_running else "#6B7280"
+    pulse_style = "animation: phone-card-pulse 1.5s infinite;" if is_running else ""
+
+    return f"""
+    <div style="background:#0A0B0F; border-radius:30px; padding:9px; box-shadow:0 8px 24px rgba(0,0,0,0.45); margin-bottom:14px; width:fit-content;">
+        <div style="background:#161B28; border-radius:22px; overflow:hidden; border:1px solid rgba(255,255,255,0.06); min-width:220px;">
+            <div style="display:flex; justify-content:center; padding:6px 0 2px 0;">
+                <div style="width:54px; height:13px; background:#0A0B0F; border-radius:0 0 9px 9px;"></div>
+            </div>
+            <div style="padding:4px 16px 16px 16px;">
+                <div style="font-size:13px; font-weight:700; color:#E5E7EB; letter-spacing:-0.01em; margin-bottom:10px; white-space:nowrap;">设备名称：{_html.escape(str(serial))}</div>
+                <div style="display:flex; align-items:center; gap:6px; font-size:11px; color:#9CA3AF; margin-bottom:3px;">
+                    <span style="width:6px; height:6px; border-radius:50%; background:{dot_color}; box-shadow:0 0 0 2px {dot_color}30; flex-shrink:0; {pulse_style}"></span>
+                    <span>当前AI正在执行：</span>
+                </div>
+                <div style="font-size:12px; color:#A5B4FC; font-weight:600; line-height:1.4; margin-bottom:10px; white-space:nowrap;">{_html.escape(str(current_action))}</div>
+                <div style="font-size:11px; color:#6B7280; font-weight:600; letter-spacing:0.04em;">已执行：</div>
+                <div style="min-height:54px;">
+                    {executed_html}
+                </div>
+            </div>
+        </div>
+    </div>
+    """
+
+
+@st.fragment(run_every=3)
+def _render_device_dynamics():
+    """首页底部：每台已连接手机的实时 AI 执行动态（手机框 UI）。"""
+    devices = fetch_devices()
+    fetch_task_status()
+    task_status = st.session_state.task_status_data or {}
+
+    st.markdown("""
+    <div style="margin-top:28px; margin-bottom:14px;">
+        <div style="font-size:16px; font-weight:700; color:#E5E7EB; letter-spacing:-0.01em;">📱 设备实时动态</div>
+        <div style="font-size:12px; color:#6B7280; margin-top:2px;">每台手机的当前 AI 执行进度 · 每 3 秒自动刷新</div>
+    </div>
+    <style>
+        @keyframes phone-card-pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
+    </style>
+    """, unsafe_allow_html=True)
+
+    if not devices:
+        st.info("暂无已连接的设备")
+        return
+
+    per_row = 4
+    for i in range(0, len(devices), per_row):
+        chunk = devices[i:i + per_row]
+        cols = st.columns(len(chunk))
+        for j, serial in enumerate(chunk):
+            info = task_status.get(serial, {}) or {}
+            cols[j].markdown(_phone_frame_card(serial, info), unsafe_allow_html=True)
+
+
 def render_home_page():
     stats = fetch_stats()
 
@@ -1071,10 +1161,12 @@ def render_home_page():
     row1[3].markdown(_home_metric_card("高意向私域触达", f"{D:,}", "次", "#DC2626"), unsafe_allow_html=True)
 
     row2 = st.columns(4)
-    row2[0].markdown(_home_rate_card("高潜客群转化率", E, "#4F46E5"), unsafe_allow_html=True)
+    row2[0].markdown(_home_rate_card("高潜客群转化率", E, "#059669"), unsafe_allow_html=True)
     row2[1].markdown(_home_rate_card("智能对话自主率", F, "#059669"), unsafe_allow_html=True)
-    row2[2].markdown(_home_rate_card("客群线索唤醒率", G, "#D97706"), unsafe_allow_html=True)
-    row2[3].markdown(_home_rate_card("矩阵全时风控安全度", H, "#DC2626"), unsafe_allow_html=True)
+    row2[2].markdown(_home_rate_card("客群线索唤醒率", G, "#059669"), unsafe_allow_html=True)
+    row2[3].markdown(_home_rate_card("矩阵全时风控安全度", H, "#059669"), unsafe_allow_html=True)
+
+    _render_device_dynamics()
 
 
 def render_douyin_page(current_page):

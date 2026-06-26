@@ -26,7 +26,7 @@ class TikTokTaskFlow:
     具体的业务任务流
     将原子动作串联起来，形成如"搜索 -> 筛选 -> 刷视频 -> 互动"的完整逻辑
     """
-    def __init__(self, serial=None, config_path=None):
+    def __init__(self, serial=None, config_path=None, status_reporter=None):
         self.runner = ScoutTaskRunner(serial=serial, config_path=config_path)
         self.config = self.runner.config
         self.db = DBManager()
@@ -43,6 +43,18 @@ class TikTokTaskFlow:
         # 停止标识
         self.is_stopped = False
         self.is_paused = False
+
+        # 状态上报回调：由后端注入，用于首页手机框动态展示
+        # 签名：reporter(current_action=None, executed_action=None)
+        self.status_reporter = status_reporter
+
+    def _report(self, current_action=None, executed_action=None):
+        """向首页上报当前动作与已执行动作；失败不影响任务流。"""
+        try:
+            if self.status_reporter:
+                self.status_reporter(current_action=current_action, executed_action=executed_action)
+        except Exception as exc:
+            logger.debug(f"上报动作状态失败: {exc}")
 
     def _interaction_enabled(self, key, default=True):
         return bool(self.config.get('interaction', {}).get(key, default))
@@ -336,6 +348,7 @@ class TikTokTaskFlow:
     def start(self):
         """开始执行完整的采集与互动任务"""
         logger.info("=== 任务流开始 ===")
+        self._report(current_action="正在加载 AI 自动化运营引擎...", executed_action="启动任务")
 
         # 夜间静默时段检查
         self.anti.check_night_mode(check_callback=self._check_stop)
@@ -348,16 +361,19 @@ class TikTokTaskFlow:
         max_daily_videos = self.config.get('crawler', {}).get('max_daily_videos', 100)
         if stats['videos'] >= max_daily_videos:
             logger.info(f"🛑 今日处理视频总数({stats['videos']})已达到设置的最高上限({max_daily_videos})，任务终止！")
+            self._report(current_action="已触发策略风控保护，今日作业安全闭环")
             return
 
         # 检查每日互动限额
         if self.anti.daily_limit.check_all_limits():
             logger.info("🛑 今日所有互动类型均已达到上限，建议休息，任务终止！")
+            self._report(current_action="达到当日安全互动阈值，执行风控自适应挂起")
             return
 
         self._check_stop()
         # 1. 确保抖音处于可用状态
         self.runner.launch_app()
+        self._report(current_action="正在配置 AI 专属全域云环境...", executed_action="拉起抖音")
 
         # 清理设备痕迹
         if self.config.get('anti_detection', {}).get('device_cleanup', {}).get('enabled', True):
@@ -386,10 +402,13 @@ class TikTokTaskFlow:
                 self._process_single_keyword(keyword)
 
             logger.info("所有关键词任务处理完毕！")
+            self._report(current_action="目标意向词网检索任务已全部达成")
         except KeyboardInterrupt:
             logger.warning("用户手动停止了任务")
+            self._report(current_action="接收到人工指令，作业流安全挂起")
         except Exception as e:
             logger.error(f"任务流执行异常: {e}")
+            self._report(current_action="触发自适应风控隔离，系统正在智能重试...")
         finally:
             self.runner.shutdown()
 
@@ -399,6 +418,7 @@ class TikTokTaskFlow:
         self.last_share_token = None
         self.last_description = None
         self.current_keyword = keyword
+        self._report(current_action=f"正在检索核心客群意向词：【{keyword}】", executed_action=f"开始关键词：{keyword}")
 
         # 1. 搜索
         self._check_stop()
@@ -406,12 +426,14 @@ class TikTokTaskFlow:
             logger.warning(f"关键词 '{keyword}' 搜索失败，跳过当前关键词")
             self.runner.run_action(ResetToSearchAction)
             return
+        self._report(executed_action=f"搜索关键词：{keyword}")
 
         # 2. 筛选
         self._check_stop()
         sort_mode = self.config.get('search', {}).get('sort_by', 'latest')
         if not self.runner.run_action(ApplyFiltersAction, sort_mode=sort_mode):
             logger.warning("筛选未成功应用，继续使用当前搜索结果")
+        self._report(current_action=f"正在根据【{sort_mode}】精确洗量过滤...", executed_action="应用筛选条件")
 
         # 3. 进入第一个视频
         self._check_stop()
@@ -420,6 +442,7 @@ class TikTokTaskFlow:
             logger.warning(f"未能进入关键词 '{keyword}' 的视频流，跳过")
             self.runner.run_action(ResetToSearchAction)
             return
+        self._report(current_action="正在检索目标公域流量池...", executed_action="进入视频流")
 
         self._interruptible_sleep(3)
 
@@ -428,6 +451,7 @@ class TikTokTaskFlow:
 
         # 5. 当前关键词处理完毕，退回到搜索页，准备下一个
         self.runner.run_action(ResetToSearchAction)
+        self._report(executed_action=f"完成关键词：{keyword}")
 
     def _reset_and_reenter_video_flow(self, reason):
         """状态恢复失败时重置当前关键词的视频流，避免单个视频异常终止整个关键词。"""
@@ -479,6 +503,7 @@ class TikTokTaskFlow:
 
             video_count += 1
             logger.info(f"\n--- 正在处理第 {video_count}/{max_videos} 个视频 ---")
+            self._report(current_action=f"高潜线索漏斗筛选中：[{video_count}/{max_videos}]")
             self._dismiss_video_context_menu_if_present()
 
             # A. 提取信息与防重卡死检测
@@ -494,6 +519,7 @@ class TikTokTaskFlow:
                 "提取视频信息/分享链接",
                 lambda: self.runner.run_action(GetCurrentVideoLinkAction),
             )
+            self._report(current_action="AI 正在多维分析目标客群画像...", executed_action="提取视频信息")
             if not stable:
                 recovery_failures += 1
                 if recovery_failures >= 3 or not self._reset_and_reenter_video_flow("提取视频信息后恢复失败"):
@@ -540,12 +566,14 @@ class TikTokTaskFlow:
                     if self._interaction_enabled("enable_like"):
                         self._check_stop()
                         if self.anti.can_do('like'):
+                            self._report(current_action="执行 AI 智能算法加权互动")
                             stable, liked = self._run_feature_safely(
                                 "点赞",
                                 lambda: self.runner.run_action(DoubleClickLikeAction),
                             )
                             if liked:
                                 self.db.update_interaction(video_id, "like")
+                                self._report(executed_action="点赞")
                             if not stable:
                                 skip_remaining_features = True
                         else:
@@ -566,6 +594,7 @@ class TikTokTaskFlow:
                                 self._interaction_enabled("enable_private_message", False)
                                 and self.anti.can_do('private_message')
                             )
+                            self._report(current_action="锁定高潜客户，执行 AI 私域线索破冰")
                             stable, follow_result = self._run_feature_safely(
                                 "作者主页/关注/私信",
                                 lambda: self.runner.run_action(
@@ -576,10 +605,13 @@ class TikTokTaskFlow:
                             if isinstance(follow_result, dict):
                                 if follow_result.get("followed"):
                                     self.db.update_interaction(video_id, "follow")
+                                    self._report(executed_action="关注作者")
                                 if follow_result.get("private_message_sent"):
                                     self.db.update_interaction(video_id, "private_message")
+                                    self._report(executed_action="发送私信")
                             elif follow_result:
                                 self.db.update_interaction(video_id, "follow")
+                                self._report(executed_action="关注作者")
                             if not stable:
                                 skip_remaining_features = True
                         else:
@@ -596,6 +628,7 @@ class TikTokTaskFlow:
                     elif self._interaction_enabled("enable_video_comment"):
                         self._check_stop()
                         if self.anti.can_do('comment'):
+                            self._report(current_action="AI 正在根据垂直行业知识库生成精准评论")
                             comment_text = self.reply_agent.generate_reply(
                                 title=video_title,
                                 keyword=self.current_keyword or ""
@@ -615,6 +648,7 @@ class TikTokTaskFlow:
                                 )
                                 if commented:
                                     self.db.update_interaction(video_id, "comment")
+                                    self._report(executed_action="发布视频评论")
                                 if not stable:
                                     skip_remaining_features = True
                             else:
@@ -636,8 +670,11 @@ class TikTokTaskFlow:
                         logger.warning("页面恢复失败，跳过当前视频剩余功能")
                     elif self._interaction_enabled("enable_comment_lead"):
                         self._check_stop()
+                        self._report(current_action="正在对评论区意向线索进行精准拦截")
                         if not self._run_comment_lead_safely(video_title, self.current_keyword or ""):
                             skip_remaining_features = True
+                        else:
+                            self._report(executed_action="评论区AI截流")
                     else:
                         logger.info("已关闭功能: 评论区 AI 截流/楼中楼回复，跳过")
 
@@ -661,6 +698,7 @@ class TikTokTaskFlow:
             # 随机行为模拟：小概率快速划过（不执行互动）
             if not BehaviorRandomizer.maybe_fast_scroll(self.runner.device):
                 # 正常滑动到下一个视频
+                self._report(current_action="智能流转至下一个高潜流量节点")
                 self.runner.run_action(SwipeNextVideoAction)
 
             if self._selected_feature_chain_enabled():
