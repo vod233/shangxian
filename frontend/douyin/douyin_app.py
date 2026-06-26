@@ -80,11 +80,10 @@ def fetch_details(limit=100):
     return []
 
 
-def render_page_header(title, description):
+def render_page_header(title, description, breadcrumb=""):
+    breadcrumb_html = f'<div class="breadcrumb">{breadcrumb}</div>' if breadcrumb else ""
     st.markdown(f"""
-    <div class="breadcrumb">
-        <a href="?nav=home" style="color: var(--primary); cursor: pointer; font-weight: 600; text-decoration: none;">首页</a> / 自动化配置 / <span>{title}</span>
-    </div>
+    {breadcrumb_html}
     <div class="page-header">
         <div>
             <div class="page-title">{title}</div>
@@ -95,7 +94,7 @@ def render_page_header(title, description):
 
 
 def render_device_management():
-    render_page_header("设备管理", "管理 USB 与无线 ADB 连接，并选择本次任务控制设备。")
+    render_page_header("AI员工管理", "管理 USB 与无线 ADB 连接，并选择本次任务控制的AI员工。", breadcrumb="AI员工群控管理 / AI员工数量管理")
 
     col1, col2 = st.columns(2)
 
@@ -104,7 +103,7 @@ def render_device_management():
         <div class="card">
             <div class="card-header">
                 <div>
-                    <div class="card-title">USB 一键检测</div>
+                    <div class="card-title">AI员工检测</div>
                     <div class="card-description">手机插入电脑并允许 USB 调试后，点击检测即可自动接入。</div>
                 </div>
             </div>
@@ -188,7 +187,7 @@ def render_device_management():
     <div class="card">
         <div class="card-header">
             <div>
-                <div class="card-title">已接入设备列表</div>
+                <div class="card-title">已接入AI员工列表</div>
             </div>
         </div>
     """, unsafe_allow_html=True)
@@ -196,22 +195,22 @@ def render_device_management():
     devices = fetch_devices()
 
     if not devices:
-        st.warning("当前未检测到任何设备。请通过上方连接控制台进行无线连接，或通过 USB 连接手机。")
+        st.warning("当前未检测到任何AI员工。请通过上方连接控制台进行无线连接，或通过 USB 连接手机。")
     else:
-        st.success(f"✅ 检测到 {len(devices)} 台在线设备")
+        st.success(f"✅ 检测到我们{len(devices)}个员工在线")
 
         for dev in devices:
             is_controlled = dev in st.session_state.controlled_devices
             st.markdown(f"""
-            <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px; background:#FFFFFF; border:1px solid #E5E7EB; border-radius:8px; margin-bottom:8px; transition:all 0.12s ease; box-shadow:0 1px 2px rgba(0,0,0,0.03);">
+            <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px; background:#161B28; border:1px solid rgba(255,255,255,0.06); border-radius:8px; margin-bottom:8px; transition:all 0.12s ease; box-shadow:0 1px 2px rgba(0,0,0,0.2);">
                 <div style="display:flex; align-items:center; gap:10px;">
                     <span style="font-size:20px;">📱</span>
                     <div>
-                        <div style="font-size:13px; font-weight:600; color:#111827; letter-spacing:-0.01em;">{dev}</div>
+                        <div style="font-size:13px; font-weight:600; color:#E5E7EB; letter-spacing:-0.01em;">{dev}</div>
                         <div style="display:flex; align-items:center; gap:5px; margin-top:2px;">
                             <span style="width:6px; height:6px; border-radius:50%; background:#059669; box-shadow:0 0 0 2px rgba(5,150,105,0.15);"></span>
                             <span style="font-size:12px; color:#6B7280;">在线</span>
-                            {is_controlled and '<span style="color:#4F46E5; font-size:12px; margin-left:8px; font-weight:600;">✓ 已选中为控制设备</span>'}
+                            {is_controlled and '<span style="color:#6366F1; font-size:12px; margin-left:8px; font-weight:600;">✓ 已选中为控制员工</span>'}
                         </div>
                     </div>
                 </div>
@@ -229,7 +228,7 @@ def render_device_management():
                         toggle_device(dev)
                         st.rerun()
             with col_btn2:
-                if st.button("断开设备", key=f"disconnect_{dev}", use_container_width=True):
+                if st.button("断开员工", key=f"disconnect_{dev}", use_container_width=True):
                     with st.spinner(f"正在断开 {dev}..."):
                         try:
                             res = requests.post(f"{API_BASE_URL}/devices/disconnect", json={"ip_port": dev}).json()
@@ -242,7 +241,7 @@ def render_device_management():
                             else:
                                 st.error(res.get("message"))
                         except Exception as e:
-                            st.error(f"请求断开设备失败: {e}")
+                            st.error(f"请求断开员工失败: {e}")
 
             st.markdown("</div></div>", unsafe_allow_html=True)
 
@@ -250,7 +249,7 @@ def render_device_management():
 
 
 def render_task_monitor():
-    render_page_header("实时任务监控", "实时查看任务执行状态与终端输出。")
+    render_page_header("AI员工监控系统", "实时查看AI员工执行状态与终端输出。")
 
     st.markdown("""
     <div class="card">
@@ -268,26 +267,26 @@ def render_task_monitor():
         for serial, info in status_data.items():
             state = info.get("status")
             if state == "queued":
-                st.info(f"🕒 设备 **{serial}**: 任务已提交，等待线程调度...")
+                st.info(f"🕒 AI员工 **{serial}**: 任务已提交，等待线程调度...")
             elif state == "starting":
-                st.info(f"🔄 设备 **{serial}**: 正在初始化设备连接并启动应用...")
+                st.info(f"🔄 AI员工 **{serial}**: 正在初始化连接并启动应用...")
             elif state == "running":
-                st.info(f"▶️ 设备 **{serial}**: 正在执行任务中...")
+                st.info(f"▶️ AI员工 **{serial}**: 正在执行任务中...")
             elif state == "paused":
-                st.warning(f"⏸️ 设备 **{serial}**: 任务已暂停")
+                st.warning(f"⏸️ AI员工 **{serial}**: 任务已暂停")
             elif state == "completed":
-                st.success(f"✅ 设备 **{serial}**: 任务已完成")
+                st.success(f"✅ AI员工 **{serial}**: 任务已完成")
             elif state == "stopped":
-                st.error(f"🛑 设备 **{serial}**: 任务已被手动结束")
+                st.error(f"🛑 AI员工 **{serial}**: 任务已被手动结束")
             elif state == "error":
-                st.error(f"❌ 设备 **{serial}**: 执行报错 - {info.get('error')}")
+                st.error(f"❌ AI员工 **{serial}**: 执行报错 - {info.get('error')}")
 
     st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown("""
     <div class="card">
         <div class="card-header">
-            <div class="card-title">终端操作日志</div>
+            <div class="card-title">AI操作终端</div>
         </div>
         <div class="log-container">
     """, unsafe_allow_html=True)
@@ -299,7 +298,7 @@ def render_task_monitor():
 
 
 def render_search_control():
-    render_page_header("搜索与基础控制", "配置搜索关键词与视频排序方式。")
+    render_page_header("AI搜索基础控制", "配置搜索行业关键词与视频排序方式。")
 
     fetch_config()
     config = st.session_state.config_data
@@ -308,7 +307,7 @@ def render_search_control():
         st.markdown("""
         <div class="card">
             <div class="card-header">
-                <div class="card-title">搜索关键词（每行一个）</div>
+                <div class="card-title">搜索行业关键词（格式为：每行一个）</div>
             </div>
         """, unsafe_allow_html=True)
 
@@ -321,7 +320,7 @@ def render_search_control():
 
         st.markdown("""
             <div class="card-header" style="margin-top:16px;">
-                <div class="card-title">视频排序方式</div>
+                <div class="card-title">视频排序方式（优先推荐最新发布 截取客户更加有效）</div>
             </div>
         """, unsafe_allow_html=True)
 
@@ -355,7 +354,7 @@ def render_search_control():
 
 
 def render_intent_keywords():
-    render_page_header("自定义意向关键词", "设置评论区出现后可被识别为潜在意向客户的触发词。")
+    render_page_header("AI深度抓取意向关键词", "设置评论区出现后AI识别抓取意向客户的触发词。")
 
     fetch_config()
     config = st.session_state.config_data
@@ -377,7 +376,7 @@ def render_intent_keywords():
 
         st.markdown("""
             <div style="margin-top:12px; color:#9CA3AF; font-size:13px;">
-                提示：输入关键词后，评论区出现相关内容时可识别为意向客户。
+                提示：输入关键词后，评论区出现相关内容时AI识别抓取关键词意向客户。
             </div>
         """, unsafe_allow_html=True)
 
@@ -908,34 +907,34 @@ def render_data_dashboard():
     col1, col2, col3, col4 = st.columns(4)
 
     col1.markdown(f"""
-    <div style="background:#FFFFFF; border:1px solid #E5E7EB; border-radius:12px; padding:20px 24px; height:100%; box-shadow:0 1px 3px rgba(0,0,0,0.04);">
-        <div style="font-size:11px; color:#9CA3AF; font-weight:600; text-transform:uppercase; letter-spacing:0.05em;">今日处理视频总数</div>
-        <div style="font-size:32px; font-weight:700; color:#111827; letter-spacing:-0.02em; margin-top:10px;">{stats.get('videos', 0)} <span style="font-size:13px; font-weight:500; color:#9CA3AF;">个</span></div>
-        <div style="font-size:12px; color:#9CA3AF; margin-top:4px;">自动防重过滤</div>
+    <div style="background:#161B28; border:1px solid rgba(255,255,255,0.06); border-radius:12px; padding:20px 24px; height:100%; box-shadow:0 1px 3px rgba(0,0,0,0.2);">
+        <div style="font-size:11px; color:#6B7280; font-weight:600; text-transform:uppercase; letter-spacing:0.05em;">今日处理视频总数</div>
+        <div style="font-size:32px; font-weight:700; color:#E5E7EB; letter-spacing:-0.02em; margin-top:10px;">{stats.get('videos', 0)} <span style="font-size:13px; font-weight:500; color:#6B7280;">个</span></div>
+        <div style="font-size:12px; color:#6B7280; margin-top:4px;">自动防重过滤</div>
     </div>
     """, unsafe_allow_html=True)
 
     col2.markdown(f"""
-    <div style="background:#FFFFFF; border:1px solid #E5E7EB; border-radius:12px; padding:20px 24px; height:100%; box-shadow:0 1px 3px rgba(0,0,0,0.04);">
-        <div style="font-size:11px; color:#9CA3AF; font-weight:600; text-transform:uppercase; letter-spacing:0.05em;">自动点赞数</div>
-        <div style="font-size:32px; font-weight:700; color:#111827; letter-spacing:-0.02em; margin-top:10px;">{stats.get('likes', 0)} <span style="font-size:13px; font-weight:500; color:#9CA3AF;">次</span></div>
-        <div style="font-size:12px; color:#9CA3AF; margin-top:4px;">活跃度提升</div>
+    <div style="background:#161B28; border:1px solid rgba(255,255,255,0.06); border-radius:12px; padding:20px 24px; height:100%; box-shadow:0 1px 3px rgba(0,0,0,0.2);">
+        <div style="font-size:11px; color:#6B7280; font-weight:600; text-transform:uppercase; letter-spacing:0.05em;">自动点赞数</div>
+        <div style="font-size:32px; font-weight:700; color:#E5E7EB; letter-spacing:-0.02em; margin-top:10px;">{stats.get('likes', 0)} <span style="font-size:13px; font-weight:500; color:#6B7280;">次</span></div>
+        <div style="font-size:12px; color:#6B7280; margin-top:4px;">活跃度提升</div>
     </div>
     """, unsafe_allow_html=True)
 
     col3.markdown(f"""
-    <div style="background:#FFFFFF; border:1px solid #E5E7EB; border-radius:12px; padding:20px 24px; height:100%; box-shadow:0 1px 3px rgba(0,0,0,0.04);">
-        <div style="font-size:11px; color:#9CA3AF; font-weight:600; text-transform:uppercase; letter-spacing:0.05em;">自动关注同行</div>
-        <div style="font-size:32px; font-weight:700; color:#111827; letter-spacing:-0.02em; margin-top:10px;">{stats.get('follows', 0)} <span style="font-size:13px; font-weight:500; color:#9CA3AF;">人</span></div>
-        <div style="font-size:12px; color:#9CA3AF; margin-top:4px;">增加曝光</div>
+    <div style="background:#161B28; border:1px solid rgba(255,255,255,0.06); border-radius:12px; padding:20px 24px; height:100%; box-shadow:0 1px 3px rgba(0,0,0,0.2);">
+        <div style="font-size:11px; color:#6B7280; font-weight:600; text-transform:uppercase; letter-spacing:0.05em;">自动关注同行</div>
+        <div style="font-size:32px; font-weight:700; color:#E5E7EB; letter-spacing:-0.02em; margin-top:10px;">{stats.get('follows', 0)} <span style="font-size:13px; font-weight:500; color:#6B7280;">人</span></div>
+        <div style="font-size:12px; color:#6B7280; margin-top:4px;">增加曝光</div>
     </div>
     """, unsafe_allow_html=True)
 
     col4.markdown(f"""
-    <div style="background:#FFFFFF; border:1px solid #E5E7EB; border-radius:12px; padding:20px 24px; height:100%; box-shadow:0 1px 3px rgba(0,0,0,0.04);">
-        <div style="font-size:11px; color:#9CA3AF; font-weight:600; text-transform:uppercase; letter-spacing:0.05em;">AI 自动回复</div>
-        <div style="font-size:32px; font-weight:700; color:#111827; letter-spacing:-0.02em; margin-top:10px;">{stats.get('comments', 0)} <span style="font-size:13px; font-weight:500; color:#9CA3AF;">次</span></div>
-        <div style="font-size:12px; color:#9CA3AF; margin-top:4px;">标题驱动生成</div>
+    <div style="background:#161B28; border:1px solid rgba(255,255,255,0.06); border-radius:12px; padding:20px 24px; height:100%; box-shadow:0 1px 3px rgba(0,0,0,0.2);">
+        <div style="font-size:11px; color:#6B7280; font-weight:600; text-transform:uppercase; letter-spacing:0.05em;">AI 自动回复</div>
+        <div style="font-size:32px; font-weight:700; color:#E5E7EB; letter-spacing:-0.02em; margin-top:10px;">{stats.get('comments', 0)} <span style="font-size:13px; font-weight:500; color:#6B7280;">次</span></div>
+        <div style="font-size:12px; color:#6B7280; margin-top:4px;">标题驱动生成</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -988,7 +987,7 @@ def render_data_dashboard():
         st.info("今日暂无操作记录。")
 
     st.markdown("""
-            <div style="margin-top:20px; padding-top:16px; border-top:1px solid #E5E7EB; color:#9CA3AF; font-size:12px;">
+            <div style="margin-top:20px; padding-top:16px; border-top:1px solid rgba(255,255,255,0.06); color:#6B7280; font-size:12px;">
                 提示：详细操作记录继续保存于 data/scout_records.db 与 logs 文件夹。
             </div>
         </div>
@@ -997,9 +996,9 @@ def render_data_dashboard():
 
 def _home_metric_card(label, value, unit, color):
     return f"""
-    <div style="text-align:center; padding:24px 12px;">
-        <div style="font-size:12px; color:#9CA3AF; font-weight:500; letter-spacing:0.04em; margin-bottom:12px;">{label}</div>
-        <div style="font-size:40px; font-weight:800; color:#111827; letter-spacing:-0.02em; line-height:1;">{value}<span style="font-size:16px; font-weight:500; color:#9CA3AF; margin-left:4px;">{unit}</span></div>
+    <div style="text-align:center; padding:28px 12px;">
+        <div style="font-size:12px; color:#6B7280; font-weight:500; letter-spacing:0.04em; margin-bottom:12px;">{label}</div>
+        <div style="font-size:40px; font-weight:800; color:#E5E7EB; letter-spacing:-0.02em; line-height:1; font-variant-numeric:tabular-nums;">{value}<span style="font-size:16px; font-weight:500; color:#6B7280; margin-left:4px;">{unit}</span></div>
     </div>
     """
 
@@ -1013,10 +1012,10 @@ def _home_rate_card(label, rate, color):
     empty = "░" * (10 - blocks)
     pct = rate * 100
     return f"""
-    <div style="text-align:center; padding:24px 12px;">
-        <div style="font-size:12px; color:#9CA3AF; font-weight:500; letter-spacing:0.04em; margin-bottom:12px;">{label}</div>
-        <div style="font-size:40px; font-weight:800; color:#111827; letter-spacing:-0.02em; line-height:1;">{pct:.1f}<span style="font-size:20px; font-weight:600; color:#9CA3AF;">%</span></div>
-        <div style="font-family: 'JetBrains Mono', 'Consolas', monospace; font-size: 12px; color:{color}; margin-top:10px; letter-spacing:2px;">{filled}{empty}</div>
+    <div style="text-align:center; padding:28px 12px;">
+        <div style="font-size:12px; color:#6B7280; font-weight:500; letter-spacing:0.04em; margin-bottom:12px;">{label}</div>
+        <div style="font-size:40px; font-weight:800; color:#E5E7EB; letter-spacing:-0.02em; line-height:1; font-variant-numeric:tabular-nums;">{pct:.1f}<span style="font-size:20px; font-weight:600; color:#6B7280;">%</span></div>
+        <div style="font-family: 'JetBrains Mono', 'Consolas', monospace; font-size: 12px; color:{color}; margin-top:10px; letter-spacing:2px; text-shadow:0 0 8px {color}40;">{filled}{empty}</div>
     </div>
     """
 
@@ -1076,20 +1075,6 @@ def render_home_page():
     row2[1].markdown(_home_rate_card("智能对话自主率", F, "#059669"), unsafe_allow_html=True)
     row2[2].markdown(_home_rate_card("客群线索唤醒率", G, "#D97706"), unsafe_allow_html=True)
     row2[3].markdown(_home_rate_card("矩阵全时风控安全度", H, "#DC2626"), unsafe_allow_html=True)
-
-    st.markdown("""
-    <div class="card" style="margin-top:8px;">
-        <div class="card-header">
-            <div class="card-title">指标算法说明</div>
-        </div>
-        <div style="font-size:12px; color:#6B7280; line-height:1.8;">
-            <div><b style="color:#111827;">综合指数</b> = ⌊(A×8.65 + B×14.82 + C×22.41 + D×48.15) × (1 + E×0.35 + F×0.25 + G×0.40) × H × 1.28⌋ + 12450 + (当前毫秒 % 7)</div>
-            <div style="margin-top:6px;"><b style="color:#111827;">执行层</b>：A=今日Action总数, B=大模型Reply成功数, C=监控同行去重数, D=今日自动私信数</div>
-            <div style="margin-top:6px;"><b style="color:#111827;">转化层</b>：E=0.65+(D%8)/100, F=0.60+(B%8)/100, G=0.50+((A+B)%9)/100, H=0.998（默认恒定）</div>
-            <div style="margin-top:6px;"><b style="color:#111827;">进度条</b>：blocks = floor(百分比×10)，安全度≥95% 直接满格 [██████████]</div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
 
 
 def render_douyin_page(current_page):

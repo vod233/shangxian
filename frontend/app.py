@@ -49,34 +49,41 @@ def main():
     st.markdown("""
     <style>
         :root {
-            --primary: #4F46E5;
-            --primary-hover: #4338CA;
-            --primary-active: #3730A3;
-            --primary-ring: rgba(79, 70, 229, 0.15);
-            --success: #059669;
-            --warning: #D97706;
-            --error: #DC2626;
-            --sidebar-bg: #0B0C10;
-            --sidebar-hover: #1A1C24;
-            --sidebar-active: #4F46E5;
-            --sidebar-text: #E5E7EB;
+            --primary: #6366F1;
+            --primary-hover: #818CF8;
+            --primary-active: #4F46E5;
+            --primary-ring: rgba(99, 102, 241, 0.2);
+            --success: #10B981;
+            --warning: #F59E0B;
+            --error: #EF4444;
+            --sidebar-bg: #0A0B0F;
+            --sidebar-hover: #151823;
+            --sidebar-active: #6366F1;
+            --sidebar-text: #D1D5DB;
             --sidebar-muted: #6B7280;
             --sidebar-border: rgba(255,255,255,0.06);
-            --main-bg: #F8F9FB;
-            --card-bg: #FFFFFF;
-            --card-border: #E5E7EB;
-            --card-shadow: 0 1px 3px rgba(0,0,0,0.04);
-            --text-primary: #111827;
-            --text-secondary: #6B7280;
-            --text-muted: #9CA3AF;
-            --input-bg: #FFFFFF;
-            --input-border: #D1D5DB;
-            --input-focus: #4F46E5;
-            --input-ring: rgba(79, 70, 229, 0.15);
+            --main-bg: #0D1117;
+            --card-bg: #161B28;
+            --card-border: rgba(255,255,255,0.06);
+            --card-shadow: 0 1px 3px rgba(0,0,0,0.3);
+            --text-primary: #E5E7EB;
+            --text-secondary: #9CA3AF;
+            --text-muted: #6B7280;
+            --input-bg: #1A1F2E;
+            --input-border: #2D3348;
+            --input-focus: #6366F1;
+            --input-ring: rgba(99, 102, 241, 0.2);
             --radius-sm: 6px;
             --radius-md: 8px;
             --radius-lg: 12px;
             --font-mono: 'JetBrains Mono', 'Fira Code', 'Menlo', 'Consolas', monospace;
+        }
+
+        /* ============================================ */
+        /* 全局背景 */
+        /* ============================================ */
+        .stApp {
+            background: var(--main-bg) !important;
         }
 
         /* ============================================ */
@@ -87,17 +94,34 @@ def main():
         .stDeployButton { display: none !important; }
         #MainMenu { display: none !important; }
         footer { display: none !important; }
-        /* 隐藏侧边栏折叠按钮 */
         button[data-testid="stBaseButton-headerNoPadding"] { display: none !important; }
         div[data-testid="stSidebarCollapseButton"] { display: none !important; }
 
         /* ============================================ */
-        /* 主内容区 - 浅色背景 */
+        /* 主内容区 - 暗色背景 */
         /* ============================================ */
         .main .block-container,
         section[data-testid="stSidebar"] + section {
             background: var(--main-bg) !important;
             padding: 1.5rem 2rem 2rem 2rem !important;
+        }
+
+        /* ============================================ */
+        /* Streamlit 内部元素暗色适配 */
+        /* ============================================ */
+        .stMarkdown, .stMarkdown p, .stMarkdown span, .stMarkdown div {
+            color: var(--text-primary);
+        }
+
+        div[data-testid="stTextInput"] label,
+        div[data-testid="stTextArea"] label,
+        div[data-testid="stSelectbox"] label,
+        div[data-testid="stNumberInput"] label,
+        div[data-testid="stSlider"] label,
+        div[data-testid="stMultiSelect"] label {
+            color: var(--text-secondary) !important;
+            font-size: 12px !important;
+            font-weight: 600 !important;
         }
 
         /* ============================================ */
@@ -109,24 +133,22 @@ def main():
         }
 
         section[data-testid="stSidebar"] * {
-            color: var(--sidebar-text) !important;
+            color: #FFFFFF !important;
         }
 
-        /* 侧边栏按钮 - 整体 */
         section[data-testid="stSidebar"] div[data-testid="stButton"] > button {
             background: transparent !important;
             border: 1px solid transparent !important;
             border-radius: 8px !important;
             padding: 0 !important;
             height: auto !important;
-            min-height: 38px !important;
+            min-height: 44px !important;
             width: 100% !important;
             margin-bottom: 4px !important;
             box-shadow: none !important;
             transition: all 0.15s ease !important;
         }
 
-        /* 按钮内层 wrapper */
         section[data-testid="stSidebar"] div[data-testid="stButton"] > button > div {
             width: 100% !important;
             display: flex !important;
@@ -134,7 +156,6 @@ def main():
             padding: 0 !important;
         }
 
-        /* 按钮内层 span */
         section[data-testid="stSidebar"] div[data-testid="stButton"] > button > div > span {
             width: 100% !important;
             display: flex !important;
@@ -142,19 +163,17 @@ def main():
             padding: 0 !important;
         }
 
-        /* 按钮文字容器 */
         section[data-testid="stSidebar"] div[data-testid="stButton"] button [data-testid="stMarkdownContainer"] {
             width: 100% !important;
             padding: 0 !important;
         }
 
-        /* 按钮文字 p 标签 */
         section[data-testid="stSidebar"] div[data-testid="stButton"] button p {
             margin: 0 !important;
             padding: 9px 14px !important;
-            font-size: 13px !important;
+            font-size: 16px !important;
             font-weight: 500 !important;
-            color: #9CA3AF !important;
+            color: #FFFFFF !important;
             letter-spacing: -0.01em !important;
             line-height: 1.4 !important;
             text-align: left !important;
@@ -162,32 +181,32 @@ def main():
         }
 
         section[data-testid="stSidebar"] div[data-testid="stButton"] > button:hover {
-            background: rgba(255,255,255,0.04) !important;
-            border-color: rgba(255,255,255,0.08) !important;
-            transform: none !important;
+            background: rgba(99,102,241,0.08) !important;
+            border-color: rgba(99,102,241,0.2) !important;
         }
 
         section[data-testid="stSidebar"] div[data-testid="stButton"] > button:hover p {
-            color: #E5E7EB !important;
+            color: #FFFFFF !important;
         }
 
         section[data-testid="stSidebar"] div[data-testid="stButton"] > button:focus,
         section[data-testid="stSidebar"] div[data-testid="stButton"] > button:active {
-            background: rgba(79,70,229,0.15) !important;
-            border-color: rgba(79,70,229,0.4) !important;
+            background: rgba(99,102,241,0.15) !important;
+            border-color: rgba(99,102,241,0.4) !important;
             box-shadow: none !important;
         }
 
         section[data-testid="stSidebar"] div[data-testid="stButton"] > button:focus p,
         section[data-testid="stSidebar"] div[data-testid="stButton"] > button:active p {
-            color: #A5B4FC !important;
+            color: #FFFFFF !important;
             font-weight: 600 !important;
         }
 
         /* ============================================ */
-        /* 主内容区按钮 */
+        /* 主内容区按钮 - 统一靛蓝紫色 */
         /* ============================================ */
-        div[data-testid="stButton"] > button {
+        div[data-testid="stButton"] > button,
+        button[data-testid^="stBaseButton"] {
             background: var(--primary) !important;
             color: #FFFFFF !important;
             border-radius: 6px !important;
@@ -197,31 +216,37 @@ def main():
             font-weight: 600 !important;
             font-size: 13px !important;
             transition: all 0.12s ease !important;
-            box-shadow: 0 1px 2px rgba(79,70,229,0.25) !important;
+            box-shadow: 0 1px 3px rgba(99,102,241,0.3) !important;
         }
 
-        div[data-testid="stButton"] > button:hover {
+        div[data-testid="stButton"] > button:hover,
+        button[data-testid^="stBaseButton"]:hover {
             background: var(--primary-hover) !important;
-            box-shadow: 0 2px 6px rgba(79,70,229,0.35) !important;
+            box-shadow: 0 2px 8px rgba(99,102,241,0.4) !important;
             transform: translateY(-0.5px) !important;
+            border-color: transparent !important;
+            color: #FFFFFF !important;
         }
 
-        div[data-testid="stButton"] > button:active {
+        div[data-testid="stButton"] > button:active,
+        button[data-testid^="stBaseButton"]:active {
             background: var(--primary-active) !important;
             transform: translateY(0) !important;
+            border-color: transparent !important;
+            color: #FFFFFF !important;
         }
 
-        div[data-testid="stButton"] > button[class*="secondary"] {
-            background: var(--card-bg) !important;
-            color: var(--text-primary) !important;
-            border: 1px solid var(--card-border) !important;
-            box-shadow: 0 1px 2px rgba(0,0,0,0.03) !important;
+        div[data-testid="stButton"] > button:focus,
+        button[data-testid^="stBaseButton"]:focus {
+            background: var(--primary) !important;
+            box-shadow: 0 0 0 3px var(--primary-ring) !important;
+            border-color: transparent !important;
+            color: #FFFFFF !important;
         }
 
-        div[data-testid="stButton"] > button[class*="secondary"]:hover {
-            background: #F9FAFB !important;
-            border-color: #D1D5DB !important;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.04) !important;
+        div[data-testid="stButton"] > button p,
+        button[data-testid^="stBaseButton"] p {
+            color: #FFFFFF !important;
         }
 
         /* ============================================ */
@@ -246,10 +271,10 @@ def main():
 
         div[data-testid="stTextInput"] input::placeholder,
         div[data-testid="stTextArea"] textarea::placeholder {
-            color: #9CA3AF !important;
+            color: #4B5563 !important;
         }
 
-        div[data-testid="stSelectbox"] > div {
+        div[data-testid="stSelectbox"] > div > div {
             background: var(--input-bg) !important;
             color: var(--text-primary) !important;
             border: 1px solid var(--input-border) !important;
@@ -272,6 +297,18 @@ def main():
             outline: none !important;
         }
 
+        /* 下拉菜单暗色 */
+        div[data-baseweb="popover"] div[role="listbox"] {
+            background: var(--card-bg) !important;
+            border: 1px solid var(--card-border) !important;
+        }
+        div[data-baseweb="popover"] div[role="option"] {
+            color: var(--text-primary) !important;
+        }
+        div[data-baseweb="popover"] div[role="option"]:hover {
+            background: rgba(99,102,241,0.15) !important;
+        }
+
         /* ============================================ */
         /* Checkbox / Radio */
         /* ============================================ */
@@ -283,7 +320,7 @@ def main():
         div[data-testid="stCheckbox"] div[role="checkbox"] {
             border-radius: 4px !important;
             border-color: var(--input-border) !important;
-            background: var(--card-bg) !important;
+            background: var(--input-bg) !important;
         }
 
         div[data-testid="stCheckbox"] div[role="checkbox"][aria-checked="true"] {
@@ -292,7 +329,7 @@ def main():
         }
 
         div[role="radiogroup"] label { color: var(--text-primary) !important; font-size: 13px !important; }
-        div[role="radiogroup"] div[role="radio"] { border-color: var(--input-border) !important; }
+        div[role="radiogroup"] div[role="radio"] { border-color: var(--input-border) !important; background: var(--input-bg) !important; }
         div[role="radiogroup"] div[role="radio"][aria-checked="true"] {
             background: var(--primary) !important;
             border-color: var(--primary) !important;
@@ -322,7 +359,7 @@ def main():
         /* 页面标题 */
         /* ============================================ */
         .breadcrumb { font-size: 11px; color: var(--text-muted); margin-bottom: 8px; font-weight: 500; }
-        .breadcrumb span { color: var(--primary); cursor: pointer; font-weight: 600; }
+        .breadcrumb span { color: var(--text-primary); cursor: pointer; font-weight: 600; }
 
         .page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
         .page-title { font-size: 22px; font-weight: 700; color: var(--text-primary); letter-spacing: -0.02em; }
@@ -345,16 +382,25 @@ def main():
         .card-description { font-size: 12px; color: var(--text-muted); margin-top: 2px; line-height: 1.5; }
 
         /* ============================================ */
+        /* 表单容器暗色 */
+        /* ============================================ */
+        div[data-testid="stForm"] {
+            background: transparent !important;
+            border: none !important;
+            padding: 0 !important;
+        }
+
+        /* ============================================ */
         /* 日志容器 - 终端风格 */
         /* ============================================ */
         .log-container {
-            background: #0D1117;
-            border: 1px solid #21262D;
+            background: #060910;
+            border: 1px solid rgba(255,255,255,0.06);
             border-radius: 8px;
             padding: 14px 16px;
             font-family: var(--font-mono);
             font-size: 12px;
-            color: #C9D1D9;
+            color: #8B949E;
             max-height: 400px;
             overflow-y: auto;
             white-space: pre-wrap;
@@ -364,10 +410,11 @@ def main():
         /* ============================================ */
         /* 滚动条 */
         /* ============================================ */
-        ::-webkit-scrollbar { width: 4px; height: 4px; }
+        ::-webkit-scrollbar { width: 5px; height: 5px; }
         ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.12); border-radius: 2px; }
-        section[data-testid="stSidebar"] ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); }
+        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.18); }
+        section[data-testid="stSidebar"] ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); }
 
         /* ============================================ */
         /* 侧边栏标题 */
@@ -380,6 +427,44 @@ def main():
             margin-bottom: 0;
             letter-spacing: -0.01em;
         }
+
+        /* 首页标题按钮（点击跳转首页，样式伪装成标题文字） */
+        section[data-testid="stSidebar"] div[data-testid="element-container"]:has(.sb-title-marker) + div[data-testid="element-container"] div[data-testid="stButton"] > button {
+            background: transparent !important;
+            border: none !important;
+            color: #FFFFFF !important;
+            font-size: 18px !important;
+            font-weight: 700 !important;
+            justify-content: flex-start !important;
+            padding: 20px 8px 8px 8px !important;
+            height: auto !important;
+            min-height: unset !important;
+            box-shadow: none !important;
+            cursor: pointer !important;
+            border-radius: 0 !important;
+            letter-spacing: -0.01em !important;
+            transition: color 0.15s ease !important;
+        }
+        section[data-testid="stSidebar"] div[data-testid="element-container"]:has(.sb-title-marker) + div[data-testid="element-container"] div[data-testid="stButton"] > button:hover {
+            background: transparent !important;
+            color: #A5B4FC !important;
+            box-shadow: none !important;
+        }
+        section[data-testid="stSidebar"] div[data-testid="element-container"]:has(.sb-title-marker) + div[data-testid="element-container"] div[data-testid="stButton"] > button:focus,
+        section[data-testid="stSidebar"] div[data-testid="element-container"]:has(.sb-title-marker) + div[data-testid="element-container"] div[data-testid="stButton"] > button:active {
+            background: transparent !important;
+            color: #818CF8 !important;
+            box-shadow: none !important;
+            border: none !important;
+        }
+        section[data-testid="stSidebar"] div[data-testid="element-container"]:has(.sb-title-marker) + div[data-testid="element-container"] div[data-testid="stButton"] > button p {
+            font-size: 18px !important;
+            font-weight: 700 !important;
+            color: inherit !important;
+            margin: 0 !important;
+            padding: 0 !important;
+        }
+        .sb-title-marker { display: none; }
 
         .sidebar-subtitle {
             font-size: 10px;
@@ -399,7 +484,7 @@ def main():
         }
 
         /* ============================================ */
-        /* 状态栏（侧边栏内） */
+        /* 状态栏 */
         /* ============================================ */
         .sidebar-status {
             display: flex;
@@ -413,8 +498,8 @@ def main():
             display: flex;
             align-items: center;
             gap: 5px;
-            font-size: 11px;
-            color: #9CA3AF !important;
+            font-size: 12px;
+            color: #FFFFFF !important;
             font-weight: 500;
         }
 
@@ -427,22 +512,52 @@ def main():
 
         .status-dot.online {
             background: var(--success);
-            box-shadow: 0 0 0 2px rgba(5,150,105,0.15);
+            box-shadow: 0 0 0 2px rgba(16,185,129,0.15);
         }
 
         .status-dot.offline {
             background: var(--error);
-            box-shadow: 0 0 0 2px rgba(220,38,38,0.15);
+            box-shadow: 0 0 0 2px rgba(239,68,68,0.15);
         }
 
         /* ============================================ */
         /* Slider */
         /* ============================================ */
-        .stSlider > div { background: #E5E7EB !important; }
-        .stSlider > div > div { background: var(--primary) !important; }
-        .stSlider > div > div > div {
-            background: #FFFFFF !important;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.12) !important;
+        div[data-testid="stSlider"] {
+            background: transparent !important;
+            border: none !important;
+            box-shadow: none !important;
+        }
+        div[data-testid="stSlider"] > div {
+            background: transparent !important;
+            border: none !important;
+            box-shadow: none !important;
+        }
+        /* 轨道底色 */
+        div[data-testid="stSlider"] [class*="st-cp"],
+        div[data-testid="stSlider"] [class*="st-cr"] {
+            background: #2D3348 !important;
+            border: none !important;
+            box-shadow: none !important;
+            border-radius: 2px !important;
+            height: 4px !important;
+        }
+        /* 滑块圆点 */
+        div[data-testid="stSlider"] div[role="slider"] {
+            background: var(--primary) !important;
+            border: none !important;
+            width: 14px !important;
+            height: 14px !important;
+            border-radius: 50% !important;
+            box-shadow: 0 0 0 3px rgba(99,102,241,0.2) !important;
+            cursor: grab !important;
+        }
+        div[data-testid="stSlider"] div[role="slider"]:hover {
+            box-shadow: 0 0 0 5px rgba(99,102,241,0.3) !important;
+        }
+        /* 隐藏滑块上的数值标签 */
+        div[data-testid="stSlider"] div[data-testid="stSliderThumbValue"] {
+            display: none !important;
         }
 
         /* ============================================ */
@@ -460,7 +575,7 @@ def main():
         }
 
         .stDataFrame th {
-            background: #F9FAFB !important;
+            background: #1A1F2E !important;
             color: var(--text-muted) !important;
             font-weight: 600 !important;
             font-size: 11px !important;
@@ -471,11 +586,13 @@ def main():
         }
 
         .stDataFrame td {
-            border-bottom: 1px solid #F3F4F6 !important;
+            border-bottom: 1px solid rgba(255,255,255,0.04) !important;
             font-size: 13px !important;
             padding: 10px 14px !important;
+            color: var(--text-primary) !important;
         }
 
+        .stDataFrame tr:hover td { background: rgba(99,102,241,0.06) !important; }
         .stDataFrame tr:last-child td { border-bottom: none !important; }
 
         /* ============================================ */
@@ -483,7 +600,7 @@ def main():
         /* ============================================ */
         div[data-baseweb="tab-list"] {
             background: transparent !important;
-            border-bottom: 1.5px solid var(--card-border) !important;
+            border-bottom: 1px solid var(--card-border) !important;
             gap: 0 !important;
         }
 
@@ -497,6 +614,17 @@ def main():
         div[data-baseweb="tab"][aria-selected="true"] {
             color: var(--primary) !important;
             font-weight: 600 !important;
+            border-bottom-color: var(--primary) !important;
+        }
+
+        div[data-baseweb="tab"]:hover {
+            color: var(--text-secondary) !important;
+            background: rgba(255,255,255,0.03) !important;
+        }
+
+        /* Tab panel */
+        div[data-baseweb="tab-panel"] {
+            background: transparent !important;
         }
 
         /* ============================================ */
@@ -517,15 +645,47 @@ def main():
             padding: 10px 14px !important;
         }
 
-        details summary:hover { background: #F9FAFB !important; }
+        details summary:hover { background: rgba(255,255,255,0.03) !important; }
 
         /* ============================================ */
         /* Alert */
         /* ============================================ */
         div[data-testid="stAlert"] {
             border-radius: 6px !important;
-            border: 1px solid var(--card-border) !important;
             font-size: 13px !important;
+        }
+
+        div[data-testid="stAlertContentSuccess"] {
+            background: rgba(16,185,129,0.1) !important;
+            border: 1px solid rgba(16,185,129,0.2) !important;
+            color: #34D399 !important;
+        }
+        div[data-testid="stAlertContentInfo"] {
+            background: rgba(99,102,241,0.1) !important;
+            border: 1px solid rgba(99,102,241,0.2) !important;
+            color: #A5B4FC !important;
+        }
+        div[data-testid="stAlertContentWarning"] {
+            background: rgba(245,158,11,0.1) !important;
+            border: 1px solid rgba(245,158,11,0.2) !important;
+            color: #FBBF24 !important;
+        }
+        div[data-testid="stAlertContentError"] {
+            background: rgba(239,68,68,0.1) !important;
+            border: 1px solid rgba(239,68,68,0.2) !important;
+            color: #F87171 !important;
+        }
+
+        /* ============================================ */
+        /* Spinner */
+        /* ============================================ */
+        div[data-testid="stSpinner"] { color: var(--primary) !important; }
+
+        /* ============================================ */
+        /* 分割线 */
+        /* ============================================ */
+        hr {
+            border-color: var(--card-border) !important;
         }
     </style>
     """, unsafe_allow_html=True)
@@ -539,21 +699,23 @@ def main():
         st.query_params.pop("nav", None)
 
     menu_items = [
-        {"id": "首页", "label": "🏠 数据大厅首页"},
-        {"id": "设备管理", "label": "Ai群控设备管理"},
-        {"id": "实时任务监控", "label": "Ai员工工作动向"},
-        {"id": "搜索与基础控制", "label": "Ai搜索控制大模型"},
-        {"id": "自定义意向关键词", "label": "Ai深度挖掘客户"},
+        {"id": "设备管理", "label": "AI员工群控管理"},
+        {"id": "实时任务监控", "label": "AI员工工作动向"},
+        {"id": "搜索与基础控制", "label": "AI搜索控制大模型"},
+        {"id": "自定义意向关键词", "label": "AI深度挖掘客户"},
         {"id": "AI截流获客策略", "label": "视频处理设置"},
-        {"id": "视频处理设置", "label": "Ai员工工作调整台"},
-        {"id": "自定义执行功能选择", "label": "Ai功能自主选项"},
-        {"id": "作者私信策略", "label": "Ai员工话术私信调整"},
-        {"id": "流程控制", "label": "Ai一键控制开关"},
+        {"id": "视频处理设置", "label": "AI员工工作调整台"},
+        {"id": "自定义执行功能选择", "label": "AI功能自主选项"},
+        {"id": "作者私信策略", "label": "AI员工话术私信调整"},
+        {"id": "流程控制", "label": "AI一键控制开关"},
         {"id": "获客数据看板", "label": "AI获客面板员工走向"},
     ]
 
     with st.sidebar:
-        st.markdown('<a href="?nav=home" style="text-decoration:none; display:block; cursor:pointer;"><p class="sidebar-title">AI运营员工群控台</p></a>', unsafe_allow_html=True)
+        st.markdown('<div class="sb-title-marker"></div>', unsafe_allow_html=True)
+        if st.button("AI运营员工群控台", key="sb_home_title", use_container_width=True):
+            st.session_state.current_page = "首页"
+            st.rerun()
 
         st.markdown(f"""
         <div class="sidebar-status">
