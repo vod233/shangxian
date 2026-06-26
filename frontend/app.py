@@ -531,9 +531,15 @@ def main():
     """, unsafe_allow_html=True)
 
     if "current_page" not in st.session_state:
-        st.session_state.current_page = "设备管理"
+        st.session_state.current_page = "首页"
+
+    if "nav" in st.query_params:
+        if st.query_params["nav"] == "home":
+            st.session_state.current_page = "首页"
+        st.query_params.pop("nav", None)
 
     menu_items = [
+        {"id": "首页", "label": "🏠 数据大厅首页"},
         {"id": "设备管理", "label": "Ai群控设备管理"},
         {"id": "实时任务监控", "label": "Ai员工工作动向"},
         {"id": "搜索与基础控制", "label": "Ai搜索控制大模型"},
@@ -547,7 +553,7 @@ def main():
     ]
 
     with st.sidebar:
-        st.markdown('<p class="sidebar-title">AI运营员工群控台</p>', unsafe_allow_html=True)
+        st.markdown('<a href="?nav=home" style="text-decoration:none; display:block; cursor:pointer;"><p class="sidebar-title">AI运营员工群控台</p></a>', unsafe_allow_html=True)
 
         st.markdown(f"""
         <div class="sidebar-status">
