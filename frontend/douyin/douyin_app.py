@@ -558,7 +558,7 @@ def render_ai_strategy():
 
 
 def render_video_settings():
-    render_page_header("视频处理设置", "控制视频处理数量与页面停留时长。")
+    render_page_header("员工操作速度与数量调节", "控制AI员工处理视频数量与页面停留时长。")
 
     fetch_config()
     config = st.session_state.config_data
@@ -655,7 +655,7 @@ def render_video_settings():
 
 
 def render_execution_functions():
-    render_page_header("自定义执行功能选择", "任务执行时，将严格按照下方从上到下的顺序执行已勾选功能。")
+    render_page_header("AI员工功能自主选择", "AI员工执行任务时，将严格按照下方从上到下的顺序执行已勾选功能。")
 
     fetch_config()
     config = st.session_state.config_data
@@ -676,7 +676,7 @@ def render_execution_functions():
         )
 
         enable_video_comment = st.checkbox(
-            "AI 生成视频评论，发布视频评论",
+            "AI生成评论，发布评论",
             value=bool(config.get("enable_video_comment", True))
         )
 
@@ -710,7 +710,7 @@ def render_execution_functions():
 
 
 def render_private_message():
-    render_page_header("作者私信策略", "设置作者私信话术与作者筛选阈值。")
+    render_page_header("AI员工私信话术调整", "设置作者私信话术《话术要合违规》。")
 
     fetch_config()
     config = st.session_state.config_data
@@ -800,7 +800,7 @@ def render_private_message():
 
 
 def render_process_control():
-    render_page_header("🚀 流程控制", "确保配置保存完毕且已选中设备后，可在此开始、暂停、继续或结束任务。")
+    render_page_header("🚀 流程控制", "确保配置保存完毕且已选中AI员工后，可在此开始、暂停、继续或结束任务。")
 
     st.markdown("""
     <div class="card">

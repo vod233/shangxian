@@ -634,10 +634,18 @@ def api_start_tasks(req: TaskStartRequest):
 
     try:
         license_info = _verify_platform_license(req.platform, device_id=req.devices[0] if req.devices else "")
+        balance = license_info.get("balance_credits", 0)
+        # F1: 启动任务前校验余额，避免余额为 0 的用户启动后跑到 AI 环节才失败
+        try:
+            balance_val = float(balance)
+        except (TypeError, ValueError):
+            balance_val = 0.0
+        if balance_val <= 0:
+            return {"success": False, "message": "授权码积分不足，请充值后启动任务"}
         logging.info(
             "授权码验证通过，客户: %s，剩余积分: %s",
             license_info.get("customer_name", ""),
-            license_info.get("balance_credits", ""),
+            balance,
         )
     except HTTPException as exc:
         return {"success": False, "message": f"授权校验失败：{exc.detail}"}

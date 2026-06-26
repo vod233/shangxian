@@ -14,6 +14,44 @@ from douyin.douyin_app import render_douyin_page
 st.set_page_config(page_title="抖音自动化群控系统", page_icon="🎵", layout="wide")
 
 API_BASE_URL = "http://127.0.0.1:8000/api"
+CREDIT_API_BASE = "https://lcjx.yun/social-ai-credit-api"
+
+
+def _load_license_key() -> str:
+    """从 dy/config/api_settings.yaml 读取授权码"""
+    try:
+        import yaml
+        cfg_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "dy", "config", "api_settings.yaml")
+        with open(cfg_path, "r", encoding="utf-8") as f:
+            cfg = yaml.safe_load(f) or {}
+        return (cfg.get("ai_reply", {}).get("license", {}).get("key", "") or "").strip()
+    except Exception:
+        return ""
+
+
+def get_credits_balance() -> float:
+    """实时查询当前授权码的积分余额，复用真实 machine_id 避免占用额外绑定名额"""
+    key = _load_license_key()
+    if not key:
+        return 0.0
+    try:
+        # 复用 social_license 的真实 machine_id，避免用假 ID 占用绑定名额
+        import sys
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        from social_license import get_machine_id
+        machine_id = get_machine_id()
+        resp = requests.post(
+            f"{CREDIT_API_BASE}/auth/verify",
+            json={"machine_id": machine_id, "device_id": ""},
+            headers={"Authorization": f"Bearer {key}"},
+            timeout=8,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            return float(data.get("balance_credits", 0))
+    except Exception:
+        pass
+    return 0.0
 
 
 def get_device_status():
@@ -39,6 +77,126 @@ def get_license_status():
     except:
         pass
     return {"ai_enabled": False, "license_valid": False}
+
+
+def _render_recharge_dialog():
+    """充值弹窗：套餐选择 + 创建订单 + 跳转支付 + 轮询状态"""
+    license_key = _load_license_key()
+    if not license_key:
+        st.error("未检测到授权码，请先在配置中填写")
+        if st.button("关闭", key="rc_close_nokey"):
+            st.session_state.recharge_open = False
+            st.rerun()
+        return
+
+    with st.container(border=True):
+        st.markdown("#### 充值积分")
+        st.caption(f"授权码：{license_key[:7]}...{license_key[-4:]}")
+
+        # 拉取套餐
+        try:
+            plans_resp = requests.get(f"{CREDIT_API_BASE}/recharge/plans", timeout=8)
+            plans = plans_resp.json().get("plans", []) if plans_resp.status_code == 200 else []
+        except Exception:
+            plans = []
+        if not plans:
+            st.warning("无法获取套餐列表，请检查网络")
+            plans = [
+                {"id": "starter", "name": "基础包 100 积分", "money": "10.00", "credits": 100},
+                {"id": "standard", "name": "标准包 300 积分", "money": "30.00", "credits": 300},
+                {"id": "pro", "name": "进阶包 1000 积分", "money": "100.00", "credits": 1000},
+            ]
+
+        plan_options = {f"{p['name']} - ¥{p['money']}": p for p in plans}
+        selected_label = st.radio("选择套餐", list(plan_options.keys()), key="rc_plan_select", horizontal=False)
+        selected_plan = plan_options[selected_label]
+
+        col1, col2 = st.columns([1, 1])
+        with col1:
+            if st.button("立即充值", key="rc_pay_btn", use_container_width=True, type="primary"):
+                try:
+                    resp = requests.post(
+                        f"{CREDIT_API_BASE}/recharge/create",
+                        json={"plan_id": selected_plan["id"]},
+                        headers={"Authorization": f"Bearer {license_key}"},
+                        timeout=15,
+                    )
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        st.session_state.rc_pay_url = data.get("pay_url", "")
+                        st.session_state.rc_order_no = data.get("out_trade_no", "")
+                        st.rerun()
+                    else:
+                        try:
+                            msg = resp.json().get("detail", resp.text)
+                        except Exception:
+                            msg = resp.text
+                        st.error(f"创建订单失败：{msg}")
+                except Exception as exc:
+                    st.error(f"请求失败：{exc}")
+        with col2:
+            if st.button("关闭", key="rc_close_btn", use_container_width=True):
+                st.session_state.recharge_open = False
+                st.session_state.pop("rc_pay_url", None)
+                st.session_state.pop("rc_order_no", None)
+                st.rerun()
+
+        # 显示支付链接
+        pay_url = st.session_state.get("rc_pay_url")
+        order_no = st.session_state.get("rc_order_no")
+        if pay_url:
+            st.markdown("---")
+            st.success("订单已创建，请点击下方按钮在新窗口完成支付")
+            st.markdown(f"**订单号**：`{order_no}`")
+            st.markdown(f'<a href="{pay_url}" target="_blank" style="display:inline-block;padding:8px 16px;background:#6366F1;color:#fff;border-radius:6px;text-decoration:none;font-weight:600;">前往支付宝支付</a>', unsafe_allow_html=True)
+            col_a, col_b = st.columns([1, 1])
+            with col_a:
+                if st.button("我已支付，刷新余额", key="rc_refresh_btn", use_container_width=True):
+                    st.rerun()
+            with col_b:
+                # 轮询订单状态
+                if order_no:
+                    try:
+                        sresp = requests.get(
+                            f"{CREDIT_API_BASE}/recharge/status",
+                            params={"out_trade_no": order_no},
+                            headers={"Authorization": f"Bearer {license_key}"},
+                            timeout=8,
+                        )
+                        if sresp.status_code == 200:
+                            sdata = sresp.json()
+                            if sdata.get("status") == "paid":
+                                st.success(f"支付成功！积分 +{sdata.get('credits', 0)}")
+                            else:
+                                st.info(f"订单状态：{sdata.get('status', 'pending')}")
+                    except Exception:
+                        pass
+
+        # 充值记录
+        st.markdown("---")
+        st.markdown("**最近充值记录**")
+        try:
+            oresp = requests.get(
+                f"{CREDIT_API_BASE}/recharge/orders",
+                headers={"Authorization": f"Bearer {license_key}"},
+                timeout=8,
+            )
+            if oresp.status_code == 200:
+                orders = oresp.json().get("orders", [])
+                if orders:
+                    for o in orders[:5]:
+                        status_color = "#10B981" if o["status"] == "paid" else "#F59E0B"
+                        st.markdown(
+                            f'<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #21262D;font-size:12px;">'
+                            f'<span>{o["plan_name"]}</span>'
+                            f'<span style="color:{status_color};">{"已支付" if o["status"]=="paid" else "待支付"}</span>'
+                            f'<span>¥{o["money"]} / +{o["credits"]}积分</span>'
+                            f'</div>', unsafe_allow_html=True
+                        )
+                else:
+                    st.caption("暂无充值记录")
+        except Exception:
+            st.caption("无法加载充值记录")
 
 
 def main():
@@ -687,6 +845,117 @@ def main():
         hr {
             border-color: var(--card-border) !important;
         }
+
+        /* ============================================ */
+        /* 右上角工具栏 */
+        /* ============================================ */
+        .top-toolbar {
+            position: fixed;
+            top: 14px;
+            right: 20px;
+            z-index: 9999;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: rgba(22, 27, 40, 0.85);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid var(--card-border);
+            border-radius: 10px;
+            padding: 6px 8px 6px 14px;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.35);
+        }
+
+        .toolbar-credit {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 1px;
+            padding-right: 4px;
+        }
+
+        .toolbar-credit-label {
+            font-size: 9px;
+            color: var(--text-muted);
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+        }
+
+        .toolbar-credit-value {
+            font-size: 15px;
+            font-weight: 700;
+            color: var(--primary);
+            font-variant-numeric: tabular-nums;
+            letter-spacing: -0.01em;
+            line-height: 1.2;
+        }
+
+        .toolbar-divider {
+            width: 1px;
+            height: 28px;
+            background: var(--card-border);
+            margin: 0 2px;
+        }
+
+        .toolbar-recharge-btn {
+            background: var(--primary) !important;
+            color: #FFFFFF !important;
+            border: none !important;
+            border-radius: 6px !important;
+            padding: 6px 12px !important;
+            font-size: 12px !important;
+            font-weight: 600 !important;
+            cursor: pointer !important;
+            transition: all 0.12s ease !important;
+            height: auto !important;
+            min-height: unset !important;
+            line-height: 1.4 !important;
+        }
+
+        .toolbar-recharge-btn:hover {
+            background: var(--primary-hover) !important;
+            transform: translateY(-0.5px) !important;
+            box-shadow: 0 2px 8px rgba(99,102,241,0.4) !important;
+        }
+
+        .toolbar-recharge-btn:active {
+            background: var(--primary-active) !important;
+            transform: translateY(0) !important;
+        }
+
+        .toolbar-icon-btn {
+            background: transparent !important;
+            border: 1px solid transparent !important;
+            border-radius: 6px !important;
+            width: 32px !important;
+            height: 32px !important;
+            min-width: unset !important;
+            min-height: unset !important;
+            padding: 0 !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            cursor: pointer !important;
+            transition: all 0.12s ease !important;
+            color: var(--text-secondary) !important;
+        }
+
+        .toolbar-icon-btn:hover {
+            background: rgba(99,102,241,0.1) !important;
+            border-color: rgba(99,102,241,0.25) !important;
+            color: var(--primary) !important;
+        }
+
+        .toolbar-icon-btn:active {
+            background: rgba(99,102,241,0.18) !important;
+        }
+
+        .toolbar-icon-btn svg {
+            width: 16px;
+            height: 16px;
+            stroke-width: 2;
+        }
     </style>
     """, unsafe_allow_html=True)
 
@@ -703,8 +972,8 @@ def main():
         {"id": "实时任务监控", "label": "AI员工工作动向"},
         {"id": "搜索与基础控制", "label": "AI搜索控制大模型"},
         {"id": "自定义意向关键词", "label": "AI深度挖掘客户"},
-        {"id": "AI截流获客策略", "label": "视频处理设置"},
-        {"id": "视频处理设置", "label": "AI员工工作调整台"},
+        {"id": "AI截流获客策略", "label": "AI员工工作调整台"},
+        {"id": "视频处理设置", "label": "视频处理设置"},
         {"id": "自定义执行功能选择", "label": "AI功能自主选项"},
         {"id": "作者私信策略", "label": "AI员工话术私信调整"},
         {"id": "流程控制", "label": "AI一键控制开关"},
@@ -740,6 +1009,35 @@ def main():
             if st.button(item["label"], key=f"menu_{item['id']}", use_container_width=True):
                 st.session_state.current_page = item["id"]
                 st.rerun()
+
+    # 实时查询积分余额
+    balance = get_credits_balance()
+    balance_str = f"{balance:,.2f}" if balance >= 100 else f"{balance:.3f}"
+
+    st.markdown(f"""
+    <div class="top-toolbar">
+        <div class="toolbar-credit">
+            <span class="toolbar-credit-label">我的积分</span>
+            <span class="toolbar-credit-value">{balance_str}</span>
+        </div>
+        <div class="toolbar-divider"></div>
+        <button class="toolbar-recharge-btn" id="recharge-trigger" onclick="return false;">充值</button>
+        <button class="toolbar-icon-btn" onclick="return false;" title="设置">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path>
+                <circle cx="12" cy="12" r="3"></circle>
+            </svg>
+        </button>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # 充值弹窗（用 st.dialog 风格的列布局实现）
+    if st.button("充值", key="recharge_open_btn", help="点击打开充值面板"):
+        st.session_state.recharge_open = True
+        st.rerun()
+
+    if st.session_state.get("recharge_open"):
+        _render_recharge_dialog()
 
     render_douyin_page(st.session_state.current_page)
 
