@@ -16,7 +16,7 @@ st.set_page_config(page_title="抖音自动化群控系统", page_icon="🎵", l
 
 
 def main():
-    st.sidebar.title("� 抖音群控")
+    st.sidebar.title("🎵 抖音群控")
     page = st.sidebar.selectbox("功能菜单", ["🎵 抖音控制台"])
     if page == "🎵 抖音控制台":
         render_douyin_page()

@@ -7,7 +7,7 @@ class AppConfig(BaseModel):
     sort_by: str = "latest"
     max_videos_per_keyword: int = 5
     max_daily_videos: int = 100
-    # 小红书专属
+    # AI 回复与授权配置
     ai_enabled: bool = True
     ai_base_url: str = "https://lcjx.yun/social-ai-credit-api"
     ai_api_key: str = ""
@@ -48,7 +48,7 @@ class DevicePairRequest(BaseModel):
 class TaskStartRequest(BaseModel):
     """启动任务时的请求参数"""
     devices: List[str]  # 用户勾选的要执行任务的设备序列号列表
-    platform: str = "xhs"  # 目标平台: "xhs" 或 "douyin"
+    platform: str = "douyin"  # 目标平台
 
 class LicenseVerifyRequest(BaseModel):
     """授权码验证请求"""

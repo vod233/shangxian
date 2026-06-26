@@ -568,8 +568,8 @@ def api_save_license(req: LicenseVerifyRequest, platform: str = "douyin"):
 
 
 # ----------------- 接口: 任务控制 -----------------
-def _get_config_path_for_platform(platform: str) -> str:
-    """根据平台返回任务流所需的配置文件路径"""
+def _get_config_path() -> str:
+    """返回抖音任务流所需的配置文件路径"""
     return DY_USER_CONFIG_PATH
 
 
@@ -590,7 +590,7 @@ def run_task_on_device(serial: str, platform: str = "douyin", startup_delay: flo
         return
     logging.info(f"==> API: 开始初始化设备 {serial} 的{platform}平台任务")
 
-    config_path = _get_config_path_for_platform(platform)
+    config_path = _get_config_path()
     try:
         task_flow = TikTokTaskFlow(serial=serial, config_path=config_path)
 
