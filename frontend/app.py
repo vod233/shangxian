@@ -373,10 +373,10 @@ def main():
         /* 侧边栏标题 */
         /* ============================================ */
         .sidebar-title {
-            font-size: 15px;
+            font-size: 18px;
             font-weight: 700;
             color: #FFFFFF !important;
-            padding: 16px 8px 4px 8px;
+            padding: 20px 8px 8px 8px;
             margin-bottom: 0;
             letter-spacing: -0.01em;
         }
@@ -534,21 +534,20 @@ def main():
         st.session_state.current_page = "设备管理"
 
     menu_items = [
-        {"id": "设备管理", "label": "设备管理"},
-        {"id": "实时任务监控", "label": "实时任务监控"},
-        {"id": "搜索与基础控制", "label": "搜索与基础控制"},
-        {"id": "自定义意向关键词", "label": "自定义意向关键词"},
-        {"id": "AI截流获客策略", "label": "AI 截流获客策略"},
-        {"id": "视频处理设置", "label": "视频处理设置"},
-        {"id": "自定义执行功能选择", "label": "自定义执行功能选择"},
-        {"id": "作者私信策略", "label": "作者私信策略"},
-        {"id": "流程控制", "label": "流程控制"},
-        {"id": "获客数据看板", "label": "获客数据看板"},
+        {"id": "设备管理", "label": "Ai群控设备管理"},
+        {"id": "实时任务监控", "label": "Ai员工工作动向"},
+        {"id": "搜索与基础控制", "label": "Ai搜索控制大模型"},
+        {"id": "自定义意向关键词", "label": "Ai深度挖掘客户"},
+        {"id": "AI截流获客策略", "label": "视频处理设置"},
+        {"id": "视频处理设置", "label": "Ai员工工作调整台"},
+        {"id": "自定义执行功能选择", "label": "Ai功能自主选项"},
+        {"id": "作者私信策略", "label": "Ai员工话术私信调整"},
+        {"id": "流程控制", "label": "Ai一键控制开关"},
+        {"id": "获客数据看板", "label": "AI获客面板员工走向"},
     ]
 
     with st.sidebar:
-        st.markdown('<p class="sidebar-title">🎵 抖音群控</p>', unsafe_allow_html=True)
-        st.markdown('<p class="sidebar-subtitle">AI 自动化控制台</p>', unsafe_allow_html=True)
+        st.markdown('<p class="sidebar-title">AI运营员工群控台</p>', unsafe_allow_html=True)
 
         st.markdown(f"""
         <div class="sidebar-status">
