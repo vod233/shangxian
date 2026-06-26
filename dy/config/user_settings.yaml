@@ -1,6 +1,6 @@
 search:
   keywords:
-  - 桌子
+  - 凳子
   sort_by: most_liked
 crawler:
   max_daily_videos: 100
@@ -15,7 +15,7 @@ interaction:
   max_comment_swipes: 2
   max_ai_comment_reviews: 20
   intent_keywords: []
-  enable_like: false
+  enable_like: true
   enable_author_follow: false
   enable_video_comment: false
   enable_comment_lead: true
