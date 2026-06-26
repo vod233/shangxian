@@ -439,10 +439,15 @@ def api_connect_device(req: DeviceConnectRequest):
         return {"success": False, "message": "IP地址和端口不能为空"}
 
     logging.info(f"尝试连接设备: {ip_port}")
-    if run_cmd([ADB_BIN, "connect", ip_port]):
-        return {"success": True, "message": f"成功发送连接命令至 {ip_port}"}
-    else:
+    if not run_cmd([ADB_BIN, "connect", ip_port]):
         return {"success": False, "message": f"连接 {ip_port} 失败，请检查手机是否开启无线调试或IP端口是否正确"}
+
+    # adb connect 即使对不可达地址也会返回 0，需要再次确认设备是否真实出现在设备列表中
+    connected_devices = get_connected_devices()
+    if ip_port in connected_devices:
+        return {"success": True, "message": f"成功连接至设备 {ip_port}"}
+    logging.warning(f"adb connect 命令成功但设备列表中未出现 {ip_port}，当前设备: {connected_devices}")
+    return {"success": False, "message": f"连接 {ip_port} 失败，设备未真实上线，请检查手机是否开启无线调试或IP端口是否正确"}
 
 
 @app.post("/api/devices/disconnect", summary="断开设备连接")

@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from typing import List
 
 class AppConfig(BaseModel):
@@ -25,6 +25,19 @@ class AppConfig(BaseModel):
     max_comment_swipes: int = 2
     max_ai_comment_reviews: int = 20
     intent_keywords: List[str] = []
+
+    @field_validator("intent_keywords", mode="before")
+    @classmethod
+    def _coerce_intent_keywords(cls, value):
+        """前端其他配置页可能把 GET /config 返回的逗号分隔字符串原样回传，
+        这里统一转成 list，避免 Pydantic 校验报 422。"""
+        if value is None or value == "":
+            return []
+        if isinstance(value, str):
+            return [k.strip() for k in value.split(",") if k.strip()]
+        if isinstance(value, (list, tuple)):
+            return [str(k).strip() for k in value if str(k).strip()]
+        return [str(value)]
     enable_like: bool = True
     enable_author_follow: bool = True
     enable_video_comment: bool = True

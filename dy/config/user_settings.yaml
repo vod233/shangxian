@@ -15,9 +15,9 @@ interaction:
   max_comment_swipes: 2
   max_ai_comment_reviews: 20
   intent_keywords: []
-  enable_like: true
+  enable_like: false
   enable_author_follow: false
-  enable_video_comment: false
+  enable_video_comment: true
   enable_comment_lead: true
   min_followers_threshold: 0.01
   enable_private_message: true
