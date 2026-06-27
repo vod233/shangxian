@@ -5,6 +5,7 @@ import logging
 import concurrent.futures
 import threading
 import time
+from datetime import datetime
 from functools import partial
 
 from dotenv import load_dotenv
@@ -320,6 +321,7 @@ def _load_douyin_config_for_frontend():
         "has_license_key": bool(license_key),
         "license_server_url": license_data.get("server_url", DEFAULT_LICENSE_SERVER_URL),
         "night_mode_enabled": data.get("anti_detection", {}).get("night_mode", {}).get("enabled", True),
+        "config_version": data.get("config_version", ""),
     }
 
 
@@ -372,6 +374,8 @@ def _save_douyin_config(config: AppConfig):
         "end_hour": prev_night.get("end_hour", 7),
     }
     user_yaml_data["anti_detection"] = existing_anti
+    # 更新乐观锁版本号（每次保存生成新版本）
+    user_yaml_data["config_version"] = datetime.now().strftime("%Y%m%d%H%M%S%f")
     api_yaml_data = {
         "ai_reply": {
             "enabled": config.ai_enabled,
@@ -533,6 +537,7 @@ def api_save_config(config: AppConfig, platform: str = "douyin"):
     """
     保存指定平台的运行配置
     - platform: "douyin" (抖音)，默认为 "douyin"
+    - 支持乐观锁：前端回传 _config_version，后端比对不一致返回 409
     """
     try:
         if (config.license_key or "").strip():
@@ -542,6 +547,17 @@ def api_save_config(config: AppConfig, platform: str = "douyin"):
             )
 
         old_data = _load_yaml_file(DY_USER_CONFIG_PATH)
+
+        # 乐观锁校验：前端带版本号且与当前不一致时拒绝写入
+        client_version = (config.config_version or "").strip()
+        server_version = str(old_data.get("config_version", "")).strip() if isinstance(old_data, dict) else ""
+        if client_version and server_version and client_version != server_version:
+            return {
+                "success": False,
+                "code": 409,
+                "message": "配置已被其他会话修改，请刷新后重试",
+            }
+
         previous_max_daily = old_data.get("crawler", {}).get("max_daily_videos") if isinstance(old_data.get("crawler"), dict) else None
         _save_douyin_config(config)
 

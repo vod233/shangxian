@@ -116,15 +116,15 @@ class HumanGesture:
     @classmethod
     def human_swipe_with_curve(cls, device, sx, sy, ex, ey, duration=None):
         """
-        执行稳定滑动。
+        执行贝塞尔曲线滑动（恢复真实曲线轨迹）。
 
-        抖音视频页对连续触摸很敏感。此前使用 swipe_points 拼接贝塞尔曲线，
-        在真机上容易被识别为长按，从而打开“不感兴趣/倍速/清屏播放”菜单。
-        这里保留入口名称，实际使用一次性 swipe，避免误触发视频长按菜单。
+        此前为避免误触长按菜单退化为普通 swipe，导致曲线轨迹未生效。
+        现改用 swipe_points，通过控制点间时长 < 80ms 避免长按判定，
+        并在起止点附近加入随机抖动。
         """
         if duration is None:
             distance = math.hypot(ex - sx, ey - sy)
-            duration = random.uniform(0.10, 0.18) if distance > 500 else random.uniform(0.06, 0.12)
+            duration = random.uniform(0.30, 0.55) if distance > 500 else random.uniform(0.20, 0.40)
 
         jitter = random.randint(3, 12)
         sx += random.randint(-jitter, jitter)
@@ -132,7 +132,15 @@ class HumanGesture:
         ex += random.randint(-jitter, jitter)
         ey += random.randint(-jitter, jitter)
 
-        device.swipe(sx, sy, ex, ey, duration=duration)
+        # 生成贝塞尔曲线轨迹点
+        points = cls.generate_swipe_path(sx, sy, ex, ey)
+        # 每点间隔控制在 20~40ms，总时长 = 点数 × 间隔，远低于长按阈值(500ms 按住)
+        step_ms = max(20, min(40, int(duration * 1000 / max(1, len(points)))))
+        try:
+            device.swipe_points(points, duration=step_ms / 1000.0 * len(points))
+        except Exception:
+            # 兜底：swipe_points 不可用时退回普通 swipe
+            device.swipe(sx, sy, ex, ey, duration=duration)
 
     @classmethod
     def fast_tap(cls, device, x, y, hold=0.045):
@@ -269,6 +277,7 @@ class DailyLimitManager:
     - 防止单账号单日互动次数过高
     - 支持自定义每种互动的日上限
     - 超限自动停止对应互动
+    - 使用 per-instance 内存计数器，避免多设备共享全局 db 统计导致限额合并
     """
 
     DEFAULT_LIMITS = {
@@ -279,18 +288,35 @@ class DailyLimitManager:
         'daily_video_limit': 100,      # 每日视频上限
     }
 
+    # action_type -> 内存计数 key 的映射
+    _ACTION_TO_COUNT_KEY = {
+        'like': 'likes',
+        'comment': 'comments',
+        'follow': 'follows',
+        'private_message': 'private_messages',
+        'video': 'videos',
+    }
+
     def __init__(self, config=None, db_manager=None):
         self.config = config or {}
         self.db = db_manager
         anti_cfg = self.config.get('anti_detection', {})
         limits_cfg = anti_cfg.get('daily_limits', {})
         self.limits = {**self.DEFAULT_LIMITS, **limits_cfg}
+        # 本实例（即本设备）今日已执行计数
+        self._counts = {
+            'likes': 0, 'comments': 0, 'follows': 0, 'private_messages': 0, 'videos': 0,
+        }
 
     def _get_current_stats(self):
-        """获取今日互动统计"""
-        if self.db:
-            return self.db.get_daily_stats()
-        return {'videos': 0, 'likes': 0, 'comments': 0, 'follows': 0, 'private_messages': 0}
+        """获取今日互动统计：优先用本实例内存计数，避免多设备合并"""
+        return dict(self._counts)
+
+    def record_action(self, action_type):
+        """记录一次已执行的互动，供限额统计使用"""
+        key = self._ACTION_TO_COUNT_KEY.get(action_type)
+        if key:
+            self._counts[key] = self._counts.get(key, 0) + 1
 
     def can_do(self, action_type):
         """检查是否还能执行某类互动"""
@@ -317,7 +343,6 @@ class DailyLimitManager:
 
     def check_all_limits(self):
         """检查是否所有互动都已超限（应该休息了）"""
-        stats = self._get_current_stats()
         all_exceeded = True
         for action_type in ['like', 'comment', 'follow', 'private_message']:
             if self.can_do(action_type):
@@ -372,7 +397,8 @@ class NightModeController:
                     check_callback()
                 except InterruptedError:
                     return
-            time.sleep(30)
+            # 随机化轮询间隔，避免固定 30s 节奏
+            time.sleep(random.uniform(25, 40))
             slept += 30
 
 
@@ -435,6 +461,50 @@ class DeviceFingerprintGuard:
             return {}
 
 
+class NetworkStatusChecker:
+    """
+    4G 网络状态感知
+    - 检测网络类型（4G/WiFi/无）
+    - 检测信号强度
+    - 用于 4G 流量卡场景下避免弱网下机械操作
+    """
+
+    @classmethod
+    def check(cls, device):
+        """返回 {'type': '4G'/'WIFI'/'NONE', 'level': 0-4, 'usable': bool}"""
+        result = {'type': 'UNKNOWN', 'level': 0, 'usable': True}
+        try:
+            telephony_text = _shell_text(device.shell(['dumpsys', 'telephony.registry'])).lower()
+            # 信号强度等级
+            import re
+            m = re.search(r'signalstrength.*?=(\d+)', telephony_text)
+            if m:
+                level = int(m.group(1))
+                # dBm 值越接近 0 越好，-50 ~ -120
+                if level > -70:
+                    result['level'] = 4
+                elif level > -85:
+                    result['level'] = 3
+                elif level > -100:
+                    result['level'] = 2
+                elif level > -110:
+                    result['level'] = 1
+                else:
+                    result['level'] = 0
+            # 网络类型
+            if 'lte' in telephony_text or '4g' in telephony_text:
+                result['type'] = '4G'
+            elif 'nr' in telephony_text or '5g' in telephony_text:
+                result['type'] = '5G'
+
+            # 信号过弱视为不可用
+            if result['level'] <= 0:
+                result['usable'] = False
+        except Exception as e:
+            logger.debug(f"网络状态检测失败: {e}")
+        return result
+
+
 class BehaviorRandomizer:
     """
     行为模式随机化
@@ -486,17 +556,22 @@ class BehaviorRandomizer:
     def maybe_browse_home_feed(device, probability=0.03):
         """
         小概率切到首页推荐流浏览（模拟真人非任务行为）
+        增加状态确认：返回后验证是否到达首页，避免误点
         """
         if random.random() < probability:
             logger.info("模拟行为: 切到首页推荐流浏览")
             try:
                 device.press("back")
                 HumanSleep.sleep('normal')
-                # 点击首页 tab
+                # 点击首页 tab，并确认点击成功
                 home_tab = device.xpath('//*[@text="首页"]')
                 if home_tab.exists(timeout=2):
                     home_tab.click()
-                    HumanSleep.sleep('video_stay')
+                    HumanSleep.sleep('page_load')
+                    # 二次确认：首页 tab 是否处于选中态
+                    if not device.xpath('//*[@text="首页" and @selected="true"]').exists(timeout=1):
+                        logger.debug("首页 tab 未选中，放弃推荐流浏览")
+                        return
                     # 随机刷 2-4 个推荐视频
                     for _ in range(random.randint(2, 4)):
                         w, h = device.window_size()
@@ -527,19 +602,10 @@ class AntiDetectionEngine:
     """
     防风控引擎总调度器
     整合所有防风控组件，提供统一接口
+    每个任务流实例持有独立引擎，避免多设备共享限额/状态
     """
 
-    _instance = None
-    _initialized = False
-
-    def __new__(cls, *args, **kwargs):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-        return cls._instance
-
     def __init__(self, config=None, db_manager=None):
-        if self._initialized and config is None:
-            return
         self.config = config or {}
         self.gesture = HumanGesture()
         self.sleep_mgr = HumanSleep()
@@ -548,7 +614,6 @@ class AntiDetectionEngine:
         self.night_mode = NightModeController(config=self.config)
         self.fingerprint = DeviceFingerprintGuard()
         self.behavior = BehaviorRandomizer()
-        self._initialized = True
         logger.info("🛡️ 防风控引擎已初始化")
 
     def human_swipe(self, device, sx, sy, ex, ey, duration=None):
@@ -579,17 +644,28 @@ class AntiDetectionEngine:
         """限额检查"""
         return self.daily_limit.can_do(action_type)
 
+    def record_action(self, action_type):
+        """记录已执行互动，供限额统计"""
+        self.daily_limit.record_action(action_type)
+
     def check_night_mode(self, check_callback=None):
         """夜间模式检查"""
         if self.night_mode.is_night_time():
             self.night_mode.wait_until_morning(check_callback)
 
     def cleanup_device(self, device):
-        """清理设备痕迹"""
+        """清理设备痕迹，并记录设备指纹"""
         self.fingerprint.cleanup_u2_traces(device)
+        fp = self.fingerprint.get_device_fingerprint_status(device)
+        if fp:
+            logger.info(f"📱 设备指纹: {fp}")
 
     def random_behavior(self, device):
         """随机行为模拟"""
         self.behavior.maybe_rewind(device)
         self.behavior.maybe_fast_scroll(device)
         self.behavior.maybe_pause_and_think()
+
+    def check_network_status(self, device):
+        """检测设备网络状态（4G 场景下感知信号强度与连接类型）"""
+        return NetworkStatusChecker.check(device)

@@ -48,6 +48,8 @@ class AppConfig(BaseModel):
     pm_message_list: List[str] = []
     # 夜间静默时段总开关：开启后 23:00-07:00 启动任务会等待到早晨，关闭后任意时段可直接启动
     night_mode_enabled: bool = True
+    # 配置乐观锁版本号：前端读取时回传，后端比对不一致返回 409
+    config_version: str = ""
 
 class DeviceConnectRequest(BaseModel):
     """连接新设备请求"""

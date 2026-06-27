@@ -656,7 +656,7 @@ def render_video_settings():
 
 
 def render_execution_functions():
-    render_page_header("AI员工功能自主选择", "AI员工执行任务时，将严格按照下方从上到下的顺序执行已勾选功能。")
+    render_page_header("AI员工功能自主选择", "已勾选的功能将在每个视频上执行，点赞固定优先，其余功能顺序随机以模拟真人行为。")
 
     fetch_config()
     config = st.session_state.config_data
@@ -672,8 +672,13 @@ def render_execution_functions():
         )
 
         enable_author_follow = st.checkbox(
-            "进入作者主页，粉丝数判断成功，关注作者，私信作者",
+            "进入作者主页，粉丝数判断成功，关注作者",
             value=bool(config.get("enable_author_follow", True))
+        )
+
+        enable_private_message = st.checkbox(
+            "向作者发送私信（需配合粉丝数阈值）",
+            value=bool(config.get("enable_private_message", True))
         )
 
         enable_video_comment = st.checkbox(
@@ -688,26 +693,48 @@ def render_execution_functions():
 
         st.markdown("</div>", unsafe_allow_html=True)
 
+        # 依赖关系与限额提示
+        st.markdown("""
+        <div style="margin-top:12px; padding:10px 14px; background:rgba(99,102,241,0.08); border-left:3px solid #6366F1; border-radius:6px; font-size:12px; color:#9CA3AF; line-height:1.6;">
+            <div style="font-weight:600; color:#A5B4FC; margin-bottom:4px;">功能依赖与限额说明</div>
+            <div>• <b>私信</b>可独立开启：关闭"关注"仅开"私信"时，将仅进入主页发私信不关注</div>
+            <div>• <b>视频评论</b>与<b>评论区截流</b>共享每日评论限额（默认30条），超限后两者均停止</div>
+            <div>• <b>点赞</b>固定优先执行，其余已启用功能的顺序每视频随机打乱</div>
+            <div>• 私信/关注的粉丝数阈值在"私信话术调整"页配置</div>
+        </div>
+        """, unsafe_allow_html=True)
+
         if st.form_submit_button("💾 保存当前配置", use_container_width=True, type="primary"):
-            payload = {
-                "enable_like": enable_like,
-                "enable_author_follow": enable_author_follow,
-                "enable_video_comment": enable_video_comment,
-                "enable_comment_lead": enable_comment_lead
-            }
-            try:
-                current_config = {}
-                resp = requests.get(f"{API_BASE_URL}/config?platform=douyin")
-                if resp.status_code == 200:
-                    current_config = resp.json().get("config", {})
-                current_config.update(payload)
-                res = requests.post(f"{API_BASE_URL}/config?platform=douyin", json=current_config).json()
-                if res.get("success"):
-                    st.success("配置已成功保存！")
-                else:
-                    st.error(res.get("message"))
-            except Exception as e:
-                st.error(f"保存失败: {e}")
+            # 校验：至少开启一个功能，避免空转浪费 4G 流量
+            if not any([enable_like, enable_author_follow, enable_private_message, enable_video_comment, enable_comment_lead]):
+                st.error("请至少开启一个功能，否则任务将空转无产出")
+            else:
+                payload = {
+                    "enable_like": enable_like,
+                    "enable_author_follow": enable_author_follow,
+                    "enable_private_message": enable_private_message,
+                    "enable_video_comment": enable_video_comment,
+                    "enable_comment_lead": enable_comment_lead
+                }
+                try:
+                    current_config = {}
+                    resp = requests.get(f"{API_BASE_URL}/config?platform=douyin")
+                    if resp.status_code == 200:
+                        current_config = resp.json().get("config", {})
+                    # 携带版本号实现乐观锁
+                    config_version = current_config.pop("config_version", None)
+                    current_config.update(payload)
+                    if config_version is not None:
+                        current_config["config_version"] = config_version
+                    res = requests.post(f"{API_BASE_URL}/config?platform=douyin", json=current_config).json()
+                    if res.get("success"):
+                        st.success("配置已成功保存！")
+                    elif res.get("code") == 409:
+                        st.warning("配置已被其他会话修改，请刷新页面后重试")
+                    else:
+                        st.error(res.get("message"))
+                except Exception as e:
+                    st.error(f"保存失败: {e}")
 
 
 def render_private_message():
@@ -790,10 +817,16 @@ def render_private_message():
                 resp = requests.get(f"{API_BASE_URL}/config?platform=douyin")
                 if resp.status_code == 200:
                     current_config = resp.json().get("config", {})
+                # 携带版本号实现乐观锁
+                config_version = current_config.pop("config_version", None)
                 current_config.update(payload)
+                if config_version is not None:
+                    current_config["config_version"] = config_version
                 res = requests.post(f"{API_BASE_URL}/config?platform=douyin", json=current_config).json()
                 if res.get("success"):
                     st.success("配置已成功保存！")
+                elif res.get("code") == 409:
+                    st.warning("配置已被其他会话修改，请刷新页面后重试")
                 else:
                     st.error(res.get("message"))
             except Exception as e:

@@ -87,7 +87,12 @@ class DoubleClickLikeAction(BaseAction):
         return True
 
 class FollowAuthorAction(BaseAction):
-    """滑动到作者主页并关注，然后返回视频页（支持粉丝数过滤和私信功能）"""
+    """滑动到作者主页并关注，然后返回视频页（支持粉丝数过滤和私信功能）。
+
+    通过 skip_follow 参数支持"只私信不关注"的独立私信场景：
+    - skip_follow=False（默认）：进主页 → 读粉丝数 → 关注 → 私信 → 返回
+    - skip_follow=True：进主页 → 读粉丝数 → 跳过关注 → 私信 → 返回
+    """
 
     _FOLLOWER_PATTERNS = [
         # "1234粉丝" 或 "1.2万粉丝"（标签和数字合并显示）
@@ -101,6 +106,8 @@ class FollowAuthorAction(BaseAction):
     ]
 
     def execute(self):
+        # skip_follow 由 run_action 通过 kwargs 注入为实例属性（与 private_message_allowed 同模式）
+        skip_follow = getattr(self, 'skip_follow', False)
         # 1. 滑动到主页（人性化滑动）
         w, h = self.d.window_size()
         sx = int(w * 0.72) + random.randint(-10, 10)
@@ -118,7 +125,10 @@ class FollowAuthorAction(BaseAction):
         min_followers = self._get_min_followers_threshold()
         should_follow = True
         followed = False
-        if min_followers > 0:
+        if skip_follow:
+            logger.info("本次任务配置为仅私信不关注，跳过关注步骤")
+            should_follow = False
+        elif min_followers > 0:
             if follower_count is None:
                 logger.info(f"作者粉丝数未知，已设置关注阈值({min_followers})，跳过关注")
                 should_follow = False
@@ -137,9 +147,9 @@ class FollowAuthorAction(BaseAction):
             else:
                 logger.info("未找到'关注'按钮，可能已经关注过了")
 
-        # 5. 判断是否发送私信（仅当成功关注且粉丝数大于私信阈值时）
+        # 5. 判断是否发送私信（仅当允许私信且粉丝数大于私信阈值时）
         private_message_sent = False
-        if should_follow:
+        if should_follow or skip_follow:
             private_message_sent = self._try_send_private_message(follower_count)
 
         # 6. 返回视频页。返回失败时由任务流状态机跳过当前视频剩余动作。
