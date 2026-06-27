@@ -39,6 +39,12 @@ class AppConfig(BaseModel):
             return [str(k).strip() for k in value if str(k).strip()]
         return [str(value)]
     enable_like: bool = True
+    # 双模式架构：模式1=私域获客(关注+私信)，模式2=内容互动(评论+截流)
+    enable_mode_customer_acquisition: bool = True
+    enable_mode_content_interaction: bool = True
+    # 概率决策总开关：开启后按概率跳过部分互动(防风控)，关闭后确定性执行(仅限额控制)
+    enable_anti_detection_probability: bool = True
+    # 以下旧字段保留向后兼容，新版由模式开关统一控制
     enable_author_follow: bool = True
     enable_video_comment: bool = True
     enable_comment_lead: bool = True

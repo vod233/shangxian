@@ -656,7 +656,7 @@ def render_video_settings():
 
 
 def render_execution_functions():
-    render_page_header("AI员工功能自主选择", "已勾选的功能将在每个视频上执行，点赞固定优先，其余功能顺序随机以模拟真人行为。")
+    render_page_header("AI员工功能自主选择", "已勾选的模式将在每个视频上执行，点赞固定优先，模式1→模式2 固定顺序，两模式可同时开启。")
 
     fetch_config()
     config = st.session_state.config_data
@@ -666,29 +666,37 @@ def render_execution_functions():
         <div class="card">
         """, unsafe_allow_html=True)
 
+        st.markdown("""
+        <div style="padding:8px 12px; background:rgba(99,102,241,0.08); border-left:3px solid #6366F1; border-radius:6px; margin-bottom:12px; font-size:12px; color:#A5B4FC;">
+            <b>点赞</b>：每视频固定优先执行（受概率/限额控制）
+        </div>
+        """, unsafe_allow_html=True)
+
         enable_like = st.checkbox(
-            "点赞",
-            value=bool(config.get("enable_like", True))
+            "点赞（每视频必做）",
+            value=bool(config.get("enable_like", True)),
+            disabled=True,
+            help="点赞固定开启，受概率决策与每日限额控制"
         )
 
-        enable_author_follow = st.checkbox(
-            "进入作者主页，粉丝数判断成功，关注作者",
-            value=bool(config.get("enable_author_follow", True))
+        enable_mode_customer_acquisition = st.checkbox(
+            "模式1：私域获客（进作者主页→粉丝数判断→关注→私信）",
+            value=bool(config.get("enable_mode_customer_acquisition", True))
         )
 
-        enable_private_message = st.checkbox(
-            "向作者发送私信（需配合粉丝数阈值）",
-            value=bool(config.get("enable_private_message", True))
+        enable_mode_content_interaction = st.checkbox(
+            "模式2：内容互动（AI生成评论→发布→打开评论区→AI识别→评论中回复）",
+            value=bool(config.get("enable_mode_content_interaction", True))
         )
 
-        enable_video_comment = st.checkbox(
-            "AI生成评论，发布评论",
-            value=bool(config.get("enable_video_comment", True))
-        )
+        st.markdown("""
+        <div style="height:1px; background:rgba(255,255,255,0.06); margin:14px 0;"></div>
+        """, unsafe_allow_html=True)
 
-        enable_comment_lead = st.checkbox(
-            "打开评论区，AI 识别自动评论，评论中回复",
-            value=bool(config.get("enable_comment_lead", True))
+        enable_anti_detection_probability = st.checkbox(
+            "启用概率决策（防风控）",
+            value=bool(config.get("enable_anti_detection_probability", True)),
+            help="开启后按概率跳过部分互动以模拟真人行为；关闭后每个视频确定性执行已开启功能（仅受每日限额控制），风控风险较高"
         )
 
         st.markdown("</div>", unsafe_allow_html=True)
@@ -696,25 +704,30 @@ def render_execution_functions():
         # 依赖关系与限额提示
         st.markdown("""
         <div style="margin-top:12px; padding:10px 14px; background:rgba(99,102,241,0.08); border-left:3px solid #6366F1; border-radius:6px; font-size:12px; color:#9CA3AF; line-height:1.6;">
-            <div style="font-weight:600; color:#A5B4FC; margin-bottom:4px;">功能依赖与限额说明</div>
-            <div>• <b>私信</b>可独立开启：关闭"关注"仅开"私信"时，将仅进入主页发私信不关注</div>
-            <div>• <b>视频评论</b>与<b>评论区截流</b>共享每日评论限额（默认30条），超限后两者均停止</div>
-            <div>• <b>点赞</b>固定优先执行，其余已启用功能的顺序每视频随机打乱</div>
-            <div>• 私信/关注的粉丝数阈值在"私信话术调整"页配置</div>
+            <div style="font-weight:600; color:#A5B4FC; margin-bottom:4px;">模式说明与限额</div>
+            <div>• <b>点赞</b>：每视频固定优先执行，受概率决策与每日 80 次限额控制</div>
+            <div>• <b>模式1</b>：进主页→关注→私信，粉丝数阈值在"私信话术调整"页配置</div>
+            <div>• <b>模式2</b>：视频评论 + 评论区截流，两阶段共享每日 50 条评论限额</div>
+            <div>• 两模式可同时开启，执行顺序固定为 <b>点赞 → 模式1 → 模式2</b></div>
+            <div>• <b>概率决策</b>：开启时按 45%/20%/15%/30% 概率跳过互动以模拟真人；关闭后确定性执行，仅限额兜底</div>
         </div>
         """, unsafe_allow_html=True)
 
         if st.form_submit_button("💾 保存当前配置", use_container_width=True, type="primary"):
-            # 校验：至少开启一个功能，避免空转浪费 4G 流量
-            if not any([enable_like, enable_author_follow, enable_private_message, enable_video_comment, enable_comment_lead]):
-                st.error("请至少开启一个功能，否则任务将空转无产出")
+            # 校验：至少开启一个模式，避免空转浪费 4G 流量
+            if not any([enable_mode_customer_acquisition, enable_mode_content_interaction]):
+                st.error("请至少开启一个模式，否则任务将仅点赞无业务产出")
             else:
                 payload = {
-                    "enable_like": enable_like,
-                    "enable_author_follow": enable_author_follow,
-                    "enable_private_message": enable_private_message,
-                    "enable_video_comment": enable_video_comment,
-                    "enable_comment_lead": enable_comment_lead
+                    "enable_like": True,  # 固定开启
+                    "enable_mode_customer_acquisition": enable_mode_customer_acquisition,
+                    "enable_mode_content_interaction": enable_mode_content_interaction,
+                    "enable_anti_detection_probability": enable_anti_detection_probability,
+                    # 同步旧字段，保持向后兼容
+                    "enable_author_follow": enable_mode_customer_acquisition,
+                    "enable_private_message": enable_mode_customer_acquisition,
+                    "enable_video_comment": enable_mode_content_interaction,
+                    "enable_comment_lead": enable_mode_content_interaction,
                 }
                 try:
                     current_config = {}

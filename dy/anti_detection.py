@@ -282,7 +282,7 @@ class DailyLimitManager:
 
     DEFAULT_LIMITS = {
         'daily_like_limit': 80,        # 每日点赞上限
-        'daily_comment_limit': 30,     # 每日评论上限
+        'daily_comment_limit': 50,     # 每日评论上限（视频评论+截流共享）
         'daily_follow_limit': 20,      # 每日关注上限
         'daily_message_limit': 15,     # 每日私信上限
         'daily_video_limit': 100,      # 每日视频上限

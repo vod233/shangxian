@@ -71,7 +71,34 @@ class TikTokTaskFlow:
             return True
 
     def _interaction_enabled(self, key, default=True):
-        return bool(self.config.get('interaction', {}).get(key, default))
+        """读取互动开关，支持新模式字段的向后兼容推断"""
+        interaction = self.config.get('interaction', {})
+        if key in ("enable_mode_customer_acquisition",):
+            # 优先读新字段，缺失时按旧字段推断
+            if "enable_mode_customer_acquisition" in interaction:
+                return bool(interaction["enable_mode_customer_acquisition"])
+            return bool(interaction.get("enable_author_follow", True)) or bool(interaction.get("enable_private_message", True))
+        if key in ("enable_mode_content_interaction",):
+            if "enable_mode_content_interaction" in interaction:
+                return bool(interaction["enable_mode_content_interaction"])
+            return bool(interaction.get("enable_video_comment", True)) or bool(interaction.get("enable_comment_lead", True))
+        return bool(interaction.get(key, default))
+
+    def _probability_enabled(self):
+        """概率决策总开关：开启时返回True（按概率跳过互动），关闭时返回False（确定性执行）"""
+        return bool(self.config.get('interaction', {}).get('enable_anti_detection_probability', True))
+
+    def _should_interact(self, action_type):
+        """统一的概率决策入口
+        - 开关OFF：确定性执行。必做动作(like/follow/comment)返回True(仅限额控制)；
+          long_watch 是概率触发的额外行为，开关OFF时不触发(返回False)。
+        - 开关ON：按原始概率决策。
+        """
+        if not self._probability_enabled():
+            # long_watch 是"15%概率长停留"的随机行为，不是必做动作；
+            # 开关关闭=确定性执行，应统一停留时间，不再随机长停留
+            return False if action_type == 'long_watch' else True
+        return self.anti.should_interact(action_type)
 
     def stop(self):
         """通知任务流结束执行"""
@@ -360,6 +387,87 @@ class TikTokTaskFlow:
             logger.warning(f"功能[{feature_name}]后恢复失败，跳过当前视频剩余功能")
         return recovered
 
+    def _execute_mode_customer_acquisition(self, video_id, video_started_at):
+        """模式1：私域获客。进主页→读粉丝数→关注→私信→返回视频页。
+        返回 True 表示正常完成或主动跳过；False 表示页面异常，应阻断后续模式。"""
+        if self._video_processing_timed_out(video_started_at):
+            return False
+        self._check_stop()
+        # 概率 + 限额（关注与私信共享一次进主页，因此以 follow 概率为准）
+        # 同时检查 follow 与 private_message 限额，避免私信超额
+        if not (self.anti.can_do('follow') and self.anti.can_do('private_message') and self._should_interact('follow')):
+            logger.info("模式1: 限额/概率决策跳过私域获客")
+            return True
+        self._report(current_action="执行模式1：私域获客")
+        stable, follow_result = self._run_feature_safely(
+            "模式1-私域获客",
+            lambda: self.runner.run_action(FollowAuthorAction),
+        )
+        if isinstance(follow_result, dict):
+            if follow_result.get("followed"):
+                self.db.update_interaction(video_id, "follow")
+                self.anti.record_action('follow')
+                self._report(executed_action="关注作者")
+            if follow_result.get("private_message_sent"):
+                self.db.update_interaction(video_id, "private_message")
+                self.anti.record_action('private_message')
+                self._report(executed_action="发送私信")
+        elif follow_result:
+            self.db.update_interaction(video_id, "follow")
+            self.anti.record_action('follow')
+            self._report(executed_action="关注作者")
+        if not stable:
+            logger.warning("模式1执行后页面异常，阻断后续模式")
+            return False
+        self._interruptible_sleep(random.uniform(1.0, 2.5))
+        return True
+
+    def _execute_mode_content_interaction(self, video_id, video_title, video_started_at):
+        """模式2：内容互动。AI视频评论 → 评论区截流。两阶段共享 comment 限额。
+        返回 True 表示正常完成；False 表示页面异常。"""
+        if self._video_processing_timed_out(video_started_at):
+            return False
+        self._check_stop()
+        # 阶段一：AI 视频评论
+        if self.anti.can_do('comment') and self._should_interact('comment'):
+            self._report(current_action="模式2：AI生成视频评论")
+            comment_text = self.reply_agent.generate_reply(
+                title=video_title,
+                keyword=self.current_keyword or ""
+            ) or ""
+            if not comment_text:
+                self.db.save_ai_reply(video_id, note_title=video_title, ai_reply="")
+                logger.info("模式2: 未生成评论，跳过视频评论阶段")
+            else:
+                if self.reply_agent.is_enabled():
+                    logger.info(f"🤖 AI 生成回复: {comment_text}")
+                self.db.save_ai_reply(video_id, note_title=video_title, ai_reply=comment_text)
+                stable, commented = self._run_feature_safely(
+                    "模式2-视频评论",
+                    lambda: self.runner.run_action(PostCommentAction, comment_text),
+                )
+                if commented:
+                    self.db.update_interaction(video_id, "comment")
+                    self.anti.record_action('comment')
+                    self._report(executed_action="发布视频评论")
+                if not stable:
+                    logger.warning("模式2视频评论后页面异常，跳过截流阶段")
+                    return False
+        else:
+            logger.info("模式2: 限额/概率决策跳过视频评论")
+
+        # 阶段二：评论区截流（共享 comment 限额）
+        if self.anti.can_do('comment') and self._should_interact('comment_lead'):
+            self._report(current_action="模式2：评论区AI截流")
+            if not self._run_comment_lead_safely(video_title, self.current_keyword or ""):
+                logger.warning("模式2截流执行异常")
+                return False
+            self.anti.record_action('comment')
+            self._report(executed_action="评论区AI截流")
+        else:
+            logger.info("模式2: 限额/概率决策跳过评论区截流")
+        return True
+
     def start(self):
         """开始执行完整的采集与互动任务"""
         logger.info("=== 任务流开始 ===")
@@ -578,153 +686,42 @@ class TikTokTaskFlow:
                 else:
                     logger.info("🎬 开始对新视频执行互动...")
                     logger.info(f"📝 当前视频标题: {video_title}")
-                    skip_remaining_features = False
 
-                    # B.1 点赞（功能开关 + 概率决策 + 每日限额）
-                    if self._interaction_enabled("enable_like"):
-                        self._check_stop()
-                        if self.anti.can_do('like') and self.anti.should_interact('like'):
-                            self._report(current_action="执行 AI 智能算法加权互动")
-                            stable, liked = self._run_feature_safely(
-                                "点赞",
-                                lambda: self.runner.run_action(DoubleClickLikeAction),
-                            )
-                            if liked:
-                                self.db.update_interaction(video_id, "like")
-                                self.anti.record_action('like')
-                                self._report(executed_action="点赞")
-                            if not stable:
-                                skip_remaining_features = True
-                        else:
-                            logger.info("限额/概率决策: 跳过点赞")
+                    # 1. 点赞（每视频必做，受概率/限额控制，失败不阻断后续模式）
+                    self._check_stop()
+                    if self.anti.can_do('like') and self._should_interact('like'):
+                        self._report(current_action="执行点赞")
+                        like_stable, liked = self._run_feature_safely(
+                            "点赞",
+                            lambda: self.runner.run_action(DoubleClickLikeAction),
+                        )
+                        if liked:
+                            self.db.update_interaction(video_id, "like")
+                            self.anti.record_action('like')
+                            self._report(executed_action="点赞")
+                        if not like_stable:
+                            logger.warning("点赞后页面异常，尝试恢复后继续")
                         self._interruptible_sleep(random.uniform(0.8, 2.0))
                     else:
-                        logger.info("已关闭功能: 点赞，跳过")
+                        logger.info("限额/概率决策: 跳过点赞")
 
-                    # B.2-B.4 互动顺序随机化（点赞固定第一，其余 shuffle）
-                    # 封装为闭包以访问局部变量，实现真正的执行顺序随机
-                    def _do_follow_pm():
-                        nonlocal skip_remaining_features
-                        if self._video_processing_timed_out(video_started_at):
-                            skip_remaining_features = True
-                            return
-                        if skip_remaining_features:
-                            logger.warning("页面恢复失败，跳过关注/私信")
-                            return
-                        enable_follow = self._interaction_enabled("enable_author_follow")
-                        enable_pm = self._interaction_enabled("enable_private_message", False)
-                        if not (enable_follow or enable_pm):
-                            logger.info("已关闭功能: 作者主页/关注/私信，跳过")
-                            return
-                        self._check_stop()
-                        do_follow = enable_follow and self.anti.can_do('follow') and self.anti.should_interact('follow')
-                        private_message_allowed = enable_pm and self.anti.can_do('private_message')
-                        skip_follow = enable_pm and not do_follow
-                        if not (do_follow or skip_follow):
-                            logger.info("限额/概率决策: 跳过关注/私信")
-                            self._interruptible_sleep(random.uniform(1.0, 2.5))
-                            return
-                        self._report(current_action="锁定高潜客户，执行 AI 私域线索破冰")
-                        stable, follow_result = self._run_feature_safely(
-                            "作者主页/关注/私信",
-                            lambda: self.runner.run_action(
-                                FollowAuthorAction,
-                                private_message_allowed=private_message_allowed,
-                                skip_follow=skip_follow,
-                            ),
-                        )
-                        if isinstance(follow_result, dict):
-                            if follow_result.get("followed"):
-                                self.db.update_interaction(video_id, "follow")
-                                self.anti.record_action('follow')
-                                self._report(executed_action="关注作者")
-                            if follow_result.get("private_message_sent"):
-                                self.db.update_interaction(video_id, "private_message")
-                                self.anti.record_action('private_message')
-                                self._report(executed_action="发送私信")
-                        elif follow_result:
-                            self.db.update_interaction(video_id, "follow")
-                            self.anti.record_action('follow')
-                            self._report(executed_action="关注作者")
-                        if not stable:
-                            skip_remaining_features = True
-                        self._interruptible_sleep(random.uniform(1.0, 2.5))
-
-                    def _do_video_comment():
-                        nonlocal skip_remaining_features
-                        if self._video_processing_timed_out(video_started_at):
-                            skip_remaining_features = True
-                            return
-                        if skip_remaining_features:
-                            logger.warning("页面恢复失败，跳过视频评论")
-                            return
-                        if not self._interaction_enabled("enable_video_comment"):
-                            logger.info("已关闭功能: AI 视频评论，跳过")
-                            return
-                        self._check_stop()
-                        if not (self.anti.can_do('comment') and self.anti.should_interact('comment')):
-                            logger.info("限额/概率决策: 跳过评论")
-                            return
-                        self._report(current_action="AI 正在根据垂直行业知识库生成精准评论")
-                        comment_text = self.reply_agent.generate_reply(
-                            title=video_title,
-                            keyword=self.current_keyword or ""
-                        ) or ""
-                        if not comment_text:
-                            self.db.save_ai_reply(video_id, note_title=video_title, ai_reply="")
-                            logger.info("未生成可发布的回复，跳过评论环节。")
-                            return
-                        if self.reply_agent.is_enabled():
-                            logger.info(f"🤖 AI 生成回复: {comment_text}")
-                        self.db.save_ai_reply(video_id, note_title=video_title, ai_reply=comment_text)
-                        stable, commented = self._run_feature_safely(
-                            "AI视频评论",
-                            lambda: self.runner.run_action(PostCommentAction, comment_text),
-                        )
-                        if commented:
-                            self.db.update_interaction(video_id, "comment")
-                            self.anti.record_action('comment')
-                            self._report(executed_action="发布视频评论")
-                        if not stable:
-                            skip_remaining_features = True
-
-                    def _do_comment_lead():
-                        nonlocal skip_remaining_features
-                        if self._video_processing_timed_out(video_started_at):
-                            skip_remaining_features = True
-                            return
-                        if skip_remaining_features:
-                            logger.warning("页面恢复失败，跳过评论区截流")
-                            return
-                        if not self._interaction_enabled("enable_comment_lead"):
-                            logger.info("已关闭功能: 评论区 AI 截流/楼中楼回复，跳过")
-                            return
-                        self._check_stop()
-                        if not (self.anti.can_do('comment') and self.anti.should_interact('comment_lead')):
-                            logger.info("限额/概率决策: 跳过评论区截流")
-                            return
-                        self._report(current_action="正在对评论区意向线索进行精准拦截")
-                        if not self._run_comment_lead_safely(video_title, self.current_keyword or ""):
-                            skip_remaining_features = True
+                    # 2. 模式1：私域获客（固定顺序，不打乱）
+                    if self._interaction_enabled("enable_mode_customer_acquisition"):
+                        ok = self._execute_mode_customer_acquisition(video_id, video_started_at)
+                        if not ok:
+                            logger.warning("模式1异常，跳过模式2")
                         else:
-                            self.anti.record_action('comment')
-                            self._report(executed_action="评论区AI截流")
-
-                    # 收集已启用的中段功能并随机打乱顺序（防时序模式化）
-                    mid_features = []
-                    if self._interaction_enabled("enable_author_follow") or self._interaction_enabled("enable_private_message", False):
-                        mid_features.append(_do_follow_pm)
-                    if self._interaction_enabled("enable_video_comment"):
-                        mid_features.append(_do_video_comment)
-                    if self._interaction_enabled("enable_comment_lead"):
-                        mid_features.append(_do_comment_lead)
-                    # 至少 2 个功能才 shuffle，避免单功能时无意义打乱
-                    if len(mid_features) >= 2:
-                        random.shuffle(mid_features)
-                    for fn in mid_features:
-                        if skip_remaining_features:
-                            break
-                        fn()
+                            # 3. 模式2：内容互动（仅当模式1正常完成）
+                            if self._interaction_enabled("enable_mode_content_interaction"):
+                                ok2 = self._execute_mode_content_interaction(video_id, video_title, video_started_at)
+                                if not ok2:
+                                    logger.warning("模式2执行异常")
+                    else:
+                        # 模式1未开启，直接执行模式2
+                        if self._interaction_enabled("enable_mode_content_interaction"):
+                            ok2 = self._execute_mode_content_interaction(video_id, video_title, video_started_at)
+                            if not ok2:
+                                logger.warning("模式2执行异常")
 
             else:
                 logger.warning("无法提取当前视频信息，跳过互动环节")
@@ -771,7 +768,7 @@ class TikTokTaskFlow:
             stay_time = random.uniform(min_stay, max_stay)
 
             # 15% 概率长停留（模拟看完整个视频）
-            if self.anti.should_interact('long_watch'):
+            if self._should_interact('long_watch'):
                 stay_time += random.uniform(5.0, 15.0)
                 logger.info(f"📺 长停留模式: 预计停留 {stay_time:.1f} 秒")
 

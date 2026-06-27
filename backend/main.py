@@ -303,6 +303,18 @@ def _load_douyin_config_for_frontend():
         "max_ai_comment_reviews": data.get("interaction", {}).get("max_ai_comment_reviews", 20),
         "intent_keywords": ",".join(data.get("interaction", {}).get("intent_keywords", [])),
         "enable_like": data.get("interaction", {}).get("enable_like", True),
+        # 双模式开关：优先读新字段，缺失时按旧字段推断（向后兼容）
+        "enable_mode_customer_acquisition": data.get("interaction", {}).get(
+            "enable_mode_customer_acquisition",
+            data.get("interaction", {}).get("enable_author_follow", True)
+            or data.get("interaction", {}).get("enable_private_message", True),
+        ),
+        "enable_mode_content_interaction": data.get("interaction", {}).get(
+            "enable_mode_content_interaction",
+            data.get("interaction", {}).get("enable_video_comment", True)
+            or data.get("interaction", {}).get("enable_comment_lead", True),
+        ),
+        "enable_anti_detection_probability": data.get("interaction", {}).get("enable_anti_detection_probability", True),
         "enable_author_follow": data.get("interaction", {}).get("enable_author_follow", True),
         "enable_video_comment": data.get("interaction", {}).get("enable_video_comment", True),
         "enable_comment_lead": data.get("interaction", {}).get("enable_comment_lead", True),
@@ -354,6 +366,9 @@ def _save_douyin_config(config: AppConfig):
             "max_ai_comment_reviews": config.max_ai_comment_reviews,
             "intent_keywords": config.intent_keywords,
             "enable_like": config.enable_like,
+            "enable_mode_customer_acquisition": config.enable_mode_customer_acquisition,
+            "enable_mode_content_interaction": config.enable_mode_content_interaction,
+            "enable_anti_detection_probability": config.enable_anti_detection_probability,
             "enable_author_follow": config.enable_author_follow,
             "enable_video_comment": config.enable_video_comment,
             "enable_comment_lead": config.enable_comment_lead,

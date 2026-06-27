@@ -1,7 +1,9 @@
 search:
   keywords:
-  - 凳子
-  sort_by: most_liked
+  - 手机
+  - 苹果
+  - 显示屏
+  sort_by: latest
 crawler:
   max_daily_videos: 100
   max_videos_per_keyword: 5
@@ -36,3 +38,4 @@ anti_detection:
     enabled: true
     start_hour: 23
     end_hour: 7
+config_version: '20260627114928118630'
