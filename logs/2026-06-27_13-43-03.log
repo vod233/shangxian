@@ -1,0 +1,232 @@
+2026-06-27 13:43:03,092 - root - INFO - 已初始化日志系统，当前日志文件: D:\CodingTest\111test\111\logs\2026-06-27_13-43-03.log
+2026-06-27 13:43:03,094 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260627
+2026-06-27 13:43:03,165 - root - INFO - 已初始化日志系统，当前日志文件: D:\CodingTest\111test\111\logs\2026-06-27_13-43-03.log
+2026-06-27 13:43:03,166 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260627
+2026-06-27 13:43:04,831 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260627
+2026-06-27 13:43:57,809 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260627
+2026-06-27 13:58:28,319 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260627
+2026-06-27 13:58:51,056 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260627
+2026-06-27 13:59:41,873 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260627
+2026-06-27 13:59:49,749 - root - INFO - USB 设备检测结果: 未检测到 USB 设备。请检查数据线、USB 调试、手机授权和驱动。
+2026-06-27 13:59:53,493 - root - INFO - USB 设备检测结果: 未检测到 USB 设备。请检查数据线、USB 调试、手机授权和驱动。
+2026-06-27 14:00:09,061 - root - INFO - USB 设备检测结果: 未检测到 USB 设备。请检查数据线、USB 调试、手机授权和驱动。
+2026-06-27 14:00:12,736 - root - INFO - USB 设备检测结果: 未检测到 USB 设备。请检查数据线、USB 调试、手机授权和驱动。
+2026-06-27 14:00:23,291 - root - INFO - USB 设备检测结果: 检测到 1 台可用 USB 设备。
+2026-06-27 14:00:44,968 - root - INFO - 授权码验证通过，客户: test-customer，剩余积分: 199.867
+2026-06-27 14:00:44,968 - root - INFO - ==> API: 开始初始化设备 V4DUT20422013309 的douyin平台任务
+2026-06-27 14:00:44,969 - dy.main_controller - INFO - 初始化任务调度中心...
+2026-06-27 14:00:44,999 - root - INFO - 当前 ADB 连接设备列表: ['V4DUT20422013309']
+2026-06-27 14:00:44,999 - root - INFO - 使用传入的序列号: V4DUT20422013309
+2026-06-27 14:00:45,001 - root - INFO - 正在向设备 V4DUT20422013309 挂载 UIAutomator2 引擎...
+2026-06-27 14:00:45,155 - root - INFO - 设备 V4DUT20422013309 uiautomator2 引擎挂载成功。
+2026-06-27 14:00:45,214 - root - INFO - 心跳检查 - 设备 V4DUT20422013309 屏幕状态: 亮起
+2026-06-27 14:00:45,214 - dy.main_controller - INFO - 设备通讯正常，引擎挂载完毕。
+2026-06-27 14:00:45,215 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260627
+2026-06-27 14:00:45,216 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-27 14:00:45,216 - root - INFO - ==> API: 设备 V4DUT20422013309 已进入运行状态
+2026-06-27 14:00:45,216 - dy.task_runner - INFO - === 任务流开始 ===
+2026-06-27 14:00:45,217 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260627
+2026-06-27 14:00:45,217 - dy.task_runner - INFO - 📊 今日已处理视频: 2 个 | 点赞: 0 次 | 评论: 0 次 | 关注: 0 人
+2026-06-27 14:00:45,217 - dy.main_controller - INFO - 调度中心正在拉起抖音 APP...
+2026-06-27 14:00:45,217 - dy.core.app_mgr - INFO - 正在启动应用: com.ss.android.ugc.aweme
+2026-06-27 14:00:45,688 - dy.core.app_mgr - INFO - 等待抖音进入前台，超时时间: 8秒
+2026-06-27 14:00:46,349 - dy.core.app_mgr - INFO - 等待抖音进入前台，超时时间: 10秒
+2026-06-27 14:00:46,859 - dy.main_controller - INFO - 调度器开始装载动作: EnsureHomeAction
+2026-06-27 14:00:46,859 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-27 14:00:46,859 - dy.actions.base_action - INFO - ==> 准备执行动作: [EnsureHomeAction]
+2026-06-27 14:00:50,696 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260627
+2026-06-27 14:00:53,340 - dy.actions.navigation - INFO - ✅ 抖音首页加载成功
+2026-06-27 14:00:55,061 - dy.actions.base_action - INFO - <== 动作执行完成: [EnsureHomeAction]
+2026-06-27 14:00:55,061 - dy.main_controller - INFO - 抖音启动完成，准备就绪。
+2026-06-27 14:00:55,568 - dy.anti_detection - INFO - 📱 设备指纹: {'android_id': '8750be44adec00a2', 'model': 'CDY-TN90', 'brand': 'HONOR', 'sdk': '29'}
+2026-06-27 14:00:55,568 - dy.task_runner - INFO - 🧹 已清理设备自动化痕迹
+2026-06-27 14:00:55,663 - dy.task_runner - INFO - 
+>>> 开始处理关键词: 手机 <<<
+2026-06-27 14:00:55,663 - dy.main_controller - INFO - 调度器开始装载动作: EnterSearchAction
+2026-06-27 14:00:55,664 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-27 14:00:55,664 - dy.actions.base_action - INFO - ==> 准备执行动作: [EnterSearchAction]
+2026-06-27 14:00:56,033 - dy.actions.navigation - INFO - 正在搜索关键词: 手机
+2026-06-27 14:00:57,263 - dy.actions.navigation - INFO - 通过 XPath 成功点击搜索按钮
+2026-06-27 14:01:01,116 - retry.api - WARNING - AdbBroadcastError: broadcast ADB_KEYBOARD_CLEAR_TEXT failed: error:Attempt to read from field 'java.lang.CharSequence android.view.inputmethod.ExtractedText.text' on a null object reference in uiautomator2._input.InputMethodMixIn._must_broadcast, retrying in 1 seconds...
+2026-06-27 14:01:02,199 - retry.api - WARNING - AdbBroadcastError: broadcast ADB_KEYBOARD_CLEAR_TEXT failed: error:Attempt to read from field 'java.lang.CharSequence android.view.inputmethod.ExtractedText.text' on a null object reference in uiautomator2._input.InputMethodMixIn._must_broadcast, retrying in 1.5 seconds...
+2026-06-27 14:01:03,797 - dy.actions.navigation - WARNING - clear_text() 发生异常 (broadcast ADB_KEYBOARD_CLEAR_TEXT failed: error:Attempt to read from field 'java.lang.CharSequence android.view.inputmethod.ExtractedText.text' on a null object reference)，尝试发送删除按键兜底
+2026-06-27 14:01:22,242 - dy.actions.navigation - WARNING - 未找到'视频'页签按钮
+2026-06-27 14:01:22,243 - dy.actions.base_action - INFO - <== 动作执行完成: [EnterSearchAction]
+2026-06-27 14:01:22,243 - dy.task_runner - WARNING - 关键词 '手机' 搜索失败，跳过当前关键词
+2026-06-27 14:01:22,244 - dy.main_controller - INFO - 调度器开始装载动作: ResetToSearchAction
+2026-06-27 14:01:22,244 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-27 14:01:22,244 - dy.actions.base_action - INFO - ==> 准备执行动作: [ResetToSearchAction]
+2026-06-27 14:01:22,613 - dy.actions.base_action - WARNING - 应用 com.ss.android.ugc.aweme 不在前台，尝试拉起...
+2026-06-27 14:01:22,613 - dy.core.app_mgr - INFO - 正在启动应用: com.ss.android.ugc.aweme
+2026-06-27 14:01:23,081 - dy.core.app_mgr - INFO - 等待抖音进入前台，超时时间: 8秒
+2026-06-27 14:01:23,558 - dy.core.app_mgr - INFO - 等待抖音进入前台，超时时间: 10秒
+2026-06-27 14:01:24,168 - dy.actions.navigation - INFO - 执行 5 次返回以重置到首页状态...
+2026-06-27 14:01:36,119 - dy.actions.base_action - INFO - <== 动作执行完成: [ResetToSearchAction]
+2026-06-27 14:01:36,119 - dy.task_runner - INFO - 
+>>> 开始处理关键词: 苹果 <<<
+2026-06-27 14:01:36,119 - dy.main_controller - INFO - 调度器开始装载动作: EnterSearchAction
+2026-06-27 14:01:36,119 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-27 14:01:36,119 - dy.actions.base_action - INFO - ==> 准备执行动作: [EnterSearchAction]
+2026-06-27 14:01:36,471 - dy.actions.base_action - WARNING - 应用 com.ss.android.ugc.aweme 不在前台，尝试拉起...
+2026-06-27 14:01:36,471 - dy.core.app_mgr - INFO - 正在启动应用: com.ss.android.ugc.aweme
+2026-06-27 14:01:36,942 - dy.core.app_mgr - INFO - 等待抖音进入前台，超时时间: 8秒
+2026-06-27 14:01:37,809 - dy.core.app_mgr - INFO - 等待抖音进入前台，超时时间: 10秒
+2026-06-27 14:01:38,329 - dy.actions.navigation - INFO - 正在搜索关键词: 苹果
+2026-06-27 14:01:39,144 - dy.actions.navigation - INFO - 通过 XPath 成功点击搜索按钮
+2026-06-27 14:01:47,676 - dy.actions.navigation - INFO - 成功切换到'视频'页签
+2026-06-27 14:01:48,807 - dy.actions.base_action - INFO - <== 动作执行完成: [EnterSearchAction]
+2026-06-27 14:01:48,808 - dy.main_controller - INFO - 调度器开始装载动作: ApplyFiltersAction
+2026-06-27 14:01:48,808 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-27 14:01:48,808 - dy.actions.base_action - INFO - ==> 准备执行动作: [ApplyFiltersAction]
+2026-06-27 14:01:49,154 - dy.actions.navigation - INFO - >>> 自动化配对成功：模式[latest] -> 点击按钮[最新发布] <<<
+2026-06-27 14:01:52,421 - dy.actions.navigation - INFO - 已成功选择排序方式: 最新发布
+2026-06-27 14:01:53,618 - dy.actions.navigation - INFO - 已点击选择: 还未看过
+2026-06-27 14:01:59,742 - dy.actions.navigation - INFO - 已点击'视频'页签辅助收起面板
+2026-06-27 14:02:01,085 - dy.actions.navigation - INFO - --- 工作流切换完全执行：最新发布 ---
+2026-06-27 14:02:01,087 - dy.actions.base_action - INFO - <== 动作执行完成: [ApplyFiltersAction]
+2026-06-27 14:02:01,087 - dy.main_controller - INFO - 调度器开始装载动作: EnterFirstVideoAction
+2026-06-27 14:02:01,087 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-27 14:02:01,087 - dy.actions.base_action - INFO - ==> 准备执行动作: [EnterFirstVideoAction]
+2026-06-27 14:02:01,410 - dy.actions.navigation - INFO - 正在定位第一个视频...
+2026-06-27 14:02:01,565 - dy.actions.navigation - INFO - 识别到视频文案: #s11 #苹果手表...
+2026-06-27 14:02:03,441 - dy.actions.base_action - INFO - <== 动作执行完成: [EnterFirstVideoAction]
+2026-06-27 14:02:06,445 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260627
+2026-06-27 14:02:06,446 - dy.task_runner - INFO - 
+--- 正在处理第 1/5 个视频 ---
+2026-06-27 14:02:08,144 - dy.task_runner - INFO - 状态检查[提取视频信息前] 第 1/4 次: video_page
+2026-06-27 14:02:08,689 - dy.task_runner - INFO - 功能前状态[提取视频信息/分享链接]: video_page
+2026-06-27 14:02:09,572 - dy.task_runner - INFO - 状态检查[提取视频信息/分享链接-执行前] 第 1/6 次: video_page
+2026-06-27 14:02:09,572 - dy.main_controller - INFO - 调度器开始装载动作: GetCurrentVideoLinkAction
+2026-06-27 14:02:09,572 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-27 14:02:09,572 - dy.actions.base_action - INFO - ==> 准备执行动作: [GetCurrentVideoLinkAction]
+2026-06-27 14:02:10,832 - dy.actions.interaction - INFO - 当前视频可见文案兜底: #s11 #苹果手表
+2026-06-27 14:02:10,832 - dy.actions.interaction - WARNING - 稳定模式未打开分享面板提取链接，使用当前页面文案生成兜底视频标识: dy_visible_3377ddf0a7dd22cb
+2026-06-27 14:02:10,833 - dy.actions.base_action - INFO - <== 动作执行完成: [GetCurrentVideoLinkAction]
+2026-06-27 14:02:11,834 - dy.task_runner - INFO - 功能后状态[提取视频信息/分享链接]: video_page
+2026-06-27 14:02:12,385 - dy.task_runner - INFO - 状态检查[提取视频信息/分享链接-执行后] 第 1/6 次: video_page
+2026-06-27 14:02:12,387 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260627
+2026-06-27 14:02:12,389 - dy.task_runner - INFO - 🎬 开始对新视频执行互动...
+2026-06-27 14:02:12,389 - dy.task_runner - INFO - 📝 当前视频标题: #s11 #苹果手表
+2026-06-27 14:02:13,138 - dy.task_runner - INFO - 功能前状态[点赞]: video_page
+2026-06-27 14:02:14,216 - dy.task_runner - INFO - 状态检查[点赞-执行前] 第 1/6 次: video_page
+2026-06-27 14:02:14,217 - dy.main_controller - INFO - 调度器开始装载动作: DoubleClickLikeAction
+2026-06-27 14:02:14,217 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-27 14:02:14,217 - dy.actions.base_action - INFO - ==> 准备执行动作: [DoubleClickLikeAction]
+2026-06-27 14:02:15,497 - dy.actions.interaction - INFO - 已短按右侧喜欢按钮: (989, 1376)
+2026-06-27 14:02:15,497 - dy.actions.base_action - INFO - <== 动作执行完成: [DoubleClickLikeAction]
+2026-06-27 14:02:16,401 - dy.task_runner - INFO - 功能后状态[点赞]: video_page
+2026-06-27 14:02:16,726 - dy.task_runner - INFO - 状态检查[点赞-执行后] 第 1/6 次: video_page
+2026-06-27 14:02:16,728 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260627
+2026-06-27 14:02:19,214 - dy.task_runner - INFO - 功能前状态[模式1-私域获客]: video_page
+2026-06-27 14:02:20,321 - dy.task_runner - INFO - 状态检查[模式1-私域获客-执行前] 第 1/6 次: video_page
+2026-06-27 14:02:20,322 - dy.main_controller - INFO - 调度器开始装载动作: FollowAuthorAction
+2026-06-27 14:02:20,322 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-27 14:02:20,322 - dy.actions.base_action - INFO - ==> 准备执行动作: [FollowAuthorAction]
+2026-06-27 14:03:56,232 - dy.actions.interaction - INFO - 作者粉丝数: 未知
+2026-06-27 14:03:56,232 - dy.actions.interaction - INFO - 作者粉丝数未知，已设置关注阈值(0.01)，跳过关注
+2026-06-27 14:03:56,592 - dy.actions.interaction - INFO - 尝试返回视频页... (1/2)
+2026-06-27 14:03:59,852 - dy.actions.interaction - INFO - 确认已经回到视频页
+2026-06-27 14:03:59,852 - dy.actions.base_action - INFO - <== 动作执行完成: [FollowAuthorAction]
+2026-06-27 14:04:01,021 - dy.task_runner - INFO - 功能后状态[模式1-私域获客]: video_page
+2026-06-27 14:04:01,677 - dy.task_runner - INFO - 状态检查[模式1-私域获客-执行后] 第 1/6 次: video_page
+2026-06-27 14:04:03,299 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260627
+2026-06-27 14:04:03,299 - dy.task_runner - INFO - 📊 实时数据 -> 视频:3 | 赞:1 | 评:0 | 关:0
+2026-06-27 14:04:04,119 - dy.task_runner - INFO - 状态检查[滑动下一个视频前] 第 1/5 次: video_page
+2026-06-27 14:04:04,119 - dy.main_controller - INFO - 调度器开始装载动作: SwipeNextVideoAction
+2026-06-27 14:04:04,119 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-27 14:04:04,120 - dy.actions.base_action - INFO - ==> 准备执行动作: [SwipeNextVideoAction]
+2026-06-27 14:05:54,586 - dy.actions.base_action - INFO - <== 动作执行完成: [SwipeNextVideoAction]
+2026-06-27 14:05:54,691 - dy.task_runner - INFO - 等待 6.3 秒后处理下一个视频...
+2026-06-27 14:06:00,959 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260627
+2026-06-27 14:06:00,959 - dy.task_runner - INFO - 
+--- 正在处理第 2/5 个视频 ---
+2026-06-27 14:06:01,173 - dy.task_runner - WARNING - 检测到抖音视频长按菜单，执行返回关闭
+2026-06-27 14:06:03,095 - dy.task_runner - INFO - 状态检查[提取视频信息前] 第 1/4 次: video_page
+2026-06-27 14:06:03,747 - dy.task_runner - INFO - 功能前状态[提取视频信息/分享链接]: video_page
+2026-06-27 14:06:04,522 - dy.task_runner - INFO - 状态检查[提取视频信息/分享链接-执行前] 第 1/6 次: video_page
+2026-06-27 14:06:04,522 - dy.main_controller - INFO - 调度器开始装载动作: GetCurrentVideoLinkAction
+2026-06-27 14:06:04,522 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-27 14:06:04,522 - dy.actions.base_action - INFO - ==> 准备执行动作: [GetCurrentVideoLinkAction]
+2026-06-27 14:06:05,837 - dy.actions.interaction - INFO - 当前视频可见文案兜底: #s11 #苹果手表
+2026-06-27 14:06:05,838 - dy.actions.interaction - WARNING - 稳定模式未打开分享面板提取链接，使用当前页面文案生成兜底视频标识: dy_visible_3377ddf0a7dd22cb
+2026-06-27 14:06:05,838 - dy.actions.base_action - INFO - <== 动作执行完成: [GetCurrentVideoLinkAction]
+2026-06-27 14:06:07,315 - dy.task_runner - INFO - 功能后状态[提取视频信息/分享链接]: video_page
+2026-06-27 14:06:08,477 - dy.task_runner - INFO - 状态检查[提取视频信息/分享链接-执行后] 第 1/6 次: video_page
+2026-06-27 14:06:08,477 - dy.task_runner - WARNING - 检测到视频重复 (token一致)，可能已滑到底部
+2026-06-27 14:06:08,477 - dy.task_runner - INFO - 结束当前关键词的视频循环
+2026-06-27 14:06:08,478 - dy.main_controller - INFO - 调度器开始装载动作: ResetToSearchAction
+2026-06-27 14:06:08,478 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-27 14:06:08,478 - dy.actions.base_action - INFO - ==> 准备执行动作: [ResetToSearchAction]
+2026-06-27 14:06:08,935 - dy.actions.navigation - INFO - 执行 5 次返回以重置到首页状态...
+2026-06-27 14:06:16,194 - dy.actions.base_action - INFO - <== 动作执行完成: [ResetToSearchAction]
+2026-06-27 14:06:16,194 - dy.task_runner - INFO - 
+>>> 开始处理关键词: 显示屏 <<<
+2026-06-27 14:06:16,195 - dy.main_controller - INFO - 调度器开始装载动作: EnterSearchAction
+2026-06-27 14:06:16,195 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-27 14:06:16,195 - dy.actions.base_action - INFO - ==> 准备执行动作: [EnterSearchAction]
+2026-06-27 14:06:16,620 - dy.actions.navigation - INFO - 正在搜索关键词: 显示屏
+2026-06-27 14:06:17,348 - dy.actions.navigation - INFO - 通过 XPath 成功点击搜索按钮
+2026-06-27 14:06:29,270 - dy.actions.navigation - INFO - 成功切换到'视频'页签
+2026-06-27 14:06:30,832 - dy.actions.base_action - INFO - <== 动作执行完成: [EnterSearchAction]
+2026-06-27 14:06:30,832 - dy.main_controller - INFO - 调度器开始装载动作: ApplyFiltersAction
+2026-06-27 14:06:30,833 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-27 14:06:30,833 - dy.actions.base_action - INFO - ==> 准备执行动作: [ApplyFiltersAction]
+2026-06-27 14:06:31,317 - dy.actions.navigation - INFO - >>> 自动化配对成功：模式[latest] -> 点击按钮[最新发布] <<<
+2026-06-27 14:06:33,979 - dy.actions.navigation - INFO - 已成功选择排序方式: 最新发布
+2026-06-27 14:06:35,548 - dy.actions.navigation - INFO - 已点击选择: 还未看过
+2026-06-27 14:06:39,506 - dy.actions.navigation - INFO - 已点击'视频'页签辅助收起面板
+2026-06-27 14:06:41,229 - dy.actions.navigation - INFO - --- 工作流切换完全执行：最新发布 ---
+2026-06-27 14:06:41,232 - dy.actions.base_action - INFO - <== 动作执行完成: [ApplyFiltersAction]
+2026-06-27 14:06:41,233 - dy.main_controller - INFO - 调度器开始装载动作: EnterFirstVideoAction
+2026-06-27 14:06:41,233 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-27 14:06:41,233 - dy.actions.base_action - INFO - ==> 准备执行动作: [EnterFirstVideoAction]
+2026-06-27 14:06:41,684 - dy.actions.navigation - INFO - 正在定位第一个视频...
+2026-06-27 14:06:42,062 - dy.actions.navigation - INFO - 识别到视频文案: 用过副屏后，真的有点回不去了… #便携屏...
+2026-06-27 14:06:43,539 - dy.actions.base_action - INFO - <== 动作执行完成: [EnterFirstVideoAction]
+2026-06-27 14:06:46,547 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260627
+2026-06-27 14:06:46,549 - dy.task_runner - INFO - 
+--- 正在处理第 1/5 个视频 ---
+2026-06-27 14:06:48,077 - dy.task_runner - INFO - 状态检查[提取视频信息前] 第 1/4 次: video_page
+2026-06-27 14:06:48,750 - dy.task_runner - INFO - 功能前状态[提取视频信息/分享链接]: video_page
+2026-06-27 14:06:49,396 - dy.task_runner - INFO - 状态检查[提取视频信息/分享链接-执行前] 第 1/6 次: video_page
+2026-06-27 14:06:49,397 - dy.main_controller - INFO - 调度器开始装载动作: GetCurrentVideoLinkAction
+2026-06-27 14:06:49,397 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-27 14:06:49,397 - dy.actions.base_action - INFO - ==> 准备执行动作: [GetCurrentVideoLinkAction]
+2026-06-27 14:06:50,916 - dy.actions.interaction - INFO - 当前视频可见文案兜底: 用过副屏后，真的有点回不去了… #便携屏 #数码开箱 #显示器推荐
+2026-06-27 14:06:50,917 - dy.actions.interaction - WARNING - 稳定模式未打开分享面板提取链接，使用当前页面文案生成兜底视频标识: dy_visible_a8707807b15a1bd3
+2026-06-27 14:06:50,917 - dy.actions.base_action - INFO - <== 动作执行完成: [GetCurrentVideoLinkAction]
+2026-06-27 14:06:52,422 - dy.task_runner - INFO - 功能后状态[提取视频信息/分享链接]: video_page
+2026-06-27 14:06:53,051 - dy.task_runner - INFO - 状态检查[提取视频信息/分享链接-执行后] 第 1/6 次: video_page
+2026-06-27 14:06:53,053 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260627
+2026-06-27 14:06:53,055 - dy.task_runner - INFO - 🎬 开始对新视频执行互动...
+2026-06-27 14:06:53,056 - dy.task_runner - INFO - 📝 当前视频标题: 用过副屏后，真的有点回不去了… #便携屏 #数码开箱 #显示器推荐
+2026-06-27 14:06:53,578 - dy.task_runner - INFO - 功能前状态[点赞]: video_page
+2026-06-27 14:06:54,063 - dy.task_runner - INFO - 状态检查[点赞-执行前] 第 1/6 次: video_page
+2026-06-27 14:06:54,064 - dy.main_controller - INFO - 调度器开始装载动作: DoubleClickLikeAction
+2026-06-27 14:06:54,064 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-27 14:06:54,064 - dy.actions.base_action - INFO - ==> 准备执行动作: [DoubleClickLikeAction]
+2026-06-27 14:06:55,511 - dy.actions.interaction - INFO - 已短按右侧喜欢按钮: (990, 1258)
+2026-06-27 14:06:55,511 - dy.actions.base_action - INFO - <== 动作执行完成: [DoubleClickLikeAction]
+2026-06-27 14:06:56,581 - dy.task_runner - INFO - 功能后状态[点赞]: video_page
+2026-06-27 14:06:57,284 - dy.task_runner - INFO - 状态检查[点赞-执行后] 第 1/6 次: video_page
+2026-06-27 14:06:57,287 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260627
+2026-06-27 14:07:00,160 - dy.task_runner - INFO - 功能前状态[模式1-私域获客]: video_page
+2026-06-27 14:07:00,838 - dy.task_runner - INFO - 状态检查[模式1-私域获客-执行前] 第 1/6 次: video_page
+2026-06-27 14:07:00,838 - dy.main_controller - INFO - 调度器开始装载动作: FollowAuthorAction
+2026-06-27 14:07:00,838 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-27 14:07:00,839 - dy.actions.base_action - INFO - ==> 准备执行动作: [FollowAuthorAction]
+2026-06-27 14:08:38,099 - root - INFO - 接收到关闭信号，正在停止所有后台设备任务...
+2026-06-27 14:08:38,100 - dy.task_runner - INFO - 收到结束指令，准备退出任务流...
+2026-06-27 14:08:38,100 - root - INFO - 已发送停止信号给设备: V4DUT20422013309
+2026-06-27 14:08:54,799 - dy.actions.interaction - INFO - 作者粉丝数: 未知
+2026-06-27 14:08:54,800 - dy.actions.interaction - INFO - 作者粉丝数未知，已设置关注阈值(0.01)，跳过关注
+2026-06-27 14:08:55,181 - dy.actions.interaction - INFO - 尝试返回视频页... (1/2)
+2026-06-27 14:08:59,069 - dy.actions.interaction - INFO - 确认已经回到视频页
+2026-06-27 14:08:59,069 - dy.actions.base_action - INFO - <== 动作执行完成: [FollowAuthorAction]
+2026-06-27 14:09:00,363 - dy.task_runner - INFO - 功能后状态[模式1-私域获客]: video_page
+2026-06-27 14:09:00,364 - dy.task_runner - INFO - 检测到结束指令，中断当前执行！
+2026-06-27 14:09:00,364 - dy.task_runner - ERROR - 任务流执行异常: 用户手动结束了任务
+2026-06-27 14:09:00,364 - dy.main_controller - INFO - 任务执行完毕，清理资源...
+2026-06-27 14:09:00,364 - dy.main_controller - INFO - 资源清理完毕，安全退出。
+2026-06-27 14:09:00,364 - root - INFO - <== API: 设备 V4DUT20422013309 任务被手动停止
+2026-06-27 14:09:00,364 - root - INFO - 线程池已关闭。

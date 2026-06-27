@@ -1,0 +1,159 @@
+2026-06-26 22:05:46,451 - root - INFO - 已初始化日志系统，当前日志文件: D:\CodingTest\111test\111\logs\2026-06-26_22-05-46.log
+2026-06-26 22:05:46,454 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260626
+2026-06-26 22:05:46,548 - root - INFO - 已初始化日志系统，当前日志文件: D:\CodingTest\111test\111\logs\2026-06-26_22-05-46.log
+2026-06-26 22:05:46,550 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260626
+2026-06-26 22:16:43,017 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260626
+2026-06-26 22:16:43,035 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260626
+2026-06-26 22:16:46,043 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260626
+2026-06-26 22:24:10,597 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260626
+2026-06-26 22:24:28,811 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260626
+2026-06-26 22:25:07,326 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260626
+2026-06-26 22:25:07,333 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260626
+2026-06-26 22:25:16,205 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260626
+2026-06-26 22:25:24,477 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260626
+2026-06-26 22:25:24,484 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260626
+2026-06-26 22:25:42,808 - root - INFO - 授权码验证通过，客户: test-customer，剩余积分: 0.012000000000001176
+2026-06-26 22:25:42,808 - root - INFO - ==> API: 开始初始化设备 V4DUT20422013309 的douyin平台任务
+2026-06-26 22:25:42,809 - dy.main_controller - INFO - 初始化任务调度中心...
+2026-06-26 22:25:42,827 - root - INFO - 当前 ADB 连接设备列表: ['V4DUT20422013309']
+2026-06-26 22:25:42,827 - root - INFO - 使用传入的序列号: V4DUT20422013309
+2026-06-26 22:25:42,829 - root - INFO - 正在向设备 V4DUT20422013309 挂载 UIAutomator2 引擎...
+2026-06-26 22:25:44,193 - root - INFO - 设备 V4DUT20422013309 uiautomator2 引擎挂载成功。
+2026-06-26 22:25:44,332 - root - INFO - 心跳检查 - 设备 V4DUT20422013309 屏幕状态: 亮起
+2026-06-26 22:25:44,332 - dy.main_controller - INFO - 设备通讯正常，引擎挂载完毕。
+2026-06-26 22:25:44,333 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260626
+2026-06-26 22:25:44,333 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-26 22:25:44,333 - root - INFO - ==> API: 设备 V4DUT20422013309 已进入运行状态
+2026-06-26 22:25:44,333 - dy.task_runner - INFO - === 任务流开始 ===
+2026-06-26 22:25:44,334 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260626
+2026-06-26 22:25:44,334 - dy.task_runner - INFO - 📊 今日已处理视频: 15 个 | 点赞: 5 次 | 评论: 0 次 | 关注: 0 人
+2026-06-26 22:25:44,334 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260626
+2026-06-26 22:25:44,335 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260626
+2026-06-26 22:25:44,336 - dy.main_controller - INFO - 调度中心正在拉起抖音 APP...
+2026-06-26 22:25:44,336 - dy.core.app_mgr - INFO - 正在启动应用: com.ss.android.ugc.aweme
+2026-06-26 22:25:44,762 - dy.core.app_mgr - INFO - 等待抖音进入前台，超时时间: 8秒
+2026-06-26 22:25:45,342 - dy.core.app_mgr - INFO - 等待抖音进入前台，超时时间: 10秒
+2026-06-26 22:25:45,675 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260626
+2026-06-26 22:25:45,743 - dy.main_controller - INFO - 调度器开始装载动作: EnsureHomeAction
+2026-06-26 22:25:45,743 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-26 22:25:45,743 - dy.actions.base_action - INFO - ==> 准备执行动作: [EnsureHomeAction]
+2026-06-26 22:25:51,136 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260626
+2026-06-26 22:25:51,143 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260626
+2026-06-26 22:25:54,371 - dy.actions.navigation - INFO - ✅ 抖音首页加载成功
+2026-06-26 22:25:55,080 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260626
+2026-06-26 22:25:55,980 - dy.actions.base_action - INFO - <== 动作执行完成: [EnsureHomeAction]
+2026-06-26 22:25:55,980 - dy.main_controller - INFO - 抖音启动完成，准备就绪。
+2026-06-26 22:25:56,137 - dy.task_runner - INFO - 🧹 已清理设备自动化痕迹
+2026-06-26 22:25:56,137 - dy.task_runner - INFO - 
+>>> 开始处理关键词: 凳子 <<<
+2026-06-26 22:25:56,137 - dy.main_controller - INFO - 调度器开始装载动作: EnterSearchAction
+2026-06-26 22:25:56,138 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-26 22:25:56,138 - dy.actions.base_action - INFO - ==> 准备执行动作: [EnterSearchAction]
+2026-06-26 22:25:56,448 - dy.actions.navigation - INFO - 正在搜索关键词: 凳子
+2026-06-26 22:25:57,294 - dy.actions.navigation - INFO - 通过 XPath 成功点击搜索按钮
+2026-06-26 22:26:07,783 - dy.actions.navigation - INFO - 成功切换到'视频'页签
+2026-06-26 22:26:09,504 - dy.actions.base_action - INFO - <== 动作执行完成: [EnterSearchAction]
+2026-06-26 22:26:09,504 - dy.main_controller - INFO - 调度器开始装载动作: ApplyFiltersAction
+2026-06-26 22:26:09,505 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-26 22:26:09,505 - dy.actions.base_action - INFO - ==> 准备执行动作: [ApplyFiltersAction]
+2026-06-26 22:26:09,847 - dy.actions.navigation - INFO - >>> 自动化配对成功：模式[latest] -> 点击按钮[最新发布] <<<
+2026-06-26 22:26:12,298 - dy.actions.navigation - INFO - 已成功选择排序方式: 最新发布
+2026-06-26 22:26:13,410 - dy.actions.navigation - INFO - 已点击选择: 还未看过
+2026-06-26 22:26:24,035 - dy.actions.navigation - INFO - 已点击'视频'页签辅助收起面板
+2026-06-26 22:26:25,757 - dy.actions.navigation - INFO - --- 工作流切换完全执行：最新发布 ---
+2026-06-26 22:26:25,758 - dy.actions.base_action - INFO - <== 动作执行完成: [ApplyFiltersAction]
+2026-06-26 22:26:25,760 - dy.main_controller - INFO - 调度器开始装载动作: EnterFirstVideoAction
+2026-06-26 22:26:25,760 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-26 22:26:25,760 - dy.actions.base_action - INFO - ==> 准备执行动作: [EnterFirstVideoAction]
+2026-06-26 22:26:26,151 - dy.actions.navigation - INFO - 正在定位第一个视频...
+2026-06-26 22:26:26,423 - dy.actions.navigation - INFO - 识别到视频文案: 一把椅子练全身#居家锻炼 #瘦肚子 #大...
+2026-06-26 22:26:27,510 - dy.actions.base_action - INFO - <== 动作执行完成: [EnterFirstVideoAction]
+2026-06-26 22:26:30,514 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260626
+2026-06-26 22:26:30,514 - dy.task_runner - INFO - 
+--- 正在处理第 1/5 个视频 ---
+2026-06-26 22:26:31,689 - dy.task_runner - INFO - 状态检查[提取视频信息前] 第 1/4 次: video_page
+2026-06-26 22:26:32,293 - dy.task_runner - INFO - 功能前状态[提取视频信息/分享链接]: video_page
+2026-06-26 22:26:32,973 - dy.task_runner - INFO - 状态检查[提取视频信息/分享链接-执行前] 第 1/6 次: video_page
+2026-06-26 22:26:32,973 - dy.main_controller - INFO - 调度器开始装载动作: GetCurrentVideoLinkAction
+2026-06-26 22:26:32,973 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-26 22:26:32,974 - dy.actions.base_action - INFO - ==> 准备执行动作: [GetCurrentVideoLinkAction]
+2026-06-26 22:26:34,122 - dy.actions.interaction - INFO - 当前视频可见文案兜底: 一把椅子练全身#居家锻炼 #瘦肚子 #大肚腩变小蛮腰 #小动作大作... 展开
+2026-06-26 22:26:34,124 - dy.actions.interaction - WARNING - 稳定模式未打开分享面板提取链接，使用当前页面文案生成兜底视频标识: dy_visible_7d2ed0d62d514a0e
+2026-06-26 22:26:34,125 - dy.actions.base_action - INFO - <== 动作执行完成: [GetCurrentVideoLinkAction]
+2026-06-26 22:26:34,977 - dy.task_runner - INFO - 功能后状态[提取视频信息/分享链接]: video_page
+2026-06-26 22:26:35,350 - dy.task_runner - INFO - 状态检查[提取视频信息/分享链接-执行后] 第 1/6 次: video_page
+2026-06-26 22:26:35,351 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260626
+2026-06-26 22:26:35,356 - dy.task_runner - INFO - 🎬 开始对新视频执行互动...
+2026-06-26 22:26:35,356 - dy.task_runner - INFO - 📝 当前视频标题: 一把椅子练全身#居家锻炼 #瘦肚子 #大肚腩变小蛮腰 #小动作大作... 展开
+2026-06-26 22:26:35,356 - dy.task_runner - INFO - 已关闭功能: 点赞，跳过
+2026-06-26 22:26:35,356 - dy.task_runner - INFO - 已关闭功能: 作者主页/关注/私信，跳过
+2026-06-26 22:26:40,737 - dy.ai_reply_agent - ERROR - 云端 AI 生成视频评论失败: 授权码积分不足，请充值后继续使用
+2026-06-26 22:26:44,195 - dy.ai_reply_agent - ERROR - 云端 AI 生成视频评论失败: 授权码积分不足，请充值后继续使用
+2026-06-26 22:26:44,198 - dy.ai_reply_agent - INFO - AI 回复降级为本地安全模板: 内容讲得挺清楚，确实有参考价值
+2026-06-26 22:26:44,198 - dy.task_runner - INFO - 🤖 AI 生成回复: 内容讲得挺清楚，确实有参考价值
+2026-06-26 22:26:44,199 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260626
+2026-06-26 22:26:44,840 - dy.task_runner - INFO - 功能前状态[AI视频评论]: video_page
+2026-06-26 22:26:45,621 - dy.task_runner - INFO - 状态检查[AI视频评论-执行前] 第 1/6 次: video_page
+2026-06-26 22:26:45,622 - dy.main_controller - INFO - 调度器开始装载动作: PostCommentAction
+2026-06-26 22:26:45,622 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-26 22:26:45,622 - dy.actions.base_action - INFO - ==> 准备执行动作: [PostCommentAction]
+2026-06-26 22:26:46,028 - dy.actions.commenting - INFO - 准备发布视频评论: 内容讲得挺清楚，确实有参考价值
+2026-06-26 22:26:53,149 - dy.actions.commenting - INFO - 视频评论: 发送按钮未就绪，重试 1/3
+2026-06-26 22:26:57,790 - dy.actions.commenting - INFO - 视频评论: 发送按钮未就绪，重试 2/3
+2026-06-26 22:27:02,815 - dy.actions.commenting - INFO - 视频评论: 发送按钮未就绪，重试 3/3
+2026-06-26 22:27:03,678 - dy.actions.commenting - INFO - 视频评论: 尝试回车键发送
+2026-06-26 22:27:09,058 - dy.actions.commenting - INFO - 检测到评论输入框仍处于打开状态，执行返回关闭
+2026-06-26 22:27:10,982 - dy.actions.base_action - INFO - <== 动作执行完成: [PostCommentAction]
+2026-06-26 22:27:12,276 - dy.task_runner - INFO - 功能后状态[AI视频评论]: video_page
+2026-06-26 22:27:12,809 - dy.task_runner - INFO - 状态检查[AI视频评论-执行后] 第 1/6 次: video_page
+2026-06-26 22:27:13,431 - dy.task_runner - INFO - 功能前状态[评论区AI截流/楼中楼回复]: video_page
+2026-06-26 22:27:14,259 - dy.task_runner - INFO - 状态检查[评论区AI截流/楼中楼回复-执行前] 第 1/6 次: video_page
+2026-06-26 22:27:14,260 - dy.main_controller - INFO - 调度器开始装载动作: OpenCommentSectionAction
+2026-06-26 22:27:14,260 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-26 22:27:14,260 - dy.actions.base_action - INFO - ==> 准备执行动作: [OpenCommentSectionAction]
+2026-06-26 22:27:14,665 - dy.actions.commenting - INFO - 正在通过 content-desc 规律寻找主评论区按钮...
+2026-06-26 22:27:15,223 - dy.actions.commenting - INFO - 成功锁定评论区入口，当前评论数标识: 评论5，按钮
+2026-06-26 22:27:17,766 - dy.actions.base_action - INFO - <== 动作执行完成: [OpenCommentSectionAction]
+2026-06-26 22:27:18,932 - dy.task_runner - INFO - 功能中状态[打开评论区后]: video_page
+2026-06-26 22:27:18,932 - dy.task_runner - WARNING - 评论区未可靠打开，当前状态: video_page
+2026-06-26 22:27:19,373 - dy.task_runner - INFO - 状态检查[评论区AI截流/楼中楼回复-打开失败后] 第 1/6 次: video_page
+2026-06-26 22:27:19,375 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260626
+2026-06-26 22:27:19,376 - dy.task_runner - INFO - 📊 实时数据 -> 视频:16 | 赞:5 | 评:0 | 关:0
+2026-06-26 22:27:20,100 - dy.task_runner - INFO - 状态检查[滑动下一个视频前] 第 1/5 次: video_page
+2026-06-26 22:27:20,100 - dy.main_controller - INFO - 调度器开始装载动作: SwipeNextVideoAction
+2026-06-26 22:27:20,100 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-26 22:27:20,101 - dy.actions.base_action - INFO - ==> 准备执行动作: [SwipeNextVideoAction]
+2026-06-26 22:27:21,774 - dy.actions.base_action - INFO - <== 动作执行完成: [SwipeNextVideoAction]
+2026-06-26 22:27:21,774 - dy.anti_detection - INFO - 概率决策: 跳过 long_watch (概率=15%)
+2026-06-26 22:27:21,774 - dy.task_runner - INFO - 等待 2.5 秒后处理下一个视频...
+2026-06-26 22:27:24,777 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260626
+2026-06-26 22:27:24,778 - dy.task_runner - INFO - 
+--- 正在处理第 2/5 个视频 ---
+2026-06-26 22:27:25,841 - dy.task_runner - INFO - 状态检查[提取视频信息前] 第 1/4 次: comment_panel
+2026-06-26 22:27:25,841 - dy.task_runner - INFO - 尝试关闭/返回当前状态[comment_panel] -> 视频页
+2026-06-26 22:27:27,701 - dy.task_runner - INFO - 状态检查[提取视频信息前] 第 2/4 次: video_page
+2026-06-26 22:27:28,247 - dy.task_runner - INFO - 功能前状态[提取视频信息/分享链接]: video_page
+2026-06-26 22:27:28,788 - dy.task_runner - INFO - 状态检查[提取视频信息/分享链接-执行前] 第 1/6 次: video_page
+2026-06-26 22:27:28,788 - dy.main_controller - INFO - 调度器开始装载动作: GetCurrentVideoLinkAction
+2026-06-26 22:27:28,789 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-26 22:27:28,789 - dy.actions.base_action - INFO - ==> 准备执行动作: [GetCurrentVideoLinkAction]
+2026-06-26 22:27:30,153 - dy.actions.interaction - INFO - 当前视频可见文案兜底: 一把椅子练全身#居家锻炼 #瘦肚子 #大肚腩变小蛮腰 #小动作大作... 展开
+2026-06-26 22:27:30,153 - dy.actions.interaction - WARNING - 稳定模式未打开分享面板提取链接，使用当前页面文案生成兜底视频标识: dy_visible_7d2ed0d62d514a0e
+2026-06-26 22:27:30,154 - dy.actions.base_action - INFO - <== 动作执行完成: [GetCurrentVideoLinkAction]
+2026-06-26 22:27:31,668 - dy.task_runner - INFO - 功能后状态[提取视频信息/分享链接]: video_page
+2026-06-26 22:27:32,510 - dy.task_runner - INFO - 状态检查[提取视频信息/分享链接-执行后] 第 1/6 次: video_page
+2026-06-26 22:27:32,511 - dy.task_runner - WARNING - 检测到视频重复 (token一致)，可能已滑到底部
+2026-06-26 22:27:32,511 - dy.task_runner - INFO - 结束当前关键词的视频循环
+2026-06-26 22:27:32,511 - dy.main_controller - INFO - 调度器开始装载动作: ResetToSearchAction
+2026-06-26 22:27:32,511 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-26 22:27:32,512 - dy.actions.base_action - INFO - ==> 准备执行动作: [ResetToSearchAction]
+2026-06-26 22:27:32,940 - dy.actions.navigation - INFO - 执行 5 次返回以重置到首页状态...
+2026-06-26 22:27:40,506 - dy.actions.base_action - INFO - <== 动作执行完成: [ResetToSearchAction]
+2026-06-26 22:27:40,506 - dy.task_runner - INFO - 所有关键词任务处理完毕！
+2026-06-26 22:27:40,506 - dy.main_controller - INFO - 任务执行完毕，清理资源...
+2026-06-26 22:27:40,506 - dy.main_controller - INFO - 资源清理完毕，安全退出。
+2026-06-26 22:27:40,506 - root - INFO - <== API: 设备 V4DUT20422013309 任务执行完毕
+2026-06-26 22:29:25,440 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260626
+2026-06-26 22:29:25,447 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260626
+2026-06-26 22:30:01,746 - root - INFO - 接收到关闭信号，正在停止所有后台设备任务...
+2026-06-26 22:30:01,747 - root - INFO - 线程池已关闭。

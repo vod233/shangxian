@@ -59,6 +59,16 @@ class TikTokTaskFlow:
     def _interaction_enabled(self, key, default=True):
         return bool(self.config.get('interaction', {}).get(key, default))
 
+    def _probability_decision_enabled(self):
+        """是否启用概率决策（防风控）。关闭时每个视频都执行所有已开启功能。"""
+        return bool(self.config.get('anti_detection', {}).get('interaction_probability', {}).get('enabled', False))
+
+    def _probability_allows(self, action_type):
+        """概率决策门控：开关关闭时总是 True（每个视频都执行）；开启时按概率。"""
+        if not self._probability_decision_enabled():
+            return True
+        return self.anti.should_interact(action_type)
+
     def stop(self):
         """通知任务流结束执行"""
         self.is_stopped = True
@@ -562,10 +572,10 @@ class TikTokTaskFlow:
                     logger.info(f"📝 当前视频标题: {video_title}")
                     skip_remaining_features = False
 
-                    # B.1 点赞（功能开关为确定性指令，仍保留每日限额）
+                    # B.1 点赞（功能开关为确定性指令，仍保留每日限额与概率决策）
                     if self._interaction_enabled("enable_like"):
                         self._check_stop()
-                        if self.anti.can_do('like'):
+                        if self.anti.can_do('like') and self._probability_allows('like'):
                             self._report(current_action="执行 AI 智能算法加权互动")
                             stable, liked = self._run_feature_safely(
                                 "点赞",
@@ -577,7 +587,7 @@ class TikTokTaskFlow:
                             if not stable:
                                 skip_remaining_features = True
                         else:
-                            logger.info("限额决策: 跳过点赞")
+                            logger.info("限额/概率决策: 跳过点赞")
                         self._interruptible_sleep(random.uniform(0.8, 2.0))
                     else:
                         logger.info("已关闭功能: 点赞，跳过")
@@ -589,10 +599,11 @@ class TikTokTaskFlow:
                         logger.warning("页面恢复失败，跳过当前视频剩余功能")
                     elif self._interaction_enabled("enable_author_follow"):
                         self._check_stop()
-                        if self.anti.can_do('follow'):
+                        if self.anti.can_do('follow') and self._probability_allows('follow'):
                             private_message_allowed = (
                                 self._interaction_enabled("enable_private_message", False)
                                 and self.anti.can_do('private_message')
+                                and self._probability_allows('private_message')
                             )
                             self._report(current_action="锁定高潜客户，执行 AI 私域线索破冰")
                             stable, follow_result = self._run_feature_safely(
@@ -615,7 +626,7 @@ class TikTokTaskFlow:
                             if not stable:
                                 skip_remaining_features = True
                         else:
-                            logger.info("限额决策: 跳过关注/私信")
+                            logger.info("限额/概率决策: 跳过关注/私信")
                         self._interruptible_sleep(random.uniform(1.0, 2.5))
                     else:
                         logger.info("已关闭功能: 作者主页/关注/私信，跳过")
@@ -627,7 +638,7 @@ class TikTokTaskFlow:
                         logger.warning("页面恢复失败，跳过当前视频剩余功能")
                     elif self._interaction_enabled("enable_video_comment"):
                         self._check_stop()
-                        if self.anti.can_do('comment'):
+                        if self.anti.can_do('comment') and self._probability_allows('comment'):
                             self._report(current_action="AI 正在根据垂直行业知识库生成精准评论")
                             comment_text = self.reply_agent.generate_reply(
                                 title=video_title,
@@ -659,7 +670,7 @@ class TikTokTaskFlow:
                                 )
                                 logger.info("未生成可发布的回复，跳过评论环节。")
                         else:
-                            logger.info("限额决策: 跳过评论")
+                            logger.info("限额/概率决策: 跳过评论")
                     else:
                         logger.info("已关闭功能: AI 视频评论，跳过")
 
@@ -670,11 +681,14 @@ class TikTokTaskFlow:
                         logger.warning("页面恢复失败，跳过当前视频剩余功能")
                     elif self._interaction_enabled("enable_comment_lead"):
                         self._check_stop()
-                        self._report(current_action="正在对评论区意向线索进行精准拦截")
-                        if not self._run_comment_lead_safely(video_title, self.current_keyword or ""):
-                            skip_remaining_features = True
+                        if self._probability_allows('comment_lead'):
+                            self._report(current_action="正在对评论区意向线索进行精准拦截")
+                            if not self._run_comment_lead_safely(video_title, self.current_keyword or ""):
+                                skip_remaining_features = True
+                            else:
+                                self._report(executed_action="评论区AI截流")
                         else:
-                            self._report(executed_action="评论区AI截流")
+                            logger.info("概率决策: 跳过评论区截流")
                     else:
                         logger.info("已关闭功能: 评论区 AI 截流/楼中楼回复，跳过")
 
@@ -718,8 +732,8 @@ class TikTokTaskFlow:
             max_stay = self.config.get('crawler', {}).get('max_video_stay', 12)
             stay_time = random.uniform(min_stay, max_stay)
 
-            # 15% 概率长停留（模拟看完整个视频）
-            if self.anti.should_interact('long_watch'):
+            # 15% 概率长停留（模拟看完整个视频）— 受概率决策总开关控制
+            if self._probability_allows('long_watch'):
                 stay_time += random.uniform(5.0, 15.0)
                 logger.info(f"📺 长停留模式: 预计停留 {stay_time:.1f} 秒")
 

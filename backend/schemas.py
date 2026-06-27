@@ -48,6 +48,8 @@ class AppConfig(BaseModel):
     pm_message_list: List[str] = []
     # 夜间静默时段总开关：开启后 23:00-07:00 启动任务会等待到早晨，关闭后任意时段可直接启动
     night_mode_enabled: bool = True
+    # 概率决策（防风控）总开关：关闭时每个视频都执行所有已开启功能；开启后按概率随机执行部分互动
+    enable_anti_detection_probability: bool = False
 
 class DeviceConnectRequest(BaseModel):
     """连接新设备请求"""

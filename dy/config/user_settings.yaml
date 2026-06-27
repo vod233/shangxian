@@ -1,7 +1,11 @@
 search:
   keywords:
+  - 灯泡
+  - 装修
+  - 二手闲置
+  - 中转站
   - 凳子
-  sort_by: most_liked
+  sort_by: latest
 crawler:
   max_daily_videos: 100
   max_videos_per_keyword: 5

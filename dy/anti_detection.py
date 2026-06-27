@@ -272,11 +272,11 @@ class DailyLimitManager:
     """
 
     DEFAULT_LIMITS = {
-        'daily_like_limit': 80,        # 每日点赞上限
-        'daily_comment_limit': 30,     # 每日评论上限
-        'daily_follow_limit': 20,      # 每日关注上限
-        'daily_message_limit': 15,     # 每日私信上限
-        'daily_video_limit': 100,      # 每日视频上限
+        'daily_like_limit': 999999,        # 每日点赞上限（已关闭限制）
+        'daily_comment_limit': 999999,     # 每日评论上限（已关闭限制）
+        'daily_follow_limit': 999999,      # 每日关注上限（已关闭限制）
+        'daily_message_limit': 999999,     # 每日私信上限（已关闭限制）
+        'daily_video_limit': 999999,       # 每日视频上限（已关闭限制）
     }
 
     def __init__(self, config=None, db_manager=None):
@@ -284,6 +284,7 @@ class DailyLimitManager:
         self.db = db_manager
         anti_cfg = self.config.get('anti_detection', {})
         limits_cfg = anti_cfg.get('daily_limits', {})
+        # 用户配置可覆盖默认值；若用户未显式配置，默认不限制（999999）
         self.limits = {**self.DEFAULT_LIMITS, **limits_cfg}
 
     def _get_current_stats(self):

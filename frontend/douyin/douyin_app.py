@@ -688,12 +688,39 @@ def render_execution_functions():
 
         st.markdown("</div>", unsafe_allow_html=True)
 
+        # 策略开关区：夜间静默 + 概率决策 并排展示
+        col_night, col_prob = st.columns(2)
+
+        with col_night:
+            st.markdown("""
+            <div class="card" style="margin-top: 16px;">
+            """, unsafe_allow_html=True)
+            night_mode_enabled = st.checkbox(
+                "🌙 夜间静默策略",
+                value=bool(config.get("night_mode_enabled", True)),
+                help="开启后 23:00-07:00 启动任务将等待到早晨；关闭后任意时段可直接启动"
+            )
+            st.markdown("</div>", unsafe_allow_html=True)
+
+        with col_prob:
+            st.markdown("""
+            <div class="card" style="margin-top: 16px;">
+            """, unsafe_allow_html=True)
+            enable_anti_detection_probability = st.checkbox(
+                "🎲 概率决策策略（防风控）",
+                value=bool(config.get("enable_anti_detection_probability", False)),
+                help="关闭时每个视频都执行所有已开启功能；开启后按概率随机执行部分互动（点赞45%/评论15%/关注20%/私信10%/长停留15%），降低风控风险"
+            )
+            st.markdown("</div>", unsafe_allow_html=True)
+
         if st.form_submit_button("💾 保存当前配置", use_container_width=True, type="primary"):
             payload = {
                 "enable_like": enable_like,
                 "enable_author_follow": enable_author_follow,
                 "enable_video_comment": enable_video_comment,
-                "enable_comment_lead": enable_comment_lead
+                "enable_comment_lead": enable_comment_lead,
+                "night_mode_enabled": night_mode_enabled,
+                "enable_anti_detection_probability": enable_anti_detection_probability
             }
             try:
                 current_config = {}

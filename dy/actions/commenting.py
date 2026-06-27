@@ -53,6 +53,7 @@ def _find_bottom_edit_text(d, timeout=3):
 
 
 def _find_clickable_send_button(d):
+    # 策略1：标准 XPath（视频页主路径，要求 clickable=true）
     send_nodes = d.xpath(L.COMMENT_SEND_BTN_XPATH).all()
     candidates = [
         node for node in send_nodes
@@ -61,12 +62,54 @@ def _find_clickable_send_button(d):
     if candidates:
         return sorted(candidates, key=_bounds_bottom)[-1]
 
+    # 策略2：resource-id 列表
     for resource_id in L.COMMENT_SEND_BTN_IDS:
         btn = d(resourceId=resource_id)
-        if btn.exists(timeout=0.5):
+        if btn.exists(timeout=0.3):
             info = btn.info
             if info.get("clickable", False) and info.get("visible", True) and info.get("enabled", True):
                 return btn
+
+    # 策略3：楼中楼专用 — 放宽 clickable 限制（抖音楼中楼发送按钮可能 clickable=false 但可点）
+    loose_candidates = [
+        node for node in send_nodes
+        if node.info.get("visible", True) and node.info.get("enabled", True)
+    ]
+    if loose_candidates:
+        logger.info("[CS4]使用宽松策略定位楼中楼发送按钮")
+        return sorted(loose_candidates, key=_bounds_bottom)[-1]
+
+    # 策略4：楼中楼坐标兜底 — EditText 右边界往左 60px
+    edit_text = _find_bottom_edit_text(d, timeout=0.5)
+    if edit_text:
+        eb = edit_text.info.get('bounds', {}) or {}
+        if eb:
+            x = int(eb.get('right', 0)) - 60
+            y = int((eb.get('top', 0) + eb.get('bottom', 0)) / 2)
+            logger.info(f"[CS4]坐标兜底点击发送区域: ({x}, {y})")
+
+            class _CoordButton:
+                def __init__(self, d, x, y):
+                    self._d = d
+                    self._x = x
+                    self._y = y
+
+                def click(self):
+                    self._d.click(self._x, self._y)
+
+                @property
+                def info(self):
+                    return {
+                        "clickable": True,
+                        "visible": True,
+                        "enabled": True,
+                        "bounds": {
+                            "left": self._x - 30, "right": self._x + 30,
+                            "top": self._y - 30, "bottom": self._y + 30,
+                        },
+                    }
+
+            return _CoordButton(d, x, y)
 
     return None
 
@@ -262,7 +305,7 @@ class ProcessCommentSectionAction(BaseAction):
             if hasattr(self, 'check_stop_callback'):
                 self.check_stop_callback()
 
-            found_target, reviewed_now = self._process_current_screen_comments(
+            found_target, reviewed_now, should_break = self._process_current_screen_comments(
                 processed_comments,
                 ai_agent,
                 video_title,
@@ -275,6 +318,11 @@ class ProcessCommentSectionAction(BaseAction):
 
             if found_target:
                 logger.info("发现目标客户，完成互动，准备退出评论区")
+                break
+
+            # 守卫：识别到意向评论但发送失败时，必须停止扫描，避免 EditText 状态污染导致后续重复失败
+            if should_break:
+                logger.warning("已尝试楼中楼回复但发送失败，停止扫描避免状态污染")
                 break
 
             if reviewed_count >= max_reviews:
@@ -301,6 +349,7 @@ class ProcessCommentSectionAction(BaseAction):
         custom_keywords = custom_keywords or []
 
         found_target = False
+        should_break = False  # 守卫：发送失败也必须 break，避免状态污染后继续扫描
         reviewed_count = 0
         for node in text_nodes:
             text = node.info.get('text', '')
@@ -311,11 +360,16 @@ class ProcessCommentSectionAction(BaseAction):
                 reviewed_count += 1
                 if ai_agent.is_intent_comment(text, video_title=video_title, keyword=keyword, custom_keywords=custom_keywords):
                     logger.info(f"🎯 AI 识别到意向评论: {text}")
-                    found_target = self._interact_with_potential_customer(node, text, ai_agent, video_title, keyword)
+                    sent = self._interact_with_potential_customer(node, text, ai_agent, video_title, keyword)
+                    # 无论 sent 真假，识别到意向评论后都停止扫描：
+                    #   sent=True：任务完成
+                    #   sent=False：发送失败，EditText 可能已乱，继续扫描只会重复失败
+                    should_break = True
+                    found_target = sent
                     break
                 if reviewed_count >= remaining_reviews:
                     break
-        return found_target, reviewed_count
+        return found_target, reviewed_count, should_break
 
     def _is_reviewable_comment(self, text):
         if not text:
@@ -341,20 +395,48 @@ class ProcessCommentSectionAction(BaseAction):
         return sent
 
     def _send_comment_workflow(self, comment_node, text):
+        """楼中楼回复 — 按 CS0→CS6 闭环实现，每阶段出口必须自证成功"""
         logger.info(f"回复内容: {text}")
-        try:
-            comment_node.click()
-            self.human_sleep('normal')
-        except Exception as exc:
-            logger.warning(f"点击评论节点失败，尝试继续寻找回复输入框: {exc}")
 
-        if not self._focus_reply_input():
-            logger.warning("未找到楼中楼回复输入框")
+        # === CS0 选中态守卫：节点 bounds 必须可获取 ===
+        bounds = comment_node.info.get('bounds') if comment_node else None
+        if not bounds:
+            logger.warning("[CS0]评论节点无 bounds，跳过楼中楼回复")
             return False
 
+        # === CS1 触发态：click 后必须出现"回复"提示词或可见 EditText ===
+        try:
+            comment_node.click()
+            self.human_sleep('fast', custom_range=(0.8, 1.5))
+        except Exception as exc:
+            logger.warning(f"[CS1]点击评论节点失败: {exc}")
+            return False
+
+        has_reply_hint = any(
+            self.d(text=hint).exists(timeout=0.3)
+            for hint in ("回复", "回复评论")
+        )
+        has_edit_text = _find_bottom_edit_text(self.d, timeout=0.8) is not None
+        if not (has_reply_hint or has_edit_text):
+            logger.warning("[CS1]click 后未出现回复入口或输入框，状态未闭环")
+            return False
+
+        # === CS2 聚焦态：必须验证 EditText 真的出现 ===
+        if not has_edit_text:
+            if not self._focus_reply_input_verified():
+                logger.warning("[CS2]未能聚焦楼中楼回复输入框")
+                return False
+
+        # === CS3 输入态：必须验证文本真的进了框 ===
+        if not self._set_text_verified(text):
+            logger.warning("[CS3]文本未可靠进入输入框")
+            return False
+
+        # === CS4 发送态 + CS5 验证态（由 _send_text_from_focused_input 内部完成） ===
         return _send_text_from_focused_input(self.d, text, "楼中楼回复")
 
-    def _focus_reply_input(self):
+    def _focus_reply_input_verified(self):
+        """CS2 守卫：点击回复提示词后必须验证 EditText 真的出现"""
         hints = [
             "回复", "回复评论", "善语结善缘", "发条评论",
             L.COMMENT_INPUT_HINT_1, L.COMMENT_INPUT_HINT_2,
@@ -362,15 +444,28 @@ class ProcessCommentSectionAction(BaseAction):
         ]
         for hint in hints:
             node = self.d(text=hint)
-            if node.exists(timeout=1):
-                node.click()
-                self.human_sleep('fast', custom_range=(0.5, 1.2))
-                return True
+            if node.exists(timeout=0.5):
+                try:
+                    node.click()
+                except Exception:
+                    continue
+                self.human_sleep('fast', custom_range=(0.5, 1.0))
+                # CS2 出口守卫
+                if _find_bottom_edit_text(self.d, timeout=1.0) is not None:
+                    return True
+        # 兜底：直接检测 EditText 是否已存在
+        return _find_bottom_edit_text(self.d, timeout=1.0) is not None
 
-        if self.d.xpath(L.COMMENT_EDIT_TEXT_XPATH).wait(timeout=1):
-            return True
-
-        return False
+    def _set_text_verified(self, text):
+        """CS3 守卫：输入文本后必须验证文本真的在框内"""
+        edit_text = _find_bottom_edit_text(self.d, timeout=2)
+        if not edit_text:
+            return False
+        if not _set_text_to_input(self.d, edit_text, text):
+            return False
+        time.sleep(random.uniform(0.5, 1.0))
+        # CS3 出口守卫：文本必须真的在输入框内
+        return _input_still_contains(self.d, text)
 
     def _swipe_up_comments(self):
         """人性化滑动评论区（贝塞尔曲线）"""

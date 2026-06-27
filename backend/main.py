@@ -320,6 +320,7 @@ def _load_douyin_config_for_frontend():
         "has_license_key": bool(license_key),
         "license_server_url": license_data.get("server_url", DEFAULT_LICENSE_SERVER_URL),
         "night_mode_enabled": data.get("anti_detection", {}).get("night_mode", {}).get("enabled", True),
+        "enable_anti_detection_probability": data.get("anti_detection", {}).get("interaction_probability", {}).get("enabled", False),
     }
 
 
@@ -370,6 +371,12 @@ def _save_douyin_config(config: AppConfig):
         "enabled": config.night_mode_enabled,
         "start_hour": prev_night.get("start_hour", 23),
         "end_hour": prev_night.get("end_hour", 7),
+    }
+    # 概率决策开关：保留旧 interaction_probability 下的概率值，仅更新 enabled 总开关
+    prev_prob = prev_anti.get("interaction_probability", {}) if isinstance(prev_anti.get("interaction_probability"), dict) else {}
+    existing_anti["interaction_probability"] = {
+        **prev_prob,
+        "enabled": config.enable_anti_detection_probability,
     }
     user_yaml_data["anti_detection"] = existing_anti
     api_yaml_data = {
