@@ -1,0 +1,167 @@
+﻿﻿﻿﻿﻿﻿﻿﻿<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" href="/favicon.ico" sizes="any">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+    <link rel="manifest" href="/site.webmanifest">
+    <title>点数充值 - 聚兴科技｜AI 创作按量计费</title>
+    <meta name="description" content="聚兴科技点数充值页面，支持 AI 创作按量计费，生成失败自动退款，适用于 AI 换装、洗图、动作迁移和视频生成。">
+    <meta name="robots" content="noindex,follow">
+    <link rel="canonical" href="https://lcjx.yun/recharge.html">
+    <meta property="og:locale" content="zh_CN">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="聚兴科技">
+    <meta property="og:title" content="点数充值 - 聚兴科技">
+    <meta property="og:description" content="为 AI 换装、洗图、动作迁移和视频生成充值点数，按量计费，失败自动退款。">
+    <meta property="og:url" content="https://lcjx.yun/recharge.html">
+    <meta property="og:image" content="https://lcjx.yun/assets/home-ai-visual-bg.v2026053001.webp">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="点数充值 - 聚兴科技">
+    <meta name="twitter:description" content="聚兴科技 AI 创作按量计费，充值后可用于图片、视频和动作迁移工作流。">
+    <meta name="twitter:image" content="https://lcjx.yun/assets/home-ai-visual-bg.v2026053001.webp">
+    <link rel="stylesheet" href="/styles.css?v=202606121620">
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "WebPage",
+        "@id": "https://lcjx.yun/recharge.html#webpage",
+        "url": "https://lcjx.yun/recharge.html",
+        "name": "点数充值 - 聚兴科技",
+        "description": "聚兴科技 AI 创作按量计费和点数充值页面。",
+        "inLanguage": "zh-CN",
+        "isPartOf": {
+          "@id": "https://lcjx.yun/#website"
+        },
+        "breadcrumb": {
+          "@type": "BreadcrumbList",
+          "itemListElement": [
+            {
+              "@type": "ListItem",
+              "position": 1,
+              "name": "首页",
+              "item": "https://lcjx.yun/"
+            },
+            {
+              "@type": "ListItem",
+              "position": 2,
+              "name": "充值",
+              "item": "https://lcjx.yun/recharge.html"
+            }
+          ]
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="nav">
+        <a class="brand" href="/">
+          <span class="brand-mark">聚</span>
+          <span>聚兴科技</span>
+        </a>
+        <nav class="nav-links" aria-label="主导航">
+          <a href="/">首页</a>
+          <a href="/studio.html">创作</a>
+          <a href="/recharge.html">充值</a>
+          <a href="/profile.html">个人中心</a>
+        </nav>
+        <div class="auth-actions">
+          <div class="wallet">
+            <span>点数</span>
+            <strong id="credits">--</strong>
+          </div>
+          <div class="user-menu" id="user-menu" hidden>
+            <a class="user-avatar" href="/profile.html" id="user-avatar" title="个人中心">--</a>
+            <div class="user-dropdown">
+              <a href="/profile.html">个人中心</a>
+              <button type="button" data-logout>退出登录</button>
+            </div>
+          </div>
+          <button class="login-button" type="button" data-login-open>登录</button>
+        </div>
+      </div>
+    </header>
+
+    <main class="shell">
+      <section class="nc-page-hero">
+        <div class="nc-page-hero-bg" aria-hidden="true"></div>
+        <div class="nc-page-hero-content">
+          <p class="nc-page-eyebrow">Credits Center</p>
+          <h1 class="nc-page-title">点数充值</h1>
+        </div>
+      </section>
+
+      <section class="nc-page-section">
+        <div class="nc-recharge-layout">
+          <div class="nc-panel">
+            <div class="nc-panel-head">
+              <div>
+                <p class="nc-panel-eyebrow">Recharge</p>
+                <h2 class="nc-panel-title">选择套餐</h2>
+              </div>
+              <span class="nc-pill">即时到账</span>
+            </div>
+            <form id="pay-form">
+              <div id="plans" class="nc-plans"></div>
+              <label class="nc-label">
+                支付方式
+                <select id="pay-type" class="nc-select">
+                  <option value="alipay">支付宝</option>
+                  <option value="wxpay">微信</option>
+                </select>
+              </label>
+              <button class="nc-btn-primary nc-btn-block" type="submit">去支付</button>
+              <p id="pay-message" class="nc-message" role="status"></p>
+            </form>
+          </div>
+
+          <div class="nc-panel">
+            <div class="nc-panel-head">
+              <div>
+                <p class="nc-panel-eyebrow">Orders</p>
+                <h2 class="nc-panel-title">充值记录</h2>
+              </div>
+            </div>
+            <div id="payments" class="nc-payments"></div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <a class="icp-link" href="https://beian.miit.gov.cn/" target="_blank" rel="noopener">粤ICP备2026069003号</a>
+    </footer>
+    <div class="login-modal" id="login-modal" hidden>
+      <div class="login-card">
+        <button class="modal-close" type="button" data-login-close>×</button>
+        <p class="eyebrow">Account</p>
+        <h2 id="auth-title">账号/邮箱登录</h2>
+        <div class="auth-tabs" role="tablist">
+          <button class="auth-tab active" type="button" data-auth-mode="login">登录</button>
+          <button class="auth-tab" type="button" data-auth-mode="register">注册</button>
+        </div>
+        <form id="login-form">
+          <label id="login-email-label">
+            账号/邮箱
+            <input id="login-email" type="text" autocomplete="username" placeholder="请输入账号或邮箱" required>
+          </label>
+          <label id="login-name-label" hidden>
+            用户名
+            <input id="login-name" type="text" autocomplete="username" placeholder="请输入用户名">
+          </label>
+          <label>
+            密码
+            <input id="login-password" type="password" autocomplete="current-password" placeholder="请输入密码" required>
+          </label>
+          <button id="auth-submit" class="primary full" type="submit">登录</button>
+          <p id="login-message" class="message"></p>
+        </form>
+      </div>
+    </div>
+
+    <script src="/app.js?v=202606121620"></script>
+  </body>
+</html>

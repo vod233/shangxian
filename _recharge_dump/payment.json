@@ -1,0 +1,41 @@
+{
+  "gateway": "https://openapi.alipay.com/gateway.do",
+  "pid": "",
+  "key": "",
+  "site_name": "聚兴科技",
+  "public_base_url": "https://lcjx.yun",
+  "plans": [
+    {
+      "id": "starter",
+      "name": "基础包 100 点",
+      "money": "10.00",
+      "credits": 100
+    },
+    {
+      "id": "standard",
+      "name": "标准包 300 点",
+      "money": "30.00",
+      "credits": 300
+    },
+    {
+      "id": "pro",
+      "name": "进阶包 1000 点",
+      "money": "100.00",
+      "credits": 1000
+    }
+  ],
+  "communication_key": "",
+  "alipay_gateway": "https://openapi.alipay.com/gateway.do",
+  "alipay_app_id": "2021006158647144",
+  "alipay_site_base_url": "https://lcjx.yun",
+  "alipay_notify_url": "https://lcjx.yun/api/payments/alipay/notify",
+  "alipay_return_url": "https://lcjx.yun/recharge.html",
+  "random_discount": {
+    "enabled": false
+  },
+  "disabled_types": [
+    "wxpay",
+    "qqpay"
+  ],
+  "disabled_type_message": "微信支付通道暂时维护中，请使用支付宝完成支付"
+}
