@@ -2,6 +2,7 @@ import time
 import re
 import random
 import logging
+import datetime
 
 from .main_controller import ScoutTaskRunner
 from .actions.navigation import (
@@ -21,6 +22,11 @@ from .anti_detection import AntiDetectionEngine, BehaviorRandomizer, HumanSleep
 
 logger = logging.getLogger(__name__)
 
+
+def _now_str():
+    """当前时间字符串，用于 action_event 时间戳"""
+    return datetime.datetime.now().strftime("%H:%M:%S")
+
 class TikTokTaskFlow:
     """
     具体的业务任务流
@@ -39,6 +45,9 @@ class TikTokTaskFlow:
         self.last_share_token = None
         self.last_description = None
         self.current_keyword = None
+        # 视频计数器（用于前端详情展示第几个关键词的第几个视频）
+        self.keyword_index = 0
+        self.video_index = 0
 
         # 停止标识
         self.is_stopped = False
@@ -428,6 +437,8 @@ class TikTokTaskFlow:
         self.last_share_token = None
         self.last_description = None
         self.current_keyword = keyword
+        self.keyword_index += 1
+        self.video_index = 0
         self._report(current_action=f"正在检索核心客群意向词：【{keyword}】", executed_action=f"开始关键词：{keyword}")
 
         # 1. 搜索
@@ -567,10 +578,26 @@ class TikTokTaskFlow:
                 is_new = self.db.record_video(video_id, self.current_keyword, url, note_title=video_title)
                 if not is_new:
                     logger.info("⏭️ 视频今日已处理过，跳过互动环节")
+                    self.db.update_video_detail(
+                        video_id,
+                        keyword_index=self.keyword_index,
+                        process_status="skipped",
+                        skip_reason="duplicate",
+                        action_event={"t": _now_str(), "phase": "B.0", "msg": "视频今日已处理过"},
+                    )
                 else:
+                    self.video_index += 1
                     logger.info("🎬 开始对新视频执行互动...")
                     logger.info(f"📝 当前视频标题: {video_title}")
                     skip_remaining_features = False
+                    # 初始化本视频详细记录
+                    self.db.update_video_detail(
+                        video_id,
+                        keyword_index=self.keyword_index,
+                        video_index=self.video_index,
+                        process_status="processing",
+                        action_event={"t": _now_str(), "phase": "B.0", "msg": f"开始处理: {video_title}"},
+                    )
 
                     # B.1 点赞（功能开关为确定性指令，仍保留每日限额与概率决策）
                     if self._interaction_enabled("enable_like"):
@@ -584,19 +611,24 @@ class TikTokTaskFlow:
                             if liked:
                                 self.db.update_interaction(video_id, "like")
                                 self._report(executed_action="点赞")
+                                self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.1", "msg": "点赞成功"})
                             if not stable:
                                 skip_remaining_features = True
+                                self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.1", "msg": "点赞失败(页面不稳定)"})
                         else:
                             logger.info("限额/概率决策: 跳过点赞")
+                            self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.1", "msg": "跳过点赞(限额/概率)"})
                         self._interruptible_sleep(random.uniform(0.8, 2.0))
                     else:
                         logger.info("已关闭功能: 点赞，跳过")
+                        self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.1", "msg": "功能关闭:点赞"})
 
                     # B.2 作者主页链路：粉丝数判断 -> 关注 -> 私信（功能开关为确定性指令，仍保留每日限额）
                     if self._video_processing_timed_out(video_started_at):
                         skip_remaining_features = True
                     if skip_remaining_features:
                         logger.warning("页面恢复失败，跳过当前视频剩余功能")
+                        self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.2", "msg": "跳过(页面恢复失败)"})
                     elif self._interaction_enabled("enable_author_follow"):
                         self._check_stop()
                         if self.anti.can_do('follow') and self._probability_allows('follow'):
@@ -617,25 +649,36 @@ class TikTokTaskFlow:
                                 if follow_result.get("followed"):
                                     self.db.update_interaction(video_id, "follow")
                                     self._report(executed_action="关注作者")
+                                    self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.2", "msg": "关注成功"})
                                 if follow_result.get("private_message_sent"):
                                     self.db.update_interaction(video_id, "private_message")
                                     self._report(executed_action="发送私信")
+                                    self.db.update_video_detail(video_id, pm_sent=1, action_event={"t": _now_str(), "phase": "B.2", "msg": "私信发送成功"})
+                                # 记录粉丝数（如返回）
+                                follower_count = follow_result.get("follower_count") or ""
+                                if follower_count:
+                                    self.db.update_video_detail(video_id, follower_count=str(follower_count))
                             elif follow_result:
                                 self.db.update_interaction(video_id, "follow")
                                 self._report(executed_action="关注作者")
+                                self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.2", "msg": "关注成功(无私信)"})
                             if not stable:
                                 skip_remaining_features = True
+                                self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.2", "msg": "关注/私信失败(页面不稳定)"})
                         else:
                             logger.info("限额/概率决策: 跳过关注/私信")
+                            self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.2", "msg": "跳过关注/私信(限额/概率)"})
                         self._interruptible_sleep(random.uniform(1.0, 2.5))
                     else:
                         logger.info("已关闭功能: 作者主页/关注/私信，跳过")
+                        self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.2", "msg": "功能关闭:关注/私信"})
 
                     # B.3 发送视频评论（功能开关为确定性指令，仍保留每日限额）
                     if self._video_processing_timed_out(video_started_at):
                         skip_remaining_features = True
                     if skip_remaining_features:
                         logger.warning("页面恢复失败，跳过当前视频剩余功能")
+                        self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.3", "msg": "跳过(页面恢复失败)"})
                     elif self._interaction_enabled("enable_video_comment"):
                         self._check_stop()
                         if self.anti.can_do('comment') and self._probability_allows('comment'):
@@ -660,8 +703,10 @@ class TikTokTaskFlow:
                                 if commented:
                                     self.db.update_interaction(video_id, "comment")
                                     self._report(executed_action="发布视频评论")
+                                    self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.3", "msg": f"评论已发布: {comment_text[:30]}"})
                                 if not stable:
                                     skip_remaining_features = True
+                                    self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.3", "msg": "评论失败(页面不稳定)"})
                             else:
                                 self.db.save_ai_reply(
                                     video_id,
@@ -669,28 +714,40 @@ class TikTokTaskFlow:
                                     ai_reply="",
                                 )
                                 logger.info("未生成可发布的回复，跳过评论环节。")
+                                self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.3", "msg": "AI未生成评论"})
                         else:
                             logger.info("限额/概率决策: 跳过评论")
+                            self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.3", "msg": "跳过评论(限额/概率)"})
                     else:
                         logger.info("已关闭功能: AI 视频评论，跳过")
+                        self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.3", "msg": "功能关闭:视频评论"})
 
                     # B.4 处理评论区（功能开关为确定性指令）
                     if self._video_processing_timed_out(video_started_at):
                         skip_remaining_features = True
                     if skip_remaining_features:
                         logger.warning("页面恢复失败，跳过当前视频剩余功能")
+                        self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.4", "msg": "跳过(页面恢复失败)"})
                     elif self._interaction_enabled("enable_comment_lead"):
                         self._check_stop()
                         if self._probability_allows('comment_lead'):
                             self._report(current_action="正在对评论区意向线索进行精准拦截")
                             if not self._run_comment_lead_safely(video_title, self.current_keyword or ""):
                                 skip_remaining_features = True
+                                self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.4", "msg": "评论区截流失败"})
                             else:
                                 self._report(executed_action="评论区AI截流")
+                                self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.4", "msg": "评论区截流完成"})
                         else:
                             logger.info("概率决策: 跳过评论区截流")
+                            self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.4", "msg": "跳过截流(概率)"})
                     else:
                         logger.info("已关闭功能: 评论区 AI 截流/楼中楼回复，跳过")
+                        self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.4", "msg": "功能关闭:评论区截流"})
+
+                    # 标记本视频处理完成
+                    final_status = "error" if skip_remaining_features else "completed"
+                    self.db.update_video_detail(video_id, process_status=final_status)
 
             else:
                 logger.warning("无法提取当前视频信息，跳过互动环节")
@@ -731,14 +788,27 @@ class TikTokTaskFlow:
             min_stay = self.config.get('crawler', {}).get('min_video_stay', 5)
             max_stay = self.config.get('crawler', {}).get('max_video_stay', 12)
             stay_time = random.uniform(min_stay, max_stay)
+            long_watch_triggered = 0
 
             # 15% 概率长停留（模拟看完整个视频）— 受概率决策总开关控制
             if self._probability_allows('long_watch'):
                 stay_time += random.uniform(5.0, 15.0)
+                long_watch_triggered = 1
                 logger.info(f"📺 长停留模式: 预计停留 {stay_time:.1f} 秒")
 
             logger.info(f"等待 {stay_time:.1f} 秒后处理下一个视频...")
             self._interruptible_sleep(stay_time)
+
+            # 记录本视频停留时长与长停留标记到数据库
+            try:
+                self.db.update_video_detail(
+                    video_id,
+                    stay_duration=round(stay_time, 1),
+                    long_watch=long_watch_triggered,
+                    action_event={"t": _now_str(), "phase": "C", "msg": f"停留 {stay_time:.1f}s{'(长停留)' if long_watch_triggered else ''}"},
+                )
+            except Exception:
+                pass
 
     def _extract_title_from_description(self, description):
         """从视频描述中提取标题"""

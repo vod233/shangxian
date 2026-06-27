@@ -980,11 +980,34 @@ def render_data_dashboard():
             liked_text = "✅ 已点赞" if record.get("liked") else "❌ 未点赞"
             commented_text = "✅ 已回复" if record.get("commented") else "❌ 未回复"
             followed_text = "✅ 已关注" if record.get("followed") else "❌ 未关注"
+            pm_text = "✅ 已私信" if record.get("private_messaged") else "❌ 未私信"
             title_text = record.get("note_title") or "未抓取到标题"
             reply_text = record.get("ai_reply") or "本条内容暂无可展示的 AI 回复内容"
-            header = f"{idx}. {title_text[:28]}{'...' if len(title_text) > 28 else ''}"
+            keyword_idx = record.get("keyword_index", 0)
+            video_idx = record.get("video_index", 0)
+            process_status = record.get("process_status", "")
+            skip_reason = record.get("skip_reason", "")
+            stay_duration = record.get("stay_duration", 0)
+            long_watch = record.get("long_watch", False)
+            intent_comment = record.get("intent_comment", "")
+            lead_reply = record.get("lead_reply", "")
+            lead_sent = record.get("lead_sent", False)
+            follower_count = record.get("follower_count", "")
+            error_message = record.get("error_message", "")
+            action_log_raw = record.get("action_log", "[]")
+
+            # 状态徽章
+            status_badge = {
+                "completed": "🟢 完成",
+                "processing": "🔵 处理中",
+                "skipped": "🟡 跳过",
+                "error": "🔴 异常",
+            }.get(process_status, "⚪ 未知")
+
+            header = f"#{idx} [词{keyword_idx}-视{video_idx}] {title_text[:24]}{'...' if len(title_text) > 24 else ''}"
 
             with st.expander(header, expanded=(idx == 1)):
+                # 第一行：时间 / 关键词 / 标识 / 链接
                 meta_cols = st.columns(4)
                 meta_cols[0].markdown(f"**时间**：{record.get('created_at', '-')}")
                 meta_cols[1].markdown(f"**关键词**：{record.get('keyword', '-') or '-'}")
@@ -994,7 +1017,22 @@ def render_data_dashboard():
                 else:
                     meta_cols[3].markdown("**链接**：-")
 
-                st.markdown(f"**互动状态**：{liked_text} | {commented_text} | {followed_text}")
+                # 第二行：处理状态 + 停留时长 + 长停留 + 粉丝数
+                meta_cols2 = st.columns(4)
+                meta_cols2[0].markdown(f"**处理状态**：{status_badge}")
+                meta_cols2[1].markdown(f"**停留时长**：{stay_duration} 秒" + (" 📺长停留" if long_watch else ""))
+                meta_cols2[2].markdown(f"**作者粉丝**：{follower_count or '-'}")
+                skip_text = skip_reason if skip_reason else ("无" if process_status != "skipped" else "duplicate")
+                meta_cols2[3].markdown(f"**跳过原因**：{skip_text}")
+
+                # 第三行：互动状态（4 项）
+                st.markdown(f"**互动状态**：{liked_text} | {commented_text} | {followed_text} | {pm_text}")
+
+                # 异常信息
+                if error_message:
+                    st.error(f"⚠️ 异常信息：{error_message}")
+
+                # 内容标题
                 st.markdown("**内容标题**")
                 st.text_area(
                     f"title_{idx}",
@@ -1003,7 +1041,9 @@ def render_data_dashboard():
                     disabled=True,
                     label_visibility="collapsed"
                 )
-                st.markdown("**AI 生成回复**")
+
+                # AI 生成回复（视频评论）
+                st.markdown("**AI 生成回复（视频评论）**")
                 st.text_area(
                     f"reply_{idx}",
                     value=reply_text,
@@ -1011,6 +1051,29 @@ def render_data_dashboard():
                     disabled=True,
                     label_visibility="collapsed"
                 )
+
+                # 楼中楼回复区
+                if intent_comment or lead_reply:
+                    st.markdown("**楼中楼回复（评论区截流）**")
+                    lead_cols = st.columns(2)
+                    lead_cols[0].markdown(f"*意向评论*：{intent_comment or '-'}")
+                    lead_cols[1].markdown(f"*AI 回复*：{lead_reply or '-'}" + (" ✅已发送" if lead_sent else " ❌未发送"))
+
+                # 执行动作流水
+                try:
+                    import json as _json
+                    action_events = _json.loads(action_log_raw) if action_log_raw else []
+                except Exception:
+                    action_events = []
+                if action_events:
+                    st.markdown("**执行动作流水**")
+                    log_lines = []
+                    for evt in action_events:
+                        t = evt.get("t", "")
+                        phase = evt.get("phase", "")
+                        msg = evt.get("msg", "")
+                        log_lines.append(f"`{t}` [{phase}] {msg}")
+                    st.markdown("\n".join(log_lines))
     else:
         st.info("今日暂无操作记录。")
 

@@ -80,6 +80,29 @@ class DBManager:
             cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN ai_reply TEXT DEFAULT ''")
         if "private_messaged" not in existing_columns:
             cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN private_messaged INTEGER DEFAULT 0")
+        # 执行过程详细字段（v2 扩展，便于前端透明展示每条视频的处理过程）
+        detail_columns = {
+            "video_index": "INTEGER DEFAULT 0",           # 本关键词内第几个视频
+            "keyword_index": "INTEGER DEFAULT 0",          # 第几个关键词
+            "process_status": "TEXT DEFAULT ''",           # 处理结果：completed/skipped/error
+            "skip_reason": "TEXT DEFAULT ''",              # 跳过原因：duplicate/限额/概率/功能关闭
+            "stay_duration": "REAL DEFAULT 0",             # 实际停留时长(秒)
+            "long_watch": "INTEGER DEFAULT 0",             # 是否触发长停留
+            "recovery_attempts": "INTEGER DEFAULT 0",      # 状态恢复尝试次数
+            "intent_comment": "TEXT DEFAULT ''",           # AI识别到的意向评论文本
+            "lead_reply": "TEXT DEFAULT ''",               # 楼中楼回复内容
+            "lead_sent": "INTEGER DEFAULT 0",              # 楼中楼是否发送成功
+            "pm_sent": "INTEGER DEFAULT 0",                # 私信是否发送（兼容旧 private_messaged）
+            "follower_count": "TEXT DEFAULT ''",           # 作者粉丝数（原始文本）
+            "error_message": "TEXT DEFAULT ''",            # 执行异常信息
+            "action_log": "TEXT DEFAULT ''",               # 执行动作流水（JSON 数组字符串）
+        }
+        for col, col_type in detail_columns.items():
+            if col not in existing_columns:
+                try:
+                    cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {col} {col_type}")
+                except Exception as e:
+                    logger.debug(f"添加字段 {col} 失败（可能已存在）: {e}")
 
     def _ensure_table(self):
         """确保执行操作前当天的表存在（应对跨天运行的情况）"""
@@ -161,6 +184,63 @@ class DBManager:
             logger.error(f"更新视频互动状态 [{action_type}] 失败: {e}")
             return False
 
+    def update_video_detail(self, video_id, **fields):
+        """
+        更新视频的执行过程详细字段。
+        支持的字段：process_status/skip_reason/stay_duration/long_watch/
+        recovery_attempts/intent_comment/lead_reply/lead_sent/pm_sent/
+        follower_count/error_message/video_index/keyword_index
+        特殊字段 action_event：会作为一条事件追加到 action_log（JSON 数组）
+        """
+        allowed_fields = {
+            "process_status", "skip_reason", "stay_duration", "long_watch",
+            "recovery_attempts", "intent_comment", "lead_reply", "lead_sent",
+            "pm_sent", "follower_count", "error_message",
+            "video_index", "keyword_index",
+        }
+        table_name = self._ensure_table()
+        action_event = fields.pop("action_event", None)
+
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+
+                # 追加动作事件到 action_log（JSON 数组）
+                if action_event:
+                    import json
+                    cursor.execute(
+                        f"SELECT action_log FROM {table_name} WHERE video_id = ?",
+                        (video_id,)
+                    )
+                    row = cursor.fetchone()
+                    try:
+                        log_list = json.loads(row[0]) if row and row[0] else []
+                    except Exception:
+                        log_list = []
+                    log_list.append(action_event)
+                    # 限制最多 50 条事件，避免字段过长
+                    if len(log_list) > 50:
+                        log_list = log_list[-50:]
+                    cursor.execute(
+                        f"UPDATE {table_name} SET action_log = ? WHERE video_id = ?",
+                        (json.dumps(log_list, ensure_ascii=False), video_id)
+                    )
+
+                # 批量更新普通字段
+                update_fields = {k: v for k, v in fields.items() if k in allowed_fields}
+                if update_fields:
+                    set_clause = ", ".join(f"{k} = ?" for k in update_fields.keys())
+                    params = list(update_fields.values()) + [video_id]
+                    cursor.execute(
+                        f"UPDATE {table_name} SET {set_clause} WHERE video_id = ?",
+                        params
+                    )
+                conn.commit()
+                return True
+        except Exception as e:
+            logger.error(f"更新视频详细字段失败: {e}")
+            return False
+
     def get_daily_stats(self):
         """获取当天的汇总统计数据"""
         table_name = self._ensure_table()
@@ -189,14 +269,19 @@ class DBManager:
             return {"videos": 0, "likes": 0, "comments": 0, "follows": 0, "private_messages": 0}
 
     def get_daily_records(self, limit=100):
-        """获取当天的详细操作记录，按时间倒序排列"""
+        """获取当天的详细操作记录，按时间倒序排列（含执行过程字段）"""
         table_name = self._ensure_table()
         try:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(f'''
-                    SELECT 
-                        video_id, keyword, note_title, ai_reply, url, liked, commented, followed, private_messaged, created_at 
+                    SELECT
+                        video_id, keyword, note_title, ai_reply, url,
+                        liked, commented, followed, private_messaged, created_at,
+                        video_index, keyword_index, process_status, skip_reason,
+                        stay_duration, long_watch, recovery_attempts,
+                        intent_comment, lead_reply, lead_sent, pm_sent,
+                        follower_count, error_message, action_log
                     FROM {table_name}
                     ORDER BY created_at DESC
                     LIMIT ?
@@ -214,7 +299,21 @@ class DBManager:
                         "commented": bool(row[6]),
                         "followed": bool(row[7]),
                         "private_messaged": bool(row[8]),
-                        "created_at": row[9]
+                        "created_at": row[9],
+                        "video_index": row[10] or 0,
+                        "keyword_index": row[11] or 0,
+                        "process_status": row[12] or "",
+                        "skip_reason": row[13] or "",
+                        "stay_duration": row[14] or 0,
+                        "long_watch": bool(row[15]),
+                        "recovery_attempts": row[16] or 0,
+                        "intent_comment": row[17] or "",
+                        "lead_reply": row[18] or "",
+                        "lead_sent": bool(row[19]),
+                        "pm_sent": bool(row[20]),
+                        "follower_count": row[21] or "",
+                        "error_message": row[22] or "",
+                        "action_log": row[23] or "[]",
                     })
                 return records
         except Exception as e:
