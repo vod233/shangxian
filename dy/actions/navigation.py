@@ -116,53 +116,131 @@ class EnterSearchAction(BaseAction):
 
 class ApplyFiltersAction(BaseAction):
     """打开并应用搜索结果的筛选条件"""
+
+    def _is_option_selected(self, xpath_node) -> bool:
+        try:
+            info = xpath_node.info
+            desc = info.get('contentDescription', '') or info.get('content-desc', '')
+            return desc.startswith('已选中，')
+        except Exception:
+            return False
+
+    def _click_filter_option(self, option_text: str, wait_timeout: float = 2.5) -> bool:
+        container_xpath = L.filter_option_xpath(option_text)
+        target = self.d.xpath(container_xpath)
+
+        if not target.wait(timeout=wait_timeout):
+            logger.warning(f"筛选选项[{option_text}]容器未出现，尝试文本节点兜底")
+            text_node = self.d.xpath(f'//*[@text="{option_text}"]')
+            if text_node.wait(timeout=1):
+                try:
+                    text_node.click()
+                    self.human_sleep('fast')
+                    logger.info(f"已通过文本节点点击筛选选项: {option_text}")
+                    return True
+                except Exception as exc:
+                    logger.warning(f"文本节点点击[{option_text}]失败: {exc}")
+            return False
+
+        if self._is_option_selected(target):
+            logger.info(f"筛选选项[{option_text}]已经是选中状态，跳过点击")
+            return True
+
+        try:
+            target.click()
+            logger.info(f"已点击筛选选项容器: {option_text}")
+        except Exception as exc:
+            logger.warning(f"点击筛选选项容器[{option_text}]异常: {exc}")
+            return False
+
+        self.human_sleep('fast')
+
+        selected_confirmed = False
+        for _ in range(8):
+            self.human_sleep('fast')
+            if self._is_option_selected(self.d.xpath(container_xpath)):
+                selected_confirmed = True
+                break
+        if selected_confirmed:
+            logger.info(f"✓ 已确认选中: {option_text}")
+        else:
+            logger.warning(f"⚠️ 点击后未能确认[{option_text}]选中状态")
+        return selected_confirmed
+
     def execute(self, sort_mode="latest"):
         sort_text = "最多点赞" if sort_mode == "most_liked" else "最新发布"
         logger.info(f">>> 自动化配对成功：模式[{sort_mode}] -> 点击按钮[{sort_text}] <<<")
-        
+
         filter_btn = self.d.xpath(L.FILTER_PANEL_BTN)
-        if filter_btn.wait(timeout=4):
-            bounds = filter_btn.info['bounds']
-            cx = (bounds['left'] + bounds['right']) / 2
-            cy = (bounds['top'] + bounds['bottom']) / 2
-            self.human_click(int(cx), int(cy))
-            self.human_sleep('normal')
-            
-            target_sort = self.d.xpath(f'//*[@text="{sort_text}"]')
-            if target_sort.wait(timeout=3):
-                target_sort.click()
-                logger.info(f"已成功选择排序方式: {sort_text}")
-                self.human_sleep('fast')
-            
-            unseen_btn = self.d.xpath(L.FILTER_UNSEEN_BTN)
-            if unseen_btn.wait(timeout=3):
-                unseen_btn.click()
-                logger.info("已点击选择: 还未看过")
-                self.human_sleep('fast')
-            
-            # 强制收起面板机制
-            self.human_sleep('normal')
-            self.human_click(int(cx), int(cy))
-            self.human_sleep('normal')
-            
-            video_tab = self.d.xpath(L.VIDEO_TAB)
-            if video_tab.wait(timeout=2):
-                video_tab.click()
-                logger.info("已点击'视频'页签辅助收起面板")
-            
-            # 确定性等待面板消失
-            start_wait = time.time()
-            while time.time() - start_wait < 5:
-                if not self.d.xpath(L.FILTER_SORT_PANEL_INDICATOR).exists:
-                    break
-                self.human_sleep('fast')
-            
-            self.human_sleep('normal')
-            logger.info(f"--- 工作流切换完全执行：{sort_text} ---")
-            return True
-        else:
+        if not filter_btn.wait(timeout=4):
             logger.warning("未找到筛选按钮，无法设置排序工作流")
             return False
+
+        bounds = filter_btn.info['bounds']
+        cx = int((bounds['left'] + bounds['right']) / 2)
+        cy = int((bounds['top'] + bounds['bottom']) / 2)
+
+        for attempt in range(2):
+            self.human_click(cx, cy)
+            self.human_sleep('normal')
+            if self.d.xpath(L.filter_option_xpath(sort_text)).wait(timeout=1.5):
+                logger.info("筛选面板已打开")
+                break
+            if self.d.xpath(L.FILTER_SORT_PANEL_INDICATOR).wait(timeout=1):
+                logger.info("筛选面板已打开（通过排序指示器确认）")
+                break
+            logger.info(f"等待筛选面板打开... (尝试 {attempt+1}/2)")
+        else:
+            logger.warning("筛选面板未能打开，尝试继续")
+
+        sort_clicked = self._click_filter_option(sort_text)
+
+        unseen_btn_xpath = L.FILTER_UNSEEN_BTN
+        unseen_container = self.d.xpath(unseen_btn_xpath)
+        if unseen_container.wait(timeout=1.5):
+            if not self._is_option_selected(unseen_container):
+                try:
+                    unseen_container.click()
+                    self.human_sleep('fast')
+                    logger.info("已点击选择: 还未看过")
+                except Exception as exc:
+                    logger.warning(f"点击[还未看过]异常: {exc}")
+            else:
+                logger.info("[还未看过]已是选中状态，跳过")
+        else:
+            unseen_text = self.d.xpath('//*[@text="还未看过"]')
+            if unseen_text.wait(timeout=1):
+                try:
+                    unseen_text.click()
+                    self.human_sleep('fast')
+                    logger.info("已通过文本节点点击: 还未看过")
+                except Exception:
+                    pass
+
+        self.human_sleep('normal')
+
+        if self.d.xpath(L.FILTER_SORT_PANEL_INDICATOR).exists:
+            logger.info("面板仍打开，点击外部区域收起")
+            w, h = self.d.window_size()
+            self.human_click(int(w * 0.5), int(h * 0.3), jitter_range=10)
+            self.human_sleep('normal')
+
+        start_wait = time.time()
+        while time.time() - start_wait < 5:
+            if not self.d.xpath(L.FILTER_SORT_PANEL_INDICATOR).exists:
+                break
+            self.human_click(cx, cy)
+            self.human_sleep('fast')
+
+        if self.d.xpath(L.VIDEO_TAB).wait(timeout=1):
+            pass
+
+        self.human_sleep('normal')
+        if sort_clicked:
+            logger.info(f"--- 工作流切换完全执行：{sort_text} ---")
+        else:
+            logger.warning(f"--- 工作流切换未完成：{sort_text} 未被点击 ---")
+        return sort_clicked
 
 class EnterFirstVideoAction(BaseAction):
     """进入第一个全屏视频"""

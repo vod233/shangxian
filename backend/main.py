@@ -233,14 +233,6 @@ def _save_yaml_file(path, data):
         yaml.safe_dump(data, f, allow_unicode=True, sort_keys=False)
 
 
-def _normalize_sort_mode(sort_by):
-    if sort_by == "most_liked":
-        return "comprehensive"
-    if sort_by in ("latest", "comprehensive"):
-        return sort_by
-    return "latest"
-
-
 # ======================== 抖音配置逻辑 ========================
 
 def _load_douyin_runtime_config():
@@ -281,6 +273,7 @@ def _load_douyin_runtime_config():
         "target": normalized_user_data.get("target", {}),
         "interaction": normalized_user_data.get("interaction", {}),
         "ai_reply": normalized_api_data.get("ai_reply", {}),
+        "anti_detection": normalized_user_data.get("anti_detection", {}),
     }
 
 

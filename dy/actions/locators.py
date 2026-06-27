@@ -14,8 +14,13 @@ class TikTokLocators:
     # 2. 筛选面板 (Filters)
     # ==========================================
     FILTER_PANEL_BTN = '//*[@content-desc="筛选，按钮"]'
-    FILTER_UNSEEN_BTN = '//*[@text="还未看过"]'
-    FILTER_SORT_PANEL_INDICATOR = '//*[@text="还未看过" or @text="排序方式"]'
+    FILTER_OPTION_CONTAINER_ID = "com.ss.android.ugc.aweme:id/yus"
+    FILTER_UNSEEN_BTN = '//*[@resource-id="com.ss.android.ugc.aweme:id/yus" and contains(@content-desc, "还未看过")]'
+    FILTER_SORT_PANEL_INDICATOR = '//*[@resource-id="com.ss.android.ugc.aweme:id/yus" and contains(@content-desc, "排序")]'
+
+    @staticmethod
+    def filter_option_xpath(option_text: str) -> str:
+        return f'//*[@resource-id="com.ss.android.ugc.aweme:id/yus" and contains(@content-desc, "{option_text}")]'
     
     # ==========================================
     # 3. 视频列表与特征 (Video List)

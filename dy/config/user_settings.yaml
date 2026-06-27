@@ -1,11 +1,10 @@
 search:
   keywords:
-  - 灯泡
-  - 装修
-  - 二手闲置
-  - 中转站
-  - 凳子
-  sort_by: latest
+  - 租房
+  - 二手空调
+  - 二手苹果
+  - 二手鼠标
+  sort_by: most_liked
 crawler:
   max_daily_videos: 100
   max_videos_per_keyword: 20
@@ -21,7 +20,7 @@ interaction:
   intent_keywords: []
   enable_like: false
   enable_author_follow: false
-  enable_video_comment: false
+  enable_video_comment: true
   enable_comment_lead: true
   min_followers_threshold: 0.01
   enable_private_message: true
@@ -37,7 +36,7 @@ interaction:
   - 内容质量很高，已收藏
 anti_detection:
   night_mode:
-    enabled: true
+    enabled: false
     start_hour: 23
     end_hour: 7
   interaction_probability:
