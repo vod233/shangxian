@@ -317,6 +317,7 @@ def _load_douyin_config_for_frontend():
         "license_server_url": license_data.get("server_url", DEFAULT_LICENSE_SERVER_URL),
         "night_mode_enabled": data.get("anti_detection", {}).get("night_mode", {}).get("enabled", True),
         "enable_anti_detection_probability": data.get("anti_detection", {}).get("interaction_probability", {}).get("enabled", False),
+        "turbo_test_mode": data.get("anti_detection", {}).get("turbo_test_mode", {}).get("enabled", False),
     }
 
 
@@ -376,6 +377,10 @@ def _save_douyin_config(config: AppConfig):
     existing_anti["interaction_probability"] = {
         **prev_prob,
         "enabled": config.enable_anti_detection_probability,
+    }
+    # 极速测试模式：单总开关，控制 HumanSleep/BehaviorRandomizer/InteractionProbability
+    existing_anti["turbo_test_mode"] = {
+        "enabled": config.turbo_test_mode,
     }
     user_yaml_data["anti_detection"] = existing_anti
     api_yaml_data = {

@@ -53,6 +53,8 @@ class AppConfig(BaseModel):
     night_mode_enabled: bool = True
     # 概率决策（防风控）总开关：关闭时每个视频都执行所有已开启功能；开启后按概率随机执行部分互动
     enable_anti_detection_probability: bool = False
+    # 极速测试模式（临时调试用）：开启后跳过 HumanSleep/BehaviorRandomizer/InteractionProbability，最高效率跑通功能链路
+    turbo_test_mode: bool = False
 
 class DeviceConnectRequest(BaseModel):
     """连接新设备请求"""

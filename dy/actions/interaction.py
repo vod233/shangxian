@@ -5,6 +5,7 @@ import random
 import logging
 from .base_action import BaseAction
 from .locators import TikTokLocators as L
+from ..anti_detection import HumanSleep
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +32,7 @@ def _is_visible_enabled(node):
 
 def _set_text_to_input(d, input_node, text):
     input_node.click()
-    time.sleep(random.uniform(0.15, 0.3))
+    HumanSleep.sleep(custom_range=(0.15, 0.3))
     resource_id = input_node.info.get('resourceId') or input_node.info.get('resourceName')
     if resource_id:
         try:
@@ -258,7 +259,7 @@ class FollowAuthorAction(BaseAction):
             candidates = [node for node in input_nodes if _is_visible_enabled(node)]
             if candidates:
                 return sorted(candidates, key=_bounds_bottom)[-1]
-            time.sleep(0.3)
+            HumanSleep.sleep(custom_range=(0.3, 0.3))
         return None
 
     def _find_private_message_send_button(self, input_edit=None):
@@ -365,7 +366,7 @@ class FollowAuthorAction(BaseAction):
                 return False
             if self._input_contains_message(message):
                 cleared_at = None
-                time.sleep(0.3)
+                HumanSleep.sleep(custom_range=(0.3, 0.3))
                 continue
             if self._verify_message_sent(message):
                 return True
@@ -373,7 +374,7 @@ class FollowAuthorAction(BaseAction):
                 cleared_at = time.time()
             elif time.time() - cleared_at >= 1.2:
                 return not self._has_private_message_failure()
-            time.sleep(0.3)
+            HumanSleep.sleep(custom_range=(0.3, 0.3))
         return False
 
     def _refind_input_or_original(self, input_edit):
@@ -451,7 +452,7 @@ class FollowAuthorAction(BaseAction):
             if current_text and message in current_text:
                 logger.info("私信输入框仍包含待发送文本，判定未发送")
                 return False
-            time.sleep(random.uniform(0.8, 1.5))
+            HumanSleep.sleep(custom_range=(0.8, 1.5))
             if self._has_private_message_failure():
                 return False
             logger.info("未匹配到消息气泡，但输入框文本已清空，按已发送处理")
@@ -674,7 +675,7 @@ class GetCurrentVideoLinkAction(BaseAction):
                 logger.error("所有定位方式均未找到分享按钮")
                 return None
 
-            time.sleep(random.uniform(1.5, 2.5))
+            HumanSleep.sleep(custom_range=(1.5, 2.5))
 
             # 3. 检查分享面板
             panel_id = self.config.get('ui_ids', {}).get('share_panel', L.SHARE_PANEL_CONTAINER)

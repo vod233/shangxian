@@ -299,7 +299,7 @@ def render_task_monitor():
 
 
 def render_search_control():
-    render_page_header("AI搜索基础控制", "配置搜索行业关键词。")
+    render_page_header("AI搜索基础控制", "配置搜索行业关键词（越精准越细分越好）。")
 
     fetch_config()
     config = st.session_state.config_data
@@ -700,6 +700,17 @@ def render_execution_functions():
             )
             st.markdown("</div>", unsafe_allow_html=True)
 
+        # 极速测试模式（临时调试用）：单独一行，上线前联调专用
+        st.markdown("""
+        <div class="card" style="margin-top: 16px;">
+        """, unsafe_allow_html=True)
+        turbo_test_mode = st.checkbox(
+            "⚡ 极速测试模式（临时调试，上线前请关闭）",
+            value=bool(config.get("turbo_test_mode", False)),
+            help="开启后跳过人性化等待/行为随机化/概率决策，所有 sleep 退化为 0.05s，最高效率跑通功能链路。仅用于真机联调，生产环境请关闭。"
+        )
+        st.markdown("</div>", unsafe_allow_html=True)
+
         if st.form_submit_button("💾 保存当前配置", use_container_width=True, type="primary"):
             payload = {
                 "enable_like": enable_like,
@@ -707,7 +718,8 @@ def render_execution_functions():
                 "enable_video_comment": enable_video_comment,
                 "enable_comment_lead": enable_comment_lead,
                 "night_mode_enabled": night_mode_enabled,
-                "enable_anti_detection_probability": enable_anti_detection_probability
+                "enable_anti_detection_probability": enable_anti_detection_probability,
+                "turbo_test_mode": turbo_test_mode
             }
             try:
                 current_config = {}

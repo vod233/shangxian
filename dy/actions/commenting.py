@@ -5,6 +5,7 @@ import logging
 from .base_action import BaseAction
 from .locators import TikTokLocators as L
 from ..ai_reply_agent import DYReplyAgent
+from ..anti_detection import HumanSleep
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +49,7 @@ def _find_bottom_edit_text(d, timeout=3):
         candidates = [node for node in edit_nodes if _is_visible_enabled(node)]
         if candidates:
             return sorted(candidates, key=_bounds_bottom)[-1]
-        time.sleep(0.3)
+        HumanSleep.sleep(custom_range=(0.3, 0.3))
     return None
 
 
@@ -125,13 +126,13 @@ def _message_visible(d, text, timeout=2):
             node_text = str(node.info.get("text", "") or "")
             if text in node_text:
                 return True
-        time.sleep(0.3)
+        HumanSleep.sleep(custom_range=(0.3, 0.3))
     return False
 
 
 def _set_text_to_input(d, edit_text, text):
     edit_text.click()
-    time.sleep(random.uniform(0.15, 0.3))
+    HumanSleep.sleep(custom_range=(0.15, 0.3))
     resource_id = edit_text.info.get("resourceId") or edit_text.info.get("resourceName")
     if resource_id:
         try:
@@ -178,7 +179,7 @@ def _close_comment_input_if_open(d, text=""):
 
     logger.info("检测到评论输入框仍处于打开状态，执行返回关闭")
     d.press("back")
-    time.sleep(random.uniform(0.5, 1.0))
+    HumanSleep.sleep(custom_range=(0.5, 1.0))
     return _find_bottom_edit_text(d, timeout=0.5) is None
 
 
@@ -190,23 +191,23 @@ def _send_text_from_focused_input(d, text, log_label):
 
     if not _set_text_to_input(d, edit_text, text):
         return False
-    time.sleep(random.uniform(0.5, 1.2))
+    HumanSleep.sleep(custom_range=(0.5, 1.2))
 
     for attempt in range(3):
         send_btn = _find_clickable_send_button(d)
         if send_btn:
             _click_node_center(d, send_btn)
             logger.info(f"{log_label}: 已点击发送按钮")
-            time.sleep(random.uniform(1.0, 2.0))
+            HumanSleep.sleep(custom_range=(1.0, 2.0))
             if _message_visible(d, text) or not _input_still_contains(d, text):
                 return True
             logger.info(f"{log_label}: 点击发送后文本仍在输入框，继续重试")
         logger.info(f"{log_label}: 发送按钮未就绪，重试 {attempt + 1}/3")
-        time.sleep(random.uniform(0.5, 1.2))
+        HumanSleep.sleep(custom_range=(0.5, 1.2))
 
     logger.info(f"{log_label}: 尝试回车键发送")
     d.press("enter")
-    time.sleep(random.uniform(1.0, 2.0))
+    HumanSleep.sleep(custom_range=(1.0, 2.0))
     return _message_visible(d, text) or not _input_still_contains(d, text)
 
 
@@ -349,7 +350,7 @@ class ProcessCommentSectionAction(BaseAction):
                 break
 
             swipe_count += 1
-            time.sleep(random.uniform(1.0, 2.0))
+            HumanSleep.sleep(custom_range=(1.0, 2.0))
 
         # keep_open_after_lead=True 且已发现意向评论时，保留评论区打开状态（供 B.5 使用）
         if keep_open_after_lead and self.lead_comment_node is not None:
@@ -481,7 +482,7 @@ class ProcessCommentSectionAction(BaseAction):
             return False
         if not _set_text_to_input(self.d, edit_text, text):
             return False
-        time.sleep(random.uniform(0.5, 1.0))
+        HumanSleep.sleep(custom_range=(0.5, 1.0))
         # CS3 出口守卫：文本必须真的在输入框内
         return _input_still_contains(self.d, text)
 

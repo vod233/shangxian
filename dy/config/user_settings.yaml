@@ -47,3 +47,5 @@ anti_detection:
     end_hour: 7
   interaction_probability:
     enabled: false
+  turbo_test_mode:
+    enabled: true

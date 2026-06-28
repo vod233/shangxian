@@ -181,6 +181,9 @@ class HumanSleep:
     - 操作间隔随机化
     """
 
+    # 极速测试模式全局缓存（由 AntiDetectionEngine 初始化时注入）
+    _turbo_enabled = False
+
     # 预定义的操作类型及其默认时间范围
     SLEEP_RANGES = {
         'fast': (0.3, 0.8),        # 快速操作（按钮点击后）
@@ -193,12 +196,21 @@ class HumanSleep:
     }
 
     @classmethod
+    def _turbo_mode_enabled(cls):
+        return cls._turbo_enabled
+
+    @classmethod
     def sleep(cls, sleep_type='normal', custom_range=None):
         """
         执行人性化等待
         :param sleep_type: 预定义类型
         :param custom_range: 自定义范围 (min, max)
         """
+        # 极速测试模式：所有等待退化为 0.05s 固定值
+        if cls._turbo_enabled:
+            time.sleep(0.05)
+            return 0.05
+
         if custom_range:
             min_t, max_t = custom_range
         else:
@@ -247,6 +259,9 @@ class InteractionProbability:
         'long_watch': 0.15,    # 15% 概率长停留（看完视频）
     }
 
+    # 极速测试模式全局缓存（由 AntiDetectionEngine 初始化时注入）
+    _turbo_enabled = False
+
     @classmethod
     def should_interact(cls, action_type, config=None):
         """
@@ -254,6 +269,10 @@ class InteractionProbability:
         :param action_type: like/comment/follow/private_message/comment_lead/lead_pm/long_watch
         :param config: 配置字典，可覆盖默认概率
         """
+        # 极速测试模式：总是返回 True，每个功能都执行
+        if cls._turbo_enabled:
+            return True
+
         anti_cfg = (config or {}).get('anti_detection', {})
         prob_cfg = anti_cfg.get('interaction_probability', {})
         probability = prob_cfg.get(action_type, cls.DEFAULT_PROBABILITIES.get(action_type, 1.0))
@@ -446,11 +465,17 @@ class BehaviorRandomizer:
     - 偶尔回看、偶尔快速划过、偶尔长时间停留
     """
 
+    # 极速测试模式全局缓存（由 AntiDetectionEngine 初始化时注入）
+    _turbo_enabled = False
+
     @staticmethod
     def maybe_rewind(device, probability=0.05):
         """
         小概率回看上一个视频（模拟真人觉得有趣回看）
         """
+        # 极速测试模式：跳过所有随机行为
+        if BehaviorRandomizer._turbo_enabled:
+            return False
         if random.random() < probability:
             logger.info("模拟行为: 回看上一个视频")
             w, h = device.window_size()
@@ -474,6 +499,9 @@ class BehaviorRandomizer:
         """
         小概率快速划过视频（模拟真人快速浏览不感兴趣的内容）
         """
+        # 极速测试模式：跳过所有随机行为
+        if BehaviorRandomizer._turbo_enabled:
+            return False
         if random.random() < probability:
             logger.info("模拟行为: 快速划过视频")
             w, h = device.window_size()
@@ -491,6 +519,9 @@ class BehaviorRandomizer:
         """
         小概率切到首页推荐流浏览（模拟真人非任务行为）
         """
+        # 极速测试模式：跳过所有随机行为
+        if BehaviorRandomizer._turbo_enabled:
+            return False
         if random.random() < probability:
             logger.info("模拟行为: 切到首页推荐流浏览")
             try:
@@ -519,6 +550,9 @@ class BehaviorRandomizer:
         """
         小概率长停顿（模拟真人思考/走神/回复消息）
         """
+        # 极速测试模式：跳过所有随机行为
+        if BehaviorRandomizer._turbo_enabled:
+            return False
         if random.random() < probability:
             pause_time = random.uniform(5.0, 15.0)
             logger.info(f"模拟行为: 停顿思考 {pause_time:.1f}s")
@@ -553,6 +587,14 @@ class AntiDetectionEngine:
         self.fingerprint = DeviceFingerprintGuard()
         self.behavior = BehaviorRandomizer()
         self._initialized = True
+        # 极速测试模式注入到静态缓存（HumanSleep/BehaviorRandomizer/InteractionProbability 全局生效）
+        turbo_cfg = self.config.get('anti_detection', {}).get('turbo_test_mode', {})
+        turbo_enabled = bool(turbo_cfg.get('enabled', False))
+        HumanSleep._turbo_enabled = turbo_enabled
+        BehaviorRandomizer._turbo_enabled = turbo_enabled
+        InteractionProbability._turbo_enabled = turbo_enabled
+        if turbo_enabled:
+            logger.warning("⚡ 极速测试模式已启用：跳过人性化等待/行为随机化/概率决策（仅用于功能联调，生产环境请关闭）")
         logger.info("🛡️ 防风控引擎已初始化")
 
     def human_swipe(self, device, sx, sy, ex, ey, duration=None):
