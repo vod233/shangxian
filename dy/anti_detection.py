@@ -277,7 +277,7 @@ class DailyLimitManager:
         'daily_comment_limit': 999999,     # 每日评论上限（已关闭限制）
         'daily_follow_limit': 999999,      # 每日关注上限（已关闭限制）
         'daily_message_limit': 999999,     # 每日私信上限（已关闭限制）
-        'daily_lead_pm_limit': 10,         # 每日楼中楼私信评论者上限（高敏感操作，默认 10 次）
+        'daily_lead_pm_limit': 999999,     # 每日楼中楼私信评论者上限（已关闭限制）
         'daily_video_limit': 999999,       # 每日视频上限（已关闭限制）
     }
 

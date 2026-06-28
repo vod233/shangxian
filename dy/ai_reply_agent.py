@@ -75,21 +75,36 @@ class DYReplyAgent:
     def is_intent_comment(self, comment_text: str, video_title: str = "", keyword: str = "", custom_keywords: list = None) -> bool:
         clean_comment = self._normalize_text(comment_text)
         if not clean_comment or len(clean_comment) < 3:
+            logger.info("[intent_stats] result=False reason=TOO_SHORT comment=%s", clean_comment[:30])
             return False
 
         custom_keywords = custom_keywords or []
-        
+        preview = clean_comment[:30]
+
         if not self.is_enabled():
-            return self._local_intent_guess(clean_comment, custom_keywords)
+            final = self._local_intent_guess(clean_comment, custom_keywords)
+            logger.info("[intent_stats] result=%s reason=AI_DISABLED_LOCAL comment=%s", final, preview)
+            return final
 
         result = self._call_intent_model(clean_comment, video_title, keyword, custom_keywords)
         if result is None:
-            return self._local_intent_guess(clean_comment, custom_keywords)
+            final = self._local_intent_guess(clean_comment, custom_keywords)
+            logger.info("[intent_stats] result=%s reason=AI_FAIL_LOCAL comment=%s", final, preview)
+            return final
 
         if result:
+            logger.info("[intent_stats] result=True reason=AI_YES comment=%s", preview)
             return True
-        
-        return self._check_custom_keywords(clean_comment, custom_keywords)
+
+        # AI 返回 NO：是否允许自定义关键词复活 AI 判定（默认 True 保持旧行为）
+        override = self.config.get("interaction", {}).get("keyword_override_ai", True)
+        if override:
+            final = self._check_custom_keywords(clean_comment, custom_keywords)
+            logger.info("[intent_stats] result=%s reason=AI_NO_KEYWORD_OVERRIDE comment=%s", final, preview)
+            return final
+
+        logger.info("[intent_stats] result=False reason=AI_NO_RESPECT comment=%s", preview)
+        return False
 
     def generate_lead_reply(self, comment_text: str, video_title: str = "", keyword: str = "") -> Optional[str]:
         clean_comment = self._normalize_text(comment_text)
@@ -208,9 +223,14 @@ class DYReplyAgent:
                 messages = [
                     SystemMessage(content=(
                         "你是抖音评论区线索筛选器。"
-                        "判断评论是否表达了明确需求、咨询意愿、购买/体验兴趣、想了解更多、求推荐、求教程、求链接、求价格、求方案。"
+                        "判断【评论者是否向视频作者（博主）】表达了明确需求、咨询意愿、"
+                        "购买/体验兴趣、想了解更多、求推荐、求教程、求链接、求价格、求方案。"
+                        "判定规则："
+                        "1. 如果评论明显是消费者之间互相解答（含'我发你了''去我主页''私我''已发'等），输出 NO；"
+                        "2. 对于反讽、玩梗、攻击性调侃（含'智商税''两块钱包邮''能让我死心''真的假的'等），即使包含'多少钱/哪里买'也输出 NO；"
+                        "3. 普通夸赞、调侃、无意义表情、单纯路过、泛泛赞同，输出 NO；"
+                        "4. 其他情况按是否表达对博主的需求判断。"
                         "只输出 YES 或 NO。"
-                        "普通夸赞、调侃、无意义表情、单纯路过、泛泛赞同都输出 NO。"
                     )),
                     HumanMessage(content=(
                         f"视频标题：{video_title or '未提供'}\n"
@@ -385,7 +405,7 @@ class DYReplyAgent:
     def _local_intent_guess(self, text: str, custom_keywords: list = None) -> bool:
         custom_keywords = custom_keywords or []
         
-        default_pattern = r"(怎么买|哪里|求|想要|了解|价格|多少|推荐|教程|方法|链接|资料|怎么做|靠谱吗|有用吗)"
+        default_pattern = r"(怎么买|怎么卖|哪里有卖|哪里买|哪里能买|哪儿买|还有吗|有货吗|求推荐|求教程|求链接|求价格|求方案|求带|求一个|整一个|来一份|想要|想买|想入手|想了解|想咨询|能详细说下吗|价格|多少钱|价格多少|费用多少|报价|怎么收费|能推荐吗|有推荐吗|有教程吗|教程哪里看|有方法吗|方法是什么|求方法|链接发下|有链接吗|求资料|资料分享下|有资料吗|怎么做|怎么操作|怎么弄|靠谱吗|有用吗|真的有用吗)"
         if re.search(default_pattern, text):
             return True
         

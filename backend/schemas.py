@@ -25,6 +25,7 @@ class AppConfig(BaseModel):
     max_comment_swipes: int = 2
     max_ai_comment_reviews: int = 20
     intent_keywords: List[str] = []
+    keyword_override_ai: bool = True   # true 保持旧行为（AI 返回 NO 时仍查自定义关键词）；false 时尊重 AI 判定
 
     @field_validator("intent_keywords", mode="before")
     @classmethod

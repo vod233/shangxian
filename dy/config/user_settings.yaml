@@ -1,12 +1,13 @@
 search:
   keywords:
-  - 正能量
+  - 装修
+  - 木材
   sort_by: latest
 crawler:
-  max_daily_videos: 100
+  max_daily_videos: 10000
   max_videos_per_keyword: 50
   min_video_stay: 1
-  max_video_stay: 3
+  max_video_stay: 2
 comments: []
 target:
   keywords: []
@@ -15,8 +16,9 @@ interaction:
   max_comment_swipes: 2
   max_ai_comment_reviews: 20
   intent_keywords: []
-  enable_like: false
-  enable_author_follow: false
+  keyword_override_ai: true
+  enable_like: true
+  enable_author_follow: true
   enable_video_comment: true
   enable_comment_lead: true
   enable_comment_lead_pm: true
