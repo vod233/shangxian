@@ -301,11 +301,18 @@ class ProcessCommentSectionAction(BaseAction):
         swipe_count = 0
         reviewed_count = 0
 
+        # 保存意向评论信息（供 B.5 楼中楼私信评论者复用）
+        self.lead_comment_node = None
+        self.lead_comment_text = ""
+        self.lead_reply_sent = False
+        # keep_open_after_lead=True 时，发现意向评论后不关闭评论区（供 B.5 在评论区打开状态下操作）
+        keep_open_after_lead = bool(getattr(self, 'keep_open_after_lead', False))
+
         while swipe_count < max_swipes and reviewed_count < max_reviews:
             if hasattr(self, 'check_stop_callback'):
                 self.check_stop_callback()
 
-            found_target, reviewed_now, should_break = self._process_current_screen_comments(
+            found_target, reviewed_now, should_break, lead_info = self._process_current_screen_comments(
                 processed_comments,
                 ai_agent,
                 video_title,
@@ -316,7 +323,11 @@ class ProcessCommentSectionAction(BaseAction):
             reviewed_count += reviewed_now
             logger.info(f"AI 已识别评论 {reviewed_count}/{max_reviews} 条")
 
-            if found_target:
+            if found_target and lead_info:
+                # 保存意向评论节点和文本，供后续 B.5 私信评论者使用
+                self.lead_comment_node = lead_info.get("node")
+                self.lead_comment_text = lead_info.get("text", "")
+                self.lead_reply_sent = lead_info.get("sent", False)
                 logger.info("发现目标客户，完成互动，准备退出评论区")
                 break
 
@@ -340,6 +351,11 @@ class ProcessCommentSectionAction(BaseAction):
             swipe_count += 1
             time.sleep(random.uniform(1.0, 2.0))
 
+        # keep_open_after_lead=True 且已发现意向评论时，保留评论区打开状态（供 B.5 使用）
+        if keep_open_after_lead and self.lead_comment_node is not None:
+            logger.info("keep_open_after_lead=True，保留评论区打开状态供 B.5 使用")
+            return True
+
         logger.info("评论区处理完毕，关闭面板")
         return self._close_comment_section()
 
@@ -351,6 +367,7 @@ class ProcessCommentSectionAction(BaseAction):
         found_target = False
         should_break = False  # 守卫：发送失败也必须 break，避免状态污染后继续扫描
         reviewed_count = 0
+        lead_info = None  # 保存意向评论的节点和文本（供 B.5 私信评论者使用）
         for node in text_nodes:
             text = node.info.get('text', '')
             if text and text not in processed_comments:
@@ -366,10 +383,11 @@ class ProcessCommentSectionAction(BaseAction):
                     #   sent=False：发送失败，EditText 可能已乱，继续扫描只会重复失败
                     should_break = True
                     found_target = sent
+                    lead_info = {"node": node, "text": text, "sent": sent}
                     break
                 if reviewed_count >= remaining_reviews:
                     break
-        return found_target, reviewed_count, should_break
+        return found_target, reviewed_count, should_break, lead_info
 
     def _is_reviewable_comment(self, text):
         if not text:
@@ -515,3 +533,182 @@ class ProcessCommentSectionAction(BaseAction):
         if not closed:
             logger.warning("评论区面板关闭失败")
         return closed
+
+
+class CommentLeadPmAction(BaseAction):
+    """B.5 楼中楼回复后私信评论者
+    从已识别的意向评论节点反查评论者头像，进入评论者主页发送私信。
+    前置：评论区必须处于打开状态（由 _run_comment_lead_safely 保证），lead_comment_node 有效。
+    """
+    def execute(self):
+        # 从 self 读取 lead_comment_node（由 run_action 通过 kwargs setattr）
+        lead_comment_node = getattr(self, 'lead_comment_node', None)
+        if lead_comment_node is None:
+            logger.warning("B.5 未提供意向评论节点，跳过楼中楼私信")
+            return {"pm_sent": False, "reason": "no_lead_node"}
+
+        # ① 从意向评论节点反查头像节点（同一 k4x 父容器下的 avatar）
+        avatar_node = self._find_avatar_from_comment_node(lead_comment_node)
+        if avatar_node is None:
+            logger.warning("B.5 未能从意向评论节点反查到头像，跳过私信")
+            return {"pm_sent": False, "reason": "avatar_not_found"}
+
+        # ② 点击头像进入评论者主页
+        if not self._enter_commenter_profile(avatar_node):
+            logger.warning("B.5 进入评论者主页失败，跳过私信")
+            return {"pm_sent": False, "reason": "enter_profile_failed"}
+
+        # ③ 在评论者主页点击"发私信"按钮进入聊天页
+        if not self._click_commenter_pm_button():
+            logger.warning("B.5 评论者主页未找到私信按钮（可能已关闭陌生人私信），跳过")
+            return {"pm_sent": False, "reason": "pm_btn_not_found"}
+
+        # ④ 输入并发送私信（复用 FollowAuthorAction 的输入/发送/验证链路）
+        message_list = self.config.get('interaction', {}).get('lead_pm_message_list', [])
+        if not message_list:
+            logger.warning("B.5 lead_pm_message_list 为空，跳过私信")
+            return {"pm_sent": False, "reason": "empty_message_list"}
+
+        message = random.choice(message_list)
+        logger.info(f"B.5 准备向评论者发送私信: {message}")
+
+        from .interaction import FollowAuthorAction
+        pm_helper = FollowAuthorAction(self.d, self.app, self.config)
+        pm_sent = False
+        try:
+            # 此时已在聊天页，直接用输入/发送链路（跳过 _send_private_message 的按钮查找逻辑）
+            input_edit = pm_helper._find_private_message_input(timeout=4)
+            if input_edit and _set_text_to_input(self.d, input_edit, message):
+                self.human_sleep('normal')
+                pm_sent = pm_helper._send_private_message_from_input(input_edit, message)
+            else:
+                logger.warning("B.5 未找到私信输入框或输入失败")
+                pm_sent = False
+        except Exception as exc:
+            logger.error(f"B.5 私信评论者异常: {exc}")
+            pm_sent = False
+
+        if pm_sent:
+            logger.info("B.5 楼中楼私信评论者成功")
+        else:
+            logger.warning("B.5 楼中楼私信评论者失败")
+        return {"pm_sent": pm_sent, "reason": "ok" if pm_sent else "send_failed"}
+
+    def _find_avatar_from_comment_node(self, comment_node):
+        """从意向评论 content 节点反查同卡片内的头像节点。
+        dump 实测：comment_node（content）与 avatar 同属 k4x ViewGroup，是兄弟节点。
+        """
+        try:
+            parent = comment_node.parent
+            attempts = 0
+            while parent is not None and attempts < 3:
+                parent_info = parent.info or {}
+                parent_rid = parent_info.get('resourceName', '') or parent_info.get('resource-id', '')
+                if parent_rid == L.COMMENT_CARD_CONTAINER_ID:
+                    avatar = parent.child(resourceId=L.COMMENTER_AVATAR_ID)
+                    if avatar is not None and avatar.exists():
+                        return avatar
+                    break
+                parent = parent.parent
+                attempts += 1
+        except Exception as exc:
+            logger.debug(f"B.5 通过父容器反查头像失败: {exc}")
+
+        # 兜底：全局查找 avatar 节点
+        try:
+            avatar = self.d.xpath(L.COMMENTER_AVATAR_XPATH)
+            if avatar.exists(timeout=0.5):
+                return avatar
+        except Exception as exc:
+            logger.debug(f"B.5 全局查找头像失败: {exc}")
+        return None
+
+    def _enter_commenter_profile(self, avatar_node):
+        """点击头像进入评论者主页，并验证已进入 UserProfileActivity。"""
+        try:
+            bounds = avatar_node.info.get('bounds') if avatar_node else None
+            if bounds:
+                x = int((bounds.get('left', 0) + bounds.get('right', 0)) / 2)
+                y = int((bounds.get('top', 0) + bounds.get('bottom', 0)) / 2)
+                self.human_click(x, y, jitter_range=4)
+            else:
+                avatar_node.click()
+            self.human_sleep('slow', custom_range=(2.5, 3.5))
+        except Exception as exc:
+            logger.warning(f"B.5 点击头像异常: {exc}")
+            return False
+
+        try:
+            has_fans = (
+                self.d(text="粉丝").exists(timeout=1.0)
+                or self.d(text="获赞").exists(timeout=0.5)
+                or self.d(text="作品").exists(timeout=0.5)
+            )
+            if has_fans:
+                logger.info("B.5 已进入评论者主页")
+                return True
+            logger.warning("B.5 未检测到评论者主页特征（粉丝/获赞/作品）")
+            return False
+        except Exception as exc:
+            logger.warning(f"B.5 验证评论者主页异常: {exc}")
+            return False
+
+    def _click_commenter_pm_button(self):
+        """在评论者主页点击"发私信"按钮进入聊天页。
+        dump 实测：可点击父容器 resource-id=zbl，图标本体 zbk 不可点击。
+        优先用 COMMENTER_PM_BTN_XPATH（zbl），兜底用图标 content-desc 取父。
+        """
+        # 优先定位可点击父容器 zbl
+        pm_btn = None
+        try:
+            btn = self.d.xpath(L.COMMENTER_PM_BTN_XPATH)
+            if btn.exists(timeout=1.0):
+                pm_btn = btn
+                logger.info("B.5 通过 zbl 定位到评论者主页私信按钮")
+        except Exception:
+            pass
+
+        # 兜底：通过图标 content-desc="私信" 取其可点击父容器
+        if pm_btn is None:
+            try:
+                btn_parent = self.d.xpath(L.COMMENTER_PM_BTN_PARENT_XPATH)
+                if btn_parent.exists(timeout=0.5):
+                    pm_btn = btn_parent
+                    logger.info("B.5 通过 zbk 父容器定位到评论者主页私信按钮")
+            except Exception:
+                pass
+
+        # 最终兜底：直接用 PM_BTN_DESC（命中图标，靠 bounds 点击）
+        if pm_btn is None:
+            try:
+                btn_desc = self.d.xpath(L.PM_BTN_DESC)
+                if btn_desc.exists(timeout=0.5):
+                    pm_btn = btn_desc
+                    logger.info("B.5 通过 PM_BTN_DESC 兜底定位到私信图标")
+            except Exception:
+                pass
+
+        if pm_btn is None:
+            return False
+
+        try:
+            pm_btn.click()
+            self.human_sleep('slow', custom_range=(2.0, 3.0))
+        except Exception as exc:
+            logger.warning(f"B.5 点击私信按钮异常: {exc}")
+            return False
+
+        # 验证已进入聊天页（检测 msg_et 输入框）
+        try:
+            if self.d(resourceId=L.PM_EDIT_TEXT_ID).exists(timeout=2.0):
+                logger.info("B.5 已进入评论者私信聊天页")
+                return True
+            # 兜底：检测 EditText
+            if self.d.xpath(f'//{L.PM_EDIT_TEXT_CLASS}').exists(timeout=1.0):
+                logger.info("B.5 已进入评论者私信聊天页（EditText 兜底）")
+                return True
+            logger.warning("B.5 点击私信按钮后未检测到聊天页")
+            return False
+        except Exception as exc:
+            logger.warning(f"B.5 验证聊天页异常: {exc}")
+            return False

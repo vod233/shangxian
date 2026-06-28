@@ -298,10 +298,12 @@ def _load_douyin_config_for_frontend():
         "enable_author_follow": data.get("interaction", {}).get("enable_author_follow", True),
         "enable_video_comment": data.get("interaction", {}).get("enable_video_comment", True),
         "enable_comment_lead": data.get("interaction", {}).get("enable_comment_lead", True),
+        "enable_comment_lead_pm": data.get("interaction", {}).get("enable_comment_lead_pm", False),
         "min_followers_threshold": data.get("interaction", {}).get("min_followers_threshold", 0),
         "enable_private_message": data.get("interaction", {}).get("enable_private_message", True),
         "pm_followers_threshold": data.get("interaction", {}).get("pm_followers_threshold", 1),
         "pm_message_list": data.get("interaction", {}).get("pm_message_list", []),
+        "lead_pm_message_list": data.get("interaction", {}).get("lead_pm_message_list", []),
         "ai_enabled": data.get("ai_reply", {}).get("enabled", True),
         "ai_base_url": data.get("ai_reply", {}).get("cloud_base_url", DEFAULT_LICENSE_SERVER_URL),
         "ai_api_key": "",
@@ -349,10 +351,12 @@ def _save_douyin_config(config: AppConfig):
             "enable_author_follow": config.enable_author_follow,
             "enable_video_comment": config.enable_video_comment,
             "enable_comment_lead": config.enable_comment_lead,
+            "enable_comment_lead_pm": config.enable_comment_lead_pm,
             "min_followers_threshold": config.min_followers_threshold,
             "enable_private_message": config.enable_private_message,
             "pm_followers_threshold": config.pm_followers_threshold,
             "pm_message_list": config.pm_message_list,
+            "lead_pm_message_list": config.lead_pm_message_list,
         }
     }
     # 夜间静默时段：前端只控总开关，start_hour/end_hour 从旧配置保留，避免被重置

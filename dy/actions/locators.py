@@ -77,6 +77,13 @@ class TikTokLocators:
     COMMENT_SEND_BTN_TEXT = "发送"
     COMMENT_SEND_BTN_XPATH = '//*[@text="发送" or @content-desc="发送" or contains(@content-desc, "发送")]'
     COMMENT_TEXT_XPATH = "//android.widget.TextView"
+
+    # 评论者头像节点（用于从评论区进入评论者主页，区别于评论文本节点）
+    # dump 实测：resource-id=avatar, clickable=true, class="按钮"（自定义中文类名，非 ImageView）
+    COMMENTER_AVATAR_ID = "com.ss.android.ugc.aweme:id/avatar"
+    COMMENTER_AVATAR_XPATH = '//*[@resource-id="com.ss.android.ugc.aweme:id/avatar" and @clickable="true"]'
+    # 评论卡片内容容器（avatar / title / content 均为其子节点）
+    COMMENT_CARD_CONTAINER_ID = "com.ss.android.ugc.aweme:id/k4x"
     
     # ==========================================
     # 8. 私信功能 (Private Message)
@@ -90,9 +97,18 @@ class TikTokLocators:
         "com.ss.android.ugc.aweme:id/jc=",
         "com.ss.android.ugc.aweme:id/d_3",
         "com.ss.android.ugc.aweme:id/d_4",
+        "com.ss.android.ugc.aweme:id/jbb",
     )
     PM_SEND_BTN_ID = PM_SEND_BTN_IDS[0]
     PM_SEND_BTN_XPATH = '//*[@text="发送" or @content-desc="发送" or contains(@content-desc, "发送")]'
+
+    # 评论者主页私信按钮（dump 实测：可点击父容器 zbl，图标本体 zbk 不可点击）
+    COMMENTER_PM_BTN_ID = "com.ss.android.ugc.aweme:id/zbl"
+    COMMENTER_PM_BTN_XPATH = '//*[@resource-id="com.ss.android.ugc.aweme:id/zbl"]'
+    # 兜底：通过图标 content-desc="私信" 取其可点击父容器
+    COMMENTER_PM_BTN_PARENT_XPATH = '//*[@resource-id="com.ss.android.ugc.aweme:id/zbk"]/..'
+    # 私信聊天页输入框专属 id（dump 实测）
+    PM_EDIT_TEXT_ID = "com.ss.android.ugc.aweme:id/msg_et"
     PM_CLICKABLE_XPATH = '//*[@clickable="true"]'
     PM_MESSAGE_TEXT_XPATH = "//android.widget.TextView"
     PM_SEND_FAILURE_TEXTS = (

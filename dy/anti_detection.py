@@ -243,6 +243,7 @@ class InteractionProbability:
         'follow': 0.20,       # 20% 概率关注
         'private_message': 0.10, # 10% 概率私信
         'comment_lead': 0.30, # 30% 概率查看评论区
+        'lead_pm': 0.10,      # 10% 概率楼中楼私信评论者（高敏感，默认低概率）
         'long_watch': 0.15,    # 15% 概率长停留（看完视频）
     }
 
@@ -250,7 +251,7 @@ class InteractionProbability:
     def should_interact(cls, action_type, config=None):
         """
         根据概率决定是否执行互动
-        :param action_type: like/comment/follow/private_message/comment_lead/long_watch
+        :param action_type: like/comment/follow/private_message/comment_lead/lead_pm/long_watch
         :param config: 配置字典，可覆盖默认概率
         """
         anti_cfg = (config or {}).get('anti_detection', {})
@@ -276,6 +277,7 @@ class DailyLimitManager:
         'daily_comment_limit': 999999,     # 每日评论上限（已关闭限制）
         'daily_follow_limit': 999999,      # 每日关注上限（已关闭限制）
         'daily_message_limit': 999999,     # 每日私信上限（已关闭限制）
+        'daily_lead_pm_limit': 10,         # 每日楼中楼私信评论者上限（高敏感操作，默认 10 次）
         'daily_video_limit': 999999,       # 每日视频上限（已关闭限制）
     }
 
@@ -291,7 +293,7 @@ class DailyLimitManager:
         """获取今日互动统计"""
         if self.db:
             return self.db.get_daily_stats()
-        return {'videos': 0, 'likes': 0, 'comments': 0, 'follows': 0, 'private_messages': 0}
+        return {'videos': 0, 'likes': 0, 'comments': 0, 'follows': 0, 'private_messages': 0, 'lead_pms': 0}
 
     def can_do(self, action_type):
         """检查是否还能执行某类互动"""
@@ -302,6 +304,7 @@ class DailyLimitManager:
             'comment': ('daily_comment_limit', stats.get('comments', 0)),
             'follow': ('daily_follow_limit', stats.get('follows', 0)),
             'private_message': ('daily_message_limit', stats.get('private_messages', 0)),
+            'lead_pm': ('daily_lead_pm_limit', stats.get('lead_pms', 0)),
             'video': ('daily_video_limit', stats.get('videos', 0)),
         }
 
@@ -320,7 +323,7 @@ class DailyLimitManager:
         """检查是否所有互动都已超限（应该休息了）"""
         stats = self._get_current_stats()
         all_exceeded = True
-        for action_type in ['like', 'comment', 'follow', 'private_message']:
+        for action_type in ['like', 'comment', 'follow', 'private_message', 'lead_pm']:
             if self.can_do(action_type):
                 all_exceeded = False
                 break

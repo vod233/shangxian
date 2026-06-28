@@ -1,10 +1,9 @@
 search:
   keywords:
-  - 租房
-  - 二手空调
-  - 二手苹果
-  - 二手鼠标
-  sort_by: most_liked
+  - 果子
+  - 冰棍
+  - 葡萄
+  sort_by: latest
 crawler:
   max_daily_videos: 100
   max_videos_per_keyword: 20
@@ -20,8 +19,9 @@ interaction:
   intent_keywords: []
   enable_like: false
   enable_author_follow: false
-  enable_video_comment: true
+  enable_video_comment: false
   enable_comment_lead: true
+  enable_comment_lead_pm: true
   min_followers_threshold: 0.01
   enable_private_message: true
   pm_followers_threshold: 0.01
@@ -34,6 +34,12 @@ interaction:
   - 创意很棒，继续加油
   - 这个角度很新颖，学到了
   - 内容质量很高，已收藏
+  lead_pm_message_list:
+  - 看到你评论很有共鸣，详细聊聊
+  - 你的评论很有启发，主页有更多你感兴趣的内容
+  - 你的想法很棒，可以聊聊更多吗
+  - 评论说得太对了，主页有整理相关内容
+  - 你的评论让我印象深刻，期待交流
 anti_detection:
   night_mode:
     enabled: false

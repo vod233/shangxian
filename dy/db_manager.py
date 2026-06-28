@@ -92,6 +92,7 @@ class DBManager:
             "intent_comment": "TEXT DEFAULT ''",           # AI识别到的意向评论文本
             "lead_reply": "TEXT DEFAULT ''",               # 楼中楼回复内容
             "lead_sent": "INTEGER DEFAULT 0",              # 楼中楼是否发送成功
+            "lead_pm_sent": "INTEGER DEFAULT 0",           # 楼中楼回复后私信评论者是否成功
             "pm_sent": "INTEGER DEFAULT 0",                # 私信是否发送（兼容旧 private_messaged）
             "follower_count": "TEXT DEFAULT ''",           # 作者粉丝数（原始文本）
             "error_message": "TEXT DEFAULT ''",            # 执行异常信息
@@ -155,18 +156,19 @@ class DBManager:
     def update_interaction(self, video_id, action_type):
         """
         更新视频的互动状态
-        :param action_type: 'like', 'comment', 'follow', 'private_message'
+        :param action_type: 'like', 'comment', 'follow', 'private_message', 'lead_pm'
         """
-        if action_type not in ('like', 'comment', 'follow', 'private_message'):
+        if action_type not in ('like', 'comment', 'follow', 'private_message', 'lead_pm'):
             logger.warning(f"未知的互动类型: {action_type}")
             return False
-            
+
         table_name = self._ensure_table()
         field_map = {
             'like': 'liked',
             'comment': 'commented',
             'follow': 'followed',
             'private_message': 'private_messaged',
+            'lead_pm': 'lead_pm_sent',
         }
         field_name = field_map[action_type]
         
@@ -188,14 +190,14 @@ class DBManager:
         """
         更新视频的执行过程详细字段。
         支持的字段：process_status/skip_reason/stay_duration/long_watch/
-        recovery_attempts/intent_comment/lead_reply/lead_sent/pm_sent/
+        recovery_attempts/intent_comment/lead_reply/lead_sent/lead_pm_sent/pm_sent/
         follower_count/error_message/video_index/keyword_index
         特殊字段 action_event：会作为一条事件追加到 action_log（JSON 数组）
         """
         allowed_fields = {
             "process_status", "skip_reason", "stay_duration", "long_watch",
             "recovery_attempts", "intent_comment", "lead_reply", "lead_sent",
-            "pm_sent", "follower_count", "error_message",
+            "lead_pm_sent", "pm_sent", "follower_count", "error_message",
             "video_index", "keyword_index",
         }
         table_name = self._ensure_table()
@@ -247,26 +249,43 @@ class DBManager:
         try:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute(f'''
-                    SELECT 
-                        COUNT(*) as total_videos,
-                        SUM(liked) as total_likes,
-                        SUM(commented) as total_comments,
-                        SUM(followed) as total_follows,
-                        SUM(private_messaged) as total_private_messages
-                    FROM {table_name}
-                ''')
-                row = cursor.fetchone()
+                # 兼容旧表：lead_pm_sent 字段可能不存在，使用 try/except 兜底
+                try:
+                    cursor.execute(f'''
+                        SELECT
+                            COUNT(*) as total_videos,
+                            SUM(liked) as total_likes,
+                            SUM(commented) as total_comments,
+                            SUM(followed) as total_follows,
+                            SUM(private_messaged) as total_private_messages,
+                            SUM(lead_pm_sent) as total_lead_pms
+                        FROM {table_name}
+                    ''')
+                    row = cursor.fetchone()
+                    lead_pms = row[5] or 0
+                except Exception:
+                    cursor.execute(f'''
+                        SELECT
+                            COUNT(*) as total_videos,
+                            SUM(liked) as total_likes,
+                            SUM(commented) as total_comments,
+                            SUM(followed) as total_follows,
+                            SUM(private_messaged) as total_private_messages
+                        FROM {table_name}
+                    ''')
+                    row = cursor.fetchone()
+                    lead_pms = 0
                 return {
                     "videos": row[0] or 0,
                     "likes": row[1] or 0,
                     "comments": row[2] or 0,
                     "follows": row[3] or 0,
-                    "private_messages": row[4] or 0
+                    "private_messages": row[4] or 0,
+                    "lead_pms": lead_pms
                 }
         except Exception as e:
             logger.error(f"获取当天统计数据失败: {e}")
-            return {"videos": 0, "likes": 0, "comments": 0, "follows": 0, "private_messages": 0}
+            return {"videos": 0, "likes": 0, "comments": 0, "follows": 0, "private_messages": 0, "lead_pms": 0}
 
     def get_daily_records(self, limit=100):
         """获取当天的详细操作记录，按时间倒序排列（含执行过程字段）"""
@@ -280,7 +299,7 @@ class DBManager:
                         liked, commented, followed, private_messaged, created_at,
                         video_index, keyword_index, process_status, skip_reason,
                         stay_duration, long_watch, recovery_attempts,
-                        intent_comment, lead_reply, lead_sent, pm_sent,
+                        intent_comment, lead_reply, lead_sent, lead_pm_sent, pm_sent,
                         follower_count, error_message, action_log
                     FROM {table_name}
                     ORDER BY created_at DESC
@@ -310,10 +329,11 @@ class DBManager:
                         "intent_comment": row[17] or "",
                         "lead_reply": row[18] or "",
                         "lead_sent": bool(row[19]),
-                        "pm_sent": bool(row[20]),
-                        "follower_count": row[21] or "",
-                        "error_message": row[22] or "",
-                        "action_log": row[23] or "[]",
+                        "lead_pm_sent": bool(row[20]),
+                        "pm_sent": bool(row[21]),
+                        "follower_count": row[22] or "",
+                        "error_message": row[23] or "",
+                        "action_log": row[24] or "[]",
                     })
                 return records
         except Exception as e:

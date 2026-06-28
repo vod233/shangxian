@@ -686,6 +686,12 @@ def render_execution_functions():
             value=bool(config.get("enable_comment_lead", True))
         )
 
+        enable_comment_lead_pm = st.checkbox(
+            "评论区楼中楼回复后，私信意向评论者",
+            value=bool(config.get("enable_comment_lead_pm", False)),
+            help="在楼中楼回复成功后，进入评论者主页发送私信（依赖上一项『评论区AI截流』已开启且成功发送回复）"
+        )
+
         st.markdown("</div>", unsafe_allow_html=True)
 
         # 策略开关区：夜间静默 + 概率决策 并排展示
@@ -719,6 +725,7 @@ def render_execution_functions():
                 "enable_author_follow": enable_author_follow,
                 "enable_video_comment": enable_video_comment,
                 "enable_comment_lead": enable_comment_lead,
+                "enable_comment_lead_pm": enable_comment_lead_pm,
                 "night_mode_enabled": night_mode_enabled,
                 "enable_anti_detection_probability": enable_anti_detection_probability
             }

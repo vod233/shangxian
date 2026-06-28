@@ -13,7 +13,7 @@ from .actions.interaction import (
     DoubleClickLikeAction, FollowAuthorAction, GetCurrentVideoLinkAction
 )
 from .actions.commenting import (
-    PostCommentAction, OpenCommentSectionAction, ProcessCommentSectionAction
+    PostCommentAction, OpenCommentSectionAction, ProcessCommentSectionAction, CommentLeadPmAction
 )
 from .actions.locators import TikTokLocators as L
 from .ai_reply_agent import DYReplyAgent
@@ -145,6 +145,7 @@ class TikTokTaskFlow:
             "enable_author_follow",
             "enable_video_comment",
             "enable_comment_lead",
+            "enable_comment_lead_pm",
         )
         return any(self._interaction_enabled(key, False) for key in keys)
 
@@ -327,15 +328,23 @@ class TikTokTaskFlow:
             return False, result
         return True, result
 
-    def _run_comment_lead_safely(self, video_title, keyword):
-        """评论区截流是一个复合动作：打开面板、处理、关闭面板后回到视频页。"""
+    def _run_comment_lead_safely(self, video_title, keyword, enable_lead_pm=False):
+        """评论区截流 + 楼中楼私信评论者（B.4 + B.5）。
+        当 enable_lead_pm=True 时，B.4 发现意向评论后不关闭评论区，直接在评论区打开状态下执行 B.5。
+        返回 dict: {"recovered": bool, "lead_reply_sent": bool, "lead_pm_sent": bool, "lead_pm_reason": str}
+        """
         feature_name = "评论区AI截流/楼中楼回复"
         before_state = self._detect_page_state()
         logger.info(f"功能前状态[{feature_name}]: {before_state}")
         if not self._recover_to_video_page(f"{feature_name}-执行前"):
             logger.warning(f"跳过功能[{feature_name}]：执行前无法确认视频页")
-            return False
+            return {"recovered": False, "lead_reply_sent": False, "lead_pm_sent": False, "lead_pm_reason": "pre_recover_failed"}
 
+        lead_reply_sent = False
+        lead_pm_sent = False
+        lead_pm_reason = "skipped"
+        comment_section_open = False  # 跟踪评论区是否仍打开（B.5 需要在此状态下执行）
+        action_instance = None
         try:
             opened = self.runner.run_action(OpenCommentSectionAction)
             self._dismiss_video_context_menu_if_present()
@@ -343,26 +352,71 @@ class TikTokTaskFlow:
             logger.info(f"功能中状态[打开评论区后]: {opened_state}")
             if not opened or opened_state not in ("comment_panel", "input_or_chat"):
                 logger.warning(f"评论区未可靠打开，当前状态: {opened_state}")
-                return self._recover_to_video_page(f"{feature_name}-打开失败后")
+                recovered = self._recover_to_video_page(f"{feature_name}-打开失败后")
+                return {"recovered": recovered, "lead_reply_sent": False, "lead_pm_sent": False, "lead_pm_reason": "open_failed"}
 
             self._check_stop()
-            self.runner.run_action(
-                ProcessCommentSectionAction,
+            # 手动实例化 ProcessCommentSectionAction，以便读取 lead_comment_node 供 B.5 使用
+            action_instance = ProcessCommentSectionAction(
+                u2_device=self.runner.device,
+                app_manager=self.runner.app_mgr,
+                config=self.config,
                 video_title=video_title,
                 keyword=keyword,
-                check_stop_callback=self._check_stop
+                check_stop_callback=self._check_stop,
+                keep_open_after_lead=enable_lead_pm,  # B.5 启用时不关闭评论区
             )
+            action_instance.perform()
+            # 读取意向评论节点信息
+            lead_comment_node = getattr(action_instance, 'lead_comment_node', None)
+            lead_reply_sent = bool(getattr(action_instance, 'lead_reply_sent', False))
+
+            if enable_lead_pm and lead_comment_node is not None:
+                comment_section_open = True  # keep_open_after_lead=True 时评论区仍打开
+            if lead_comment_node is not None:
+                logger.info("B.4 已保存意向评论节点，可供 B.5 私信评论者使用")
+
+            # B.5 楼中楼私信评论者（在评论区仍打开的状态下执行）
+            if enable_lead_pm and lead_reply_sent and lead_comment_node is not None:
+                logger.info("B.5 开始执行楼中楼私信评论者（评论区仍打开状态）")
+                pm_action = CommentLeadPmAction(
+                    u2_device=self.runner.device,
+                    app_manager=self.runner.app_mgr,
+                    config=self.config,
+                    lead_comment_node=lead_comment_node,
+                )
+                try:
+                    pm_result = pm_action.perform()
+                except Exception as exc:
+                    logger.error(f"B.5 执行异常: {exc}")
+                    pm_result = {"pm_sent": False, "reason": "exception"}
+                if isinstance(pm_result, dict):
+                    lead_pm_sent = pm_result.get("pm_sent", False)
+                    lead_pm_reason = pm_result.get("reason", "unknown")
+                comment_section_open = True  # B.5 可能修改了页面状态，需要关闭评论区
+            elif enable_lead_pm and not lead_reply_sent:
+                lead_pm_reason = "lead_reply_not_sent"
         except InterruptedError:
             raise
         except Exception as exc:
             logger.error(f"功能[{feature_name}]执行异常: {exc}")
+
+        # 如果评论区仍打开（B.5 启用场景），关闭评论区
+        if comment_section_open:
+            try:
+                if action_instance is not None:
+                    action_instance._close_comment_section()
+                else:
+                    self._recover_to_video_page(f"{feature_name}-关闭评论区")
+            except Exception as exc:
+                logger.warning(f"关闭评论区异常: {exc}")
 
         after_state = self._detect_page_state()
         logger.info(f"功能后状态[{feature_name}]: {after_state}")
         recovered = self._recover_to_video_page(f"{feature_name}-执行后")
         if not recovered:
             logger.warning(f"功能[{feature_name}]后恢复失败，跳过当前视频剩余功能")
-        return recovered
+        return {"recovered": recovered, "lead_reply_sent": lead_reply_sent, "lead_pm_sent": lead_pm_sent, "lead_pm_reason": lead_pm_reason}
 
     def start(self):
         """开始执行完整的采集与互动任务"""
@@ -722,7 +776,8 @@ class TikTokTaskFlow:
                         logger.info("已关闭功能: AI 视频评论，跳过")
                         self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.3", "msg": "功能关闭:视频评论"})
 
-                    # B.4 处理评论区（功能开关为确定性指令）
+                    # B.4 处理评论区 + B.5 楼中楼私信评论者（B.5 合并到 _run_comment_lead_safely 内部执行）
+                    lead_result = None
                     if self._video_processing_timed_out(video_started_at):
                         skip_remaining_features = True
                     if skip_remaining_features:
@@ -732,12 +787,38 @@ class TikTokTaskFlow:
                         self._check_stop()
                         if self._probability_allows('comment_lead'):
                             self._report(current_action="正在对评论区意向线索进行精准拦截")
-                            if not self._run_comment_lead_safely(video_title, self.current_keyword or ""):
+                            # B.5 是否启用（影响 B.4 是否关闭评论区）
+                            enable_lead_pm = self._interaction_enabled("enable_comment_lead_pm")
+                            # B.5 限额/概率检查（在传入 _run_comment_lead_safely 之前做，避免不必要地保留评论区打开）
+                            if enable_lead_pm:
+                                if not self.anti.can_do('lead_pm'):
+                                    enable_lead_pm = False
+                                    logger.info("B.5 跳过：lead_pm 限额已满")
+                                    self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.5", "msg": "跳过(lead_pm限额)"})
+                                elif not self._probability_allows('lead_pm'):
+                                    enable_lead_pm = False
+                                    logger.info("B.5 跳过：概率决策")
+                                    self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.5", "msg": "跳过(概率)"})
+                            lead_result = self._run_comment_lead_safely(video_title, self.current_keyword or "", enable_lead_pm=enable_lead_pm)
+                            if not lead_result.get("recovered"):
                                 skip_remaining_features = True
                                 self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.4", "msg": "评论区截流失败"})
                             else:
                                 self._report(executed_action="评论区AI截流")
-                                self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.4", "msg": "评论区截流完成"})
+                                if lead_result.get("lead_reply_sent"):
+                                    self.db.update_interaction(video_id, "comment")
+                                    self.db.update_video_detail(video_id, lead_sent=1, action_event={"t": _now_str(), "phase": "B.4", "msg": "楼中楼回复已发送"})
+                                else:
+                                    self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.4", "msg": "评论区截流完成(未发送回复)"})
+                            # 记录 B.5 结果
+                            if lead_result.get("lead_pm_sent"):
+                                self.db.update_interaction(video_id, "lead_pm")
+                                self._report(executed_action="楼中楼私信评论者")
+                                self.db.update_video_detail(video_id, lead_pm_sent=1, action_event={"t": _now_str(), "phase": "B.5", "msg": "楼中楼私信已发送"})
+                            elif lead_result.get("lead_pm_reason") and lead_result.get("lead_pm_reason") not in ("skipped",):
+                                reason = lead_result.get("lead_pm_reason", "unknown")
+                                logger.warning(f"B.5 楼中楼私信失败: {reason}")
+                                self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.5", "msg": f"私信失败({reason})"})
                         else:
                             logger.info("概率决策: 跳过评论区截流")
                             self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.4", "msg": "跳过截流(概率)"})
