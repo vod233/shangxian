@@ -503,9 +503,9 @@ class TikTokTaskFlow:
             return
         self._report(executed_action=f"搜索关键词：{keyword}")
 
-        # 2. 筛选
+        # 2. 筛选（固定使用最新发布排序）
         self._check_stop()
-        sort_mode = self.config.get('search', {}).get('sort_by', 'latest')
+        sort_mode = "latest"
         if not self.runner.run_action(ApplyFiltersAction, sort_mode=sort_mode):
             logger.warning("筛选未成功应用，继续使用当前搜索结果")
         self._report(current_action=f"正在根据【{sort_mode}】精确洗量过滤...", executed_action="应用筛选条件")
@@ -539,7 +539,7 @@ class TikTokTaskFlow:
             self._interruptible_sleep(1)
             if not self.runner.run_action(EnterSearchAction, self.current_keyword):
                 return False
-            sort_mode = self.config.get('search', {}).get('sort_by', 'latest')
+            sort_mode = "latest"
             self.runner.run_action(ApplyFiltersAction, sort_mode=sort_mode)
             if not self.runner.run_action(EnterFirstVideoAction):
                 return False

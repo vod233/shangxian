@@ -330,7 +330,7 @@ def _save_douyin_config(config: AppConfig):
     user_yaml_data = {
         "search": {
             "keywords": config.search_keywords,
-            "sort_by": config.sort_by,
+            "sort_by": "latest",
         },
         "crawler": {
             "max_daily_videos": config.max_daily_videos,

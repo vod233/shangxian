@@ -299,7 +299,7 @@ def render_task_monitor():
 
 
 def render_search_control():
-    render_page_header("AI搜索基础控制", "配置搜索行业关键词与视频排序方式。")
+    render_page_header("AI搜索基础控制", "配置搜索行业关键词。")
 
     fetch_config()
     config = st.session_state.config_data
@@ -319,25 +319,12 @@ def render_search_control():
             placeholder="桌子\n椅子\n沙发"
         )
 
-        st.markdown("""
-            <div class="card-header" style="margin-top:16px;">
-                <div class="card-title">视频排序方式（优先推荐最新发布 截取客户更加有效）</div>
-            </div>
-        """, unsafe_allow_html=True)
-
-        sort_by = st.selectbox(
-            "排序方式",
-            options=["latest", "most_liked"],
-            index=0 if config.get("sort_by") == "latest" else 1,
-            format_func=lambda x: "最新发布" if x == "latest" else "最多点赞"
-        )
-
         st.markdown("</div>", unsafe_allow_html=True)
 
         if st.form_submit_button("💾 保存当前配置", use_container_width=True, type="primary"):
             payload = {
                 "search_keywords": [k.strip() for k in keywords_str.split("\n") if k.strip()],
-                "sort_by": sort_by
+                "sort_by": "latest"
             }
             try:
                 current_config = {}
@@ -686,12 +673,6 @@ def render_execution_functions():
             value=bool(config.get("enable_comment_lead", True))
         )
 
-        enable_comment_lead_pm = st.checkbox(
-            "评论区楼中楼回复后，私信意向评论者",
-            value=bool(config.get("enable_comment_lead_pm", False)),
-            help="在楼中楼回复成功后，进入评论者主页发送私信（依赖上一项『评论区AI截流』已开启且成功发送回复）"
-        )
-
         st.markdown("</div>", unsafe_allow_html=True)
 
         # 策略开关区：夜间静默 + 概率决策 并排展示
@@ -725,7 +706,6 @@ def render_execution_functions():
                 "enable_author_follow": enable_author_follow,
                 "enable_video_comment": enable_video_comment,
                 "enable_comment_lead": enable_comment_lead,
-                "enable_comment_lead_pm": enable_comment_lead_pm,
                 "night_mode_enabled": night_mode_enabled,
                 "enable_anti_detection_probability": enable_anti_detection_probability
             }
@@ -806,6 +786,54 @@ def render_private_message():
 
         st.markdown("</div>", unsafe_allow_html=True)
 
+    # ====== 评论区私信话术卡片（沿用作者私信样式）======
+    lead_col1, lead_col2 = st.columns([3, 2])
+
+    with lead_col1:
+        st.markdown("""
+        <div class="card">
+            <div class="card-header">
+                <div class="card-title">评论区私信话术（每行一条，可自动轮播）</div>
+            </div>
+        """, unsafe_allow_html=True)
+
+        lead_pm_messages_str = st.text_area(
+            "评论区私信话术",
+            value="\n".join(config.get("lead_pm_message_list", [])),
+            height=200,
+            placeholder="看到你评论很有共鸣，详细聊聊\n你的评论很有启发，主页有更多你感兴趣的内容\n你的想法很棒，可以聊聊更多吗"
+        )
+
+        lead_pm_messages_list = [m.strip() for m in lead_pm_messages_str.split("\n") if m.strip()]
+        if lead_pm_messages_list:
+            st.caption(f"当前共 {len(lead_pm_messages_list)} 条评论者私信话术，执行时随机抽取其中一行。")
+        else:
+            st.caption("提示：请至少填写一条话术，否则评论区私信功能会自动跳过。")
+
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    with lead_col2:
+        st.markdown("""
+        <div class="card">
+            <div class="card-header">
+                <div class="card-title">评论者筛选与开关</div>
+            </div>
+        """, unsafe_allow_html=True)
+
+        enable_comment_lead_pm = st.checkbox(
+            "启用评论区私信",
+            value=bool(config.get("enable_comment_lead_pm", False)),
+            help="在楼中楼回复成功后，进入评论者主页发送私信（依赖『评论区AI截流』已开启且成功发送回复）"
+        )
+
+        st.caption("说明：")
+        st.caption("• 不对评论者做粉丝数过滤")
+        st.caption("• 独立限额 10 次/天")
+        st.caption("• 概率 10%（防风控）")
+        st.caption("• 默认关闭，需手动开启")
+
+        st.markdown("</div>", unsafe_allow_html=True)
+
     with st.form("pm_form", border=False):
         st.markdown("""
         <div class="card" style="display:none;">
@@ -815,9 +843,11 @@ def render_private_message():
         if st.form_submit_button("💾 保存当前配置", use_container_width=True, type="primary"):
             payload = {
                 "pm_message_list": [m.strip() for m in pm_messages_str.split("\n") if m.strip()],
+                "lead_pm_message_list": [m.strip() for m in lead_pm_messages_str.split("\n") if m.strip()],
                 "min_followers_threshold": min_followers,
                 "enable_private_message": enable_pm,
-                "pm_followers_threshold": pm_threshold
+                "pm_followers_threshold": pm_threshold,
+                "enable_comment_lead_pm": enable_comment_lead_pm
             }
             try:
                 current_config = {}

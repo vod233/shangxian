@@ -1,12 +1,10 @@
 search:
   keywords:
-  - 果子
-  - 冰棍
-  - 葡萄
+  - 正能量
   sort_by: latest
 crawler:
   max_daily_videos: 100
-  max_videos_per_keyword: 20
+  max_videos_per_keyword: 50
   min_video_stay: 1
   max_video_stay: 3
 comments: []
@@ -19,7 +17,7 @@ interaction:
   intent_keywords: []
   enable_like: false
   enable_author_follow: false
-  enable_video_comment: false
+  enable_video_comment: true
   enable_comment_lead: true
   enable_comment_lead_pm: true
   min_followers_threshold: 0.01
