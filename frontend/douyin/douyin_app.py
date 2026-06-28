@@ -347,6 +347,44 @@ def render_intent_keywords():
     fetch_config()
     config = st.session_state.config_data
 
+    # ===== AI 人格预设选择区（应用于评论区评论 + 楼中楼回复）=====
+    current_persona = config.get("ai_persona", "a_zhen")
+    persona_options = {
+        "a_zhen": "阿珍 - 高情商温和委婉（推荐，低风控风险）",
+        "a_qiang": "阿强 - 直爽自信利益导向（高转化，高风险）",
+    }
+    option_keys = list(persona_options.keys())
+    default_index = option_keys.index(current_persona) if current_persona in option_keys else 0
+
+    st.markdown("""
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">🎭 AI 人格预设</div>
+        </div>
+        <div style="margin-top:4px; color:#9CA3AF; font-size:13px; padding:0 16px 8px;">
+            应用于「评论区评论」(B.3) 与「楼中楼意向回复」(B.4) 两个 AI 生成场景；意向判定器不受影响。
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    selected_persona = st.radio(
+        "选择 AI 人格",
+        options=option_keys,
+        format_func=lambda k: persona_options[k],
+        index=default_index,
+        horizontal=True,
+        label_visibility="collapsed",
+    )
+
+    if selected_persona == "a_qiang":
+        st.warning(
+            "⚠️ 阿强人格含营销暗号（扣1/口1/寇1）与同行砸场子话术，"
+            "可能触发抖音风控或被博主拉黑，请谨慎使用。"
+        )
+
+    st.divider()
+
+    # ===== 原有意向触发词表单 =====
     with st.form("intent_form", border=False):
         st.markdown("""
         <div class="card">
@@ -372,7 +410,8 @@ def render_intent_keywords():
 
         if st.form_submit_button("💾 保存当前配置", use_container_width=True, type="primary"):
             payload = {
-                "intent_keywords": [k.strip() for k in intent_keywords.split(",") if k.strip()]
+                "intent_keywords": [k.strip() for k in intent_keywords.split(",") if k.strip()],
+                "ai_persona": selected_persona,
             }
             try:
                 current_config = {}

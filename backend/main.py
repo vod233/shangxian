@@ -311,6 +311,7 @@ def _load_douyin_config_for_frontend():
         "ai_model": data.get("ai_reply", {}).get("model", "deepseek-v4-flash"),
         "ai_temperature": data.get("ai_reply", {}).get("temperature", 0.7),
         "ai_max_tokens": data.get("ai_reply", {}).get("max_tokens", 120),
+        "ai_persona": data.get("ai_reply", {}).get("persona", "a_zhen"),
         "license_key": "",
         "license_key_masked": mask_license_key(license_key),
         "has_license_key": bool(license_key),
@@ -378,16 +379,21 @@ def _save_douyin_config(config: AppConfig):
         "enabled": config.enable_anti_detection_probability,
     }
     user_yaml_data["anti_detection"] = existing_anti
+    # mode 与本地 LLM 凭据从旧配置继承，避免前端保存其他配置时把 mode 重置为 cloud 或清空凭据
+    prev_ai_mode = previous_ai.get("mode", "cloud")
+    prev_base_url = previous_ai.get("base_url", "")
+    prev_api_key = previous_ai.get("api_key", "")
     api_yaml_data = {
         "ai_reply": {
             "enabled": config.ai_enabled,
-            "mode": "cloud",
+            "mode": prev_ai_mode,
             "cloud_base_url": license_server_url,
-            "base_url": "",
-            "api_key": "",
+            "base_url": prev_base_url,
+            "api_key": prev_api_key,
             "model": config.ai_model,
             "temperature": config.ai_temperature,
             "max_tokens": config.ai_max_tokens,
+            "persona": config.ai_persona,
             "license": {
                 "server_url": license_server_url,
                 "key": license_key,

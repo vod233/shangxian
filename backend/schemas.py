@@ -14,6 +14,7 @@ class AppConfig(BaseModel):
     ai_model: str = "deepseek-v4-flash"
     ai_temperature: float = 0.7
     ai_max_tokens: int = 120
+    ai_persona: str = "a_zhen"   # AI 人格预设：a_zhen(阿珍) | a_qiang(阿强)
     license_key: str = ""
     license_server_url: str = "https://lcjx.yun/social-ai-credit-api"
     # 抖音专属

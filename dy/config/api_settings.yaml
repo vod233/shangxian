@@ -1,12 +1,13 @@
 ai_reply:
   enabled: true
-  mode: cloud
+  mode: local
   cloud_base_url: https://lcjx.yun/social-ai-credit-api
-  base_url: ''
-  api_key: ''
-  model: deepseek-v4-flash
+  base_url: https://api.deepseek.com/v1
+  api_key: sk-38922203e64643f89e33b53cfc74db5f
+  model: deepseek-chat
   temperature: 0.7
   max_tokens: 120
+  persona: a_zhen      # AI 人格预设：a_zhen(阿珍-温和) | a_qiang(阿强-直爽)
   license:
     server_url: https://lcjx.yun/social-ai-credit-api
     key: saa_DTFje43GdrtsYwWtax3xi5xQ79HOhT5o

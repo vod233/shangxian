@@ -15,6 +15,63 @@ LANGCHAIN_IMPORT_ERROR = None
 # API 并发限流信号量，最多同时 2000 个 DeepSeek API 调用（使用 deepseek-v4-flash 模型）
 _ai_api_semaphore = threading.Semaphore(2000)
 
+# AI 人格预设 prompt 字典
+# 应用于 B.3 视频评论生成 与 B.4 楼中楼回复生成；意向判定器（is_intent_comment）不使用人格
+_PERSONA_PROMPTS = {
+    "a_zhen": {
+        "video_comment": (
+            "你是社交媒体评论区里一位'高情商、有阅历、不露锋芒'的资深冲浪路人。"
+            "你深谙人情世故，留言真实目的是吸引有心人注意（引流），"
+            "但绝不在字面上表现功利心、竞争欲或炫耀感，擅长'向下兼容'和'以退为进'。"
+            "遵循'四要四不要'："
+            "1. 视角转换：从'评判者'降格为'同行者'，多用'试了一下''摸索细节''摸爬滚打'，"
+            "严禁'这个简单''我最懂''我有更好的'；"
+            "2. 利益隐藏：将截流包装成客观讨论，'确实扎实，不过多对比几家''因人而异，多留个心眼'；"
+            "3. 情绪管理：用'淡定随缘'稀释营销急迫感，'刚好顺手记录了''看缘分吧'，"
+            "严禁'扣1送''想要私我'等营销高危词；"
+            "4. 句式习惯：多用'碰巧、感觉、稍微、其实、个人觉得'弱化语气，"
+            "结尾可用'挺有触动的''少走弯路''挺省心的''基本都能上手'。"
+            "硬约束黑名单：禁止'比他好/更便宜/高性价比/平替'；禁止'我都会/太简单/一眼真/假/我最懂'；"
+            "禁止'快来拿/扣1送/看我主页/免费送'；禁止'口1/寇1'等暗号变体。"
+            "标点规则：句子中间用空格代替逗号句号，每句话结尾不带任何符号。"
+            "长度 10-28 汉字，只输出评论正文，不要解释。"
+        ),
+        "lead_reply": (
+            "你是社交媒体评论区里一位'高情商、有阅历、不露锋芒'的资深冲浪路人。"
+            "现在要给一条对你表达过意向的用户评论做楼中楼回复，引导对方去看你的主页资料。"
+            "遵循'四要四不要'（同视频评论规则）：视角转换、利益隐藏、情绪管理、句式习惯。"
+            "可提到主页但不得出现微信、私信、电话、二维码、链接、价格承诺、夸大宣传。"
+            "硬约束黑名单：禁止'比他好/更便宜/高性价比/平替'；禁止'我都会/太简单/我最懂'；"
+            "禁止'快来拿/扣1送/看我主页/免费送'；禁止'口1/寇1'等暗号变体。"
+            "标点规则：句子中间用空格代替逗号句号，每句话结尾不带任何符号。"
+            "长度 10-32 汉字，只输出回复正文，不要解释。"
+        ),
+    },
+    "a_qiang": {
+        "video_comment": (
+            "你是社交媒体评论区一个'性格直爽、自信自负、利益导向'的同行或营销老手。"
+            "目标纯粹——展示实力吸引精准客户，或用极低成本抛出利益钩子截流。"
+            "信奉'直白才能筛选出真正想要的人'，说话带极强侵略性、竞争感和炫耀色彩。"
+            "1. 姿态展示：以老手自居，'这个简单''我都会搞''这个东西我也用过''这个行业我最懂'；"
+            "2. 利益对冲：'没有我这个有性价比''我自己创业开了好多家了''同行不要删'；"
+            "3. 结果外露：'一天基本十几单''一天搞1k''跟着你做已经报单了'；"
+            "4. 营销拦截：'留言想要我发你''整理出来了 1发''邪修方法 寇1 松'。"
+            "暗号变体：'扣1'可变异为'口1''寇1''寇1 松'，防止平台关键词过滤。"
+            "标点规则：句子中间用空格代替逗号句号，每句话结尾不带任何符号。"
+            "长度 10-28 汉字，只输出评论正文，不要解释。"
+        ),
+        "lead_reply": (
+            "你是社交媒体评论区一个'性格直爽、自信自负、利益导向'的同行或营销老手。"
+            "现在要给一条对你表达过意向的用户评论做楼中楼回复，直接抛出利益钩子截流。"
+            "遵循'四原则'：姿态展示、利益对冲、结果外露、营销拦截，语气更直接，可主动要求扣1/口1。"
+            "可提到主页但不得出现微信、电话、二维码、链接、价格承诺。"
+            "暗号变体：'扣1'可变异为'口1''寇1''寇1 松'。"
+            "标点规则：句子中间用空格代替逗号句号，每句话结尾不带任何符号。"
+            "长度 10-32 汉字，只输出回复正文，不要解释。"
+        ),
+    },
+}
+
 try:
     from langchain_core.messages import HumanMessage, SystemMessage
     from langchain_openai import ChatOpenAI
@@ -41,6 +98,18 @@ class DYReplyAgent:
         self.config = config or {}
         self.ai_config = self.config.get("ai_reply", {})
         self.cloud_ai = CloudAIClient(self.ai_config, platform="douyin")
+
+    def _get_persona_prompt(self, scene: str) -> str:
+        """根据 ai_reply.persona 配置返回对应场景的 system prompt。
+
+        Args:
+            scene: 'video_comment'（B.3 视频评论）或 'lead_reply'（B.4 楼中楼回复）
+        Returns:
+            persona 对应的 prompt 字符串；未识别 persona 时回退到 a_zhen
+        """
+        persona = self.ai_config.get("persona", "a_zhen")
+        persona_block = _PERSONA_PROMPTS.get(persona, _PERSONA_PROMPTS["a_zhen"])
+        return persona_block[scene]
 
     def is_enabled(self) -> bool:
         return bool(self.ai_config.get("enabled", True))
@@ -127,34 +196,37 @@ class DYReplyAgent:
         return None
 
     def _call_model(self, title: str, keyword: str, strict_retry: bool = False) -> Optional[str]:
+        # mode=local 时强制走本地 LangChain，让 persona prompt 真正生效
+        if self.ai_config.get("mode", "cloud") == "local":
+            base_url = os.environ.get("DEEPSEEK_BASE_URL") or (self.ai_config.get("base_url") or "").strip()
+            api_key = os.environ.get("DEEPSEEK_API_KEY") or (self.ai_config.get("api_key") or "").strip()
+            model = os.environ.get("DEEPSEEK_MODEL") or (self.ai_config.get("model") or "").strip()
+
+            if not base_url or not api_key or not model:
+                logger.warning("AI 回复配置不完整，需要填写 Base URL、API Key 和 Model。")
+                return None
+
+            if not all([ChatOpenAI, SystemMessage, HumanMessage]):
+                logger.error(f"LangChain 依赖不可用，无法调用 AI 回复接口。{LANGCHAIN_IMPORT_ERROR or ''}")
+                return None
+
+            return self._call_langchain(title, keyword, base_url, api_key, model, strict_retry)
+
+        # mode=cloud 走云端 API
         if self.cloud_ai.enabled():
             try:
                 data = self.cloud_ai.post("/ai/generate-video-comment", {
                     "keyword": keyword,
                     "title": title,
+                    "persona": self.ai_config.get("persona", "a_zhen"),
                 })
                 return data.get("reply")
             except LicenseError as exc:
                 logger.error(f"云端 AI 生成视频评论失败: {exc}")
                 return None
 
-        if self.ai_config.get("mode", "cloud") != "local":
-            logger.warning("未配置授权码，无法调用云端 AI 生成视频评论。")
-            return None
-
-        base_url = os.environ.get("DEEPSEEK_BASE_URL") or (self.ai_config.get("base_url") or "").strip()
-        api_key = os.environ.get("DEEPSEEK_API_KEY") or (self.ai_config.get("api_key") or "").strip()
-        model = os.environ.get("DEEPSEEK_MODEL") or (self.ai_config.get("model") or "").strip()
-
-        if not base_url or not api_key or not model:
-            logger.warning("AI 回复配置不完整，需要填写 Base URL、API Key 和 Model。")
-            return None
-
-        if not all([ChatOpenAI, SystemMessage, HumanMessage]):
-            logger.error(f"LangChain 依赖不可用，无法调用 AI 回复接口。{LANGCHAIN_IMPORT_ERROR or ''}")
-            return None
-
-        return self._call_langchain(title, keyword, base_url, api_key, model, strict_retry)
+        logger.warning("未配置授权码，无法调用云端 AI 生成视频评论。")
+        return None
 
     def _get_model_config(self):
         if self.ai_config.get("mode", "cloud") != "local":
@@ -251,64 +323,52 @@ class DYReplyAgent:
                 return None
 
     def _call_lead_reply_model(self, comment_text: str, video_title: str, keyword: str, strict_retry: bool = False) -> Optional[str]:
+        # mode=local 时强制走本地 LangChain，让 persona prompt 真正生效
+        if self.ai_config.get("mode", "cloud") == "local":
+            model_config = self._get_model_config()
+            if not model_config:
+                return None
+
+            base_url, api_key, model = model_config
+            retry_line = "上一条结果太像营销，请改成更克制、更像真人顺手回复。" if strict_retry else ""
+            # 使用信号量限制并发，避免 API 速率限制
+            with _ai_api_semaphore:
+                try:
+                    llm = self._create_llm(base_url, api_key, model, max_tokens=80)
+                    messages = [
+                        SystemMessage(content=self._get_persona_prompt("lead_reply") + retry_line),
+                    HumanMessage(content=(
+                            f"视频标题：{video_title or '未提供'}\n"
+                            f"搜索关键词：{keyword or '未提供'}\n"
+                            f"用户评论：{comment_text}\n"
+                            "请生成一条适合楼中楼回复的引导话术。"
+                        )),
+                    ]
+                    response = llm.invoke(messages)
+                    return self._extract_response_text(response)
+                except Exception as exc:
+                    logger.error(f"AI 生成截流回复失败: {exc}")
+                    return None
+
+        # mode=cloud 走云端 API
         if self.cloud_ai.enabled():
             try:
                 data = self.cloud_ai.post("/ai/generate-lead-reply", {
                     "keyword": keyword,
                     "title": video_title,
                     "comment_text": comment_text,
+                    "persona": self.ai_config.get("persona", "a_zhen"),
                 })
                 return data.get("reply")
             except LicenseError as exc:
                 logger.error(f"云端 AI 生成截流回复失败: {exc}")
                 return None
 
-        model_config = self._get_model_config()
-        if not model_config:
-            return None
-
-        base_url, api_key, model = model_config
-        retry_line = "上一条结果太像营销，请改成更克制、更像真人顺手回复。" if strict_retry else ""
-        # 使用信号量限制并发，避免 API 速率限制
-        with _ai_api_semaphore:
-            try:
-                llm = self._create_llm(base_url, api_key, model, max_tokens=80)
-                messages = [
-                    SystemMessage(content=(
-                        "你是抖音评论区楼中楼回复助手。"
-                        "根据用户评论生成一条自然、简短的中文回复，引导对方去看我的主页资料。"
-                        "规则：1. 只输出回复正文；2. 10 到 32 个汉字；"
-                        "3. 可以提到主页，但不得出现微信、私信、电话、二维码、链接、价格承诺、夸大宣传；"
-                        "4. 不要使用 emoji、标签、连续感叹号；5. 语气像真人，不要强推。"
-                        f"{retry_line}"
-                    )),
-                HumanMessage(content=(
-                        f"视频标题：{video_title or '未提供'}\n"
-                        f"搜索关键词：{keyword or '未提供'}\n"
-                        f"用户评论：{comment_text}\n"
-                        "请生成一条适合楼中楼回复的引导话术。"
-                    )),
-                ]
-                response = llm.invoke(messages)
-                return self._extract_response_text(response)
-            except Exception as exc:
-                logger.error(f"AI 生成截流回复失败: {exc}")
-                return None
+        return None
 
     def _system_prompt(self, strict_retry: bool) -> str:
         retry_line = "如果第一次结果像营销话术，请改写得更像普通用户自然留言。" if strict_retry else ""
-        return (
-            "你是抖音评论区互动助手。"
-            "请根据内容标题生成 1 条中文评论，像普通用户自然留言。"
-            "必须遵守以下规则："
-            "1. 只输出评论正文，不要解释；"
-            "2. 语气真诚、简短、自然，长度控制在 10 到 28 个汉字；"
-            "3. 不得包含联系方式、引流、私信、主页、加好友、链接、二维码、价格承诺、夸大宣传；"
-            "4. 不得包含色情、暴力、政治、辱骂、违法违规内容；"
-            "5. 不要使用 emoji、标签、英文口号、连续感叹号；"
-            "6. 优先评价内容价值、观点、经验或氛围，避免销售感。"
-            f"{retry_line}"
-        )
+        return self._get_persona_prompt("video_comment") + retry_line
 
     def _human_prompt(self, title: str, keyword: str) -> str:
         keyword_text = keyword or "未提供"
