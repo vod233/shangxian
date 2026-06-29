@@ -187,7 +187,12 @@ def is_task_stop_requested(serial):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # 启动时执行
+    # 启动时执行：清理过期历史表，防止数据库膨胀
+    try:
+        keep_days = int(os.environ.get("DB_CLEANUP_KEEP_DAYS", "30"))
+        db_manager.cleanup_old_tables(keep_days=keep_days)
+    except Exception as e:
+        logging.warning(f"启动清理旧表失败（不影响运行）: {e}")
     yield
     # 关闭时执行：优雅地清理所有后台正在运行的设备任务
     logging.info("接收到关闭信号，正在停止所有后台设备任务...")
@@ -200,6 +205,14 @@ async def lifespan(app: FastAPI):
     # 关闭线程池
     _task_executor.shutdown(wait=True)
     logging.info("线程池已关闭。")
+    # 关闭 PostgreSQL 连接池（如果使用 PostgreSQL 后端）
+    if os.environ.get("DB_BACKEND", "").lower() == "postgres":
+        try:
+            from dy.db_postgres import close_pool
+            close_pool()
+            logging.info("PostgreSQL 连接池已关闭。")
+        except Exception:
+            pass
 
 app = FastAPI(title="抖音自动化后端 API", version="1.0.0", lifespan=lifespan)
 
@@ -969,4 +982,5 @@ def api_get_stats_details(limit: int = 100):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("backend.main:app", host="0.0.0.0", port=8000, reload=True)
+    # 不使用 reload：任务执行时数据库文件频繁变化会触发重启，导致 GUI 窗口被信号终止
+    uvicorn.run("backend.main:app", host="0.0.0.0", port=8000)

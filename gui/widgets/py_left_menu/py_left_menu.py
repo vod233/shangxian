@@ -14,6 +14,10 @@
 #
 # ///////////////////////////////////////////////////////////////
 
+# IMPORT PACKAGES AND MODULES
+# ///////////////////////////////////////////////////////////////
+import os
+
 # IMPORT QT CORE
 # ///////////////////////////////////////////////////////////////
 from qt_core import *
@@ -79,6 +83,9 @@ class PyLeftMenu(QWidget):
         self._maximum_width = maximum_width
         self._icon_path = Functions.set_svg_icon(icon_path)
         self._icon_path_close = Functions.set_svg_icon(icon_path_close)
+        # 检查 app_logo.png 是否存在，存在则用 logo 替代菜单图标
+        self._logo_path = Functions.set_image("app_logo.png")
+        self._has_logo = os.path.exists(self._logo_path)
 
         # SET PARENT
         self._parent = parent
@@ -92,9 +99,10 @@ class PyLeftMenu(QWidget):
 
         # TOGGLE BUTTON AND DIV MENUS
         # ///////////////////////////////////////////////////////////////
+        toggle_icon = "app_logo.png" if self._has_logo else icon_path
         self.toggle_button = PyLeftMenuButton(
-            app_parent, 
-            text = toggle_text, 
+            app_parent,
+            text = toggle_text,
             tooltip_text = toggle_tooltip,
             dark_one = self._dark_one,
             dark_three = self._dark_three,
@@ -107,7 +115,7 @@ class PyLeftMenu(QWidget):
             context_color = self._context_color,
             text_foreground = self._text_foreground,
             text_active = self._text_active,
-            icon_path = icon_path
+            icon_path = toggle_icon
         )
         self.toggle_button.clicked.connect(self.toggle_animation)
         self.div_top = PyDiv(dark_four)
@@ -183,12 +191,19 @@ class PyLeftMenu(QWidget):
             self.animation.setStartValue(self.width())
             self.animation.setEndValue(self._maximum_width)
             self.toggle_button.set_active_toggle(True)
-            self.toggle_button.set_icon(self._icon_path_close)
+            # 有 logo 时始终显示 logo，否则切换到 close 图标
+            if self._has_logo:
+                self.toggle_button.set_icon(self._logo_path)
+            else:
+                self.toggle_button.set_icon(self._icon_path_close)
         else:
             self.animation.setStartValue(self.width())
             self.animation.setEndValue(self._minimum_width)
             self.toggle_button.set_active_toggle(False)
-            self.toggle_button.set_icon(self._icon_path)
+            if self._has_logo:
+                self.toggle_button.set_icon(self._logo_path)
+            else:
+                self.toggle_button.set_icon(self._icon_path)
         self.animation.setEasingCurve(QEasingCurve.InOutCubic)
         self.animation.setDuration(self._duration_time)
         self.animation.start()

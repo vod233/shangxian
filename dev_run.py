@@ -25,6 +25,10 @@ import time
 import signal
 import threading
 import traceback
+import faulthandler
+
+# 启用 faulthandler：segfault 时打印 Python 堆栈跟踪
+faulthandler.enable()
 
 # 确保项目根目录在 sys.path
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -55,7 +59,14 @@ def log(msg: str):
 
 
 def start_api(api_port: int) -> subprocess.Popen:
-    """启动后端 uvicorn 子进程。"""
+    """启动后端 uvicorn 子进程。
+
+    关键修复：
+    1. 移除 --reload：任务执行时数据库文件频繁变化会触发 uvicorn 重启，
+       导致 API 中断甚至 GUI 进程被信号终止。
+    2. 使用 CREATE_NEW_PROCESS_GROUP：后端在独立进程组中运行，
+       避免 Ctrl+C / SIGINT 信号传播到 GUI 主进程。
+    """
     env = os.environ.copy()
     env["APP_API_PORT"] = str(api_port)
     env["APP_MODE"] = "api"
@@ -66,13 +77,14 @@ def start_api(api_port: int) -> subprocess.Popen:
     cmd = [
         sys.executable, "-m", "uvicorn", "backend.main:app",
         "--host", "127.0.0.1", "--port", str(api_port),
-        "--reload",  # 代码改动自动重载
     ]
-    log(f"info:启动后端 uvicorn（端口 {api_port}，--reload 模式）")
+    log(f"info:启动后端 uvicorn（端口 {api_port}）")
     proc = subprocess.Popen(
         cmd, cwd=PROJECT_ROOT, env=env,
         # 后端日志直接输出到当前控制台
         stdout=sys.stdout, stderr=sys.stderr,
+        # 独立进程组：防止后端信号传播到 GUI 主进程
+        creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
     )
     track(proc)
     _PROCS.append(proc)
@@ -106,7 +118,14 @@ def run_pyside_with_auth(api_port: int, skip_auth: bool = False):
 
     import gui_main
     log(f"ok:主窗口已启动，登录账号: {account_email}")
-    gui_main.run_main_window(account_email)
+    try:
+        exit_code = gui_main.run_main_window(account_email)
+        log(f"info:GUI 事件循环退出，退出码={exit_code}")
+    except KeyboardInterrupt:
+        log("warn:GUI 收到键盘中断，忽略（仅通过 Ctrl+C 按钮退出）")
+    except Exception:
+        log("err:GUI 主窗口异常退出：")
+        traceback.print_exc()
 
 
 def cleanup(signum=None, frame=None):
@@ -121,7 +140,8 @@ def main():
     skip_api = "--no-api" in sys.argv
     skip_auth = "--no-auth" in sys.argv
 
-    # 注册 Ctrl+C 处理
+    # 注册信号处理：Ctrl+C 时清理子进程
+    # 注意：后端在独立进程组中，后端的信号不会传播到这里
     signal.signal(signal.SIGINT, cleanup)
     signal.signal(signal.SIGTERM, cleanup)
 

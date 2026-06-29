@@ -5,7 +5,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-class DBManager:
+class SQLiteDBManager:
     """
     SQLite 数据库管理器
     负责管理按天建表，并记录每天处理的视频数量、点赞、评论和关注等数据。
@@ -339,3 +339,66 @@ class DBManager:
         except Exception as e:
             logger.error(f"获取当天详细记录失败: {e}")
             return []
+
+    def reset_daily_progress(self):
+        """重置当天的统计记录（清空当日表数据但保留表结构）"""
+        table_name = self._ensure_table()
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(f"DELETE FROM {table_name}")
+                conn.commit()
+                return True
+        except Exception as e:
+            logger.error(f"重置当天进度失败: {e}")
+            return False
+
+    def cleanup_old_tables(self, keep_days=30):
+        """删除超过指定天数的旧日期表，防止数据库无限膨胀"""
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'records_%'"
+                )
+                tables = [row[0] for row in cursor.fetchall()]
+                cutoff = datetime.datetime.now() - datetime.timedelta(days=keep_days)
+                cutoff_str = cutoff.strftime("%Y%m%d")
+                dropped = 0
+                for tbl in tables:
+                    date_part = tbl.replace("records_", "")
+                    if len(date_part) == 8 and date_part.isdigit() and date_part < cutoff_str:
+                        cursor.execute(f"DROP TABLE IF EXISTS {tbl}")
+                        dropped += 1
+                conn.commit()
+                if dropped:
+                    logger.info(f"已清理 {dropped} 个过期数据表（>{keep_days}天）")
+                return dropped
+        except Exception as e:
+            logger.error(f"清理旧表失败: {e}")
+            return 0
+
+
+class DBManager:
+    """
+    数据库管理器工厂类
+    根据环境变量 DB_BACKEND 选择后端实现：
+      - sqlite  (默认): 使用 SQLiteDBManager，零依赖
+      - postgres:        使用 PostgresDBManager，需安装 psycopg2-binary 并配置 PG_* 环境变量
+
+    用法不变：db = DBManager()，所有方法签名与 SQLiteDBManager 一致。
+    """
+
+    def __new__(cls):
+        backend = os.environ.get("DB_BACKEND", "sqlite").lower()
+        if backend == "postgres":
+            try:
+                from dy.db_postgres import PostgresDBManager
+                return PostgresDBManager()
+            except ImportError:
+                logger.warning("psycopg2 未安装，回退到 SQLite 后端。pip install psycopg2-binary")
+                return SQLiteDBManager()
+            except Exception as exc:
+                logger.error(f"连接 PostgreSQL 失败，回退到 SQLite 后端: {exc}")
+                return SQLiteDBManager()
+        return SQLiteDBManager()

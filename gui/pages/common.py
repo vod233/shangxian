@@ -157,10 +157,13 @@ def font(size: int = 13, bold: bool = False) -> QFont:
 class ApiWorker(QThread):
     """通用异步 HTTP 请求 worker，避免阻塞 UI。
 
+    P2修复：与 MultiApiWorker 对齐，添加 deleteLater 自动清理和 is_running 重入保护。
+
     用法：
         worker = ApiWorker("GET", "/stats")
         worker.finished.connect(self._on_done)
         worker.start()
+        self._worker = worker  # 防 GC
     """
     finished = Signal(dict)
 
@@ -172,6 +175,19 @@ class ApiWorker(QThread):
         self.json_body = json_body
         self.params = params
         self.timeout = timeout
+        # P2修复：finished 信号触发后自动清理 QThread，避免对象累积泄漏
+        self.finished.connect(self._on_finished_cleanup)
+
+    def _on_finished_cleanup(self):
+        """run() 完成后在事件循环中安全删除自身，防止 QThread 累积泄漏。"""
+        self.deleteLater()
+
+    def is_running(self) -> bool:
+        """返回线程是否仍在运行，供调用方做重入保护。"""
+        try:
+            return self.isRunning()
+        except RuntimeError:
+            return False
 
     def run(self):
         url = f"{API_BASE_URL.rstrip('/')}{self.path}"

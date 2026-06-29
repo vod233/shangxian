@@ -1,9 +1,13 @@
-"""流程控制页：开始/暂停/继续/结束任务。"""
+"""流程控制页：开始/暂停/继续/结束任务。
+
+P1修复：_load() 改为异步（ApiWorker），消除 GUI 线程同步阻塞。
+P2修复：_on_action_done 回调中置 None 释放旧 worker 引用。
+"""
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QHBoxLayout, QLabel
 
 from .common import (
-    BasePage, api_get, ApiWorker, app_state,
+    BasePage, ApiWorker, app_state,
     make_card_frame, make_primary_btn, make_secondary_btn, make_danger_btn,
     make_metric_card, c,
 )
@@ -18,9 +22,10 @@ class ProcessPage(BasePage):
             subtitle="确保配置保存完毕且已选中AI员工后，可在此开始、暂停、继续或结束任务。",
             parent=parent,
         )
-        self._worker = None  # 防 GC
+        self._action_worker = None   # 动作请求 worker（POST start/pause/stop）
+        self._status_worker = None   # 状态查询 worker（GET tasks/status）
         self._build_ui()
-        self._load()
+        self._load()  # 异步加载，不阻塞
 
     def _build_ui(self):
         # ====== 卡片1：当前状态 ======
@@ -61,8 +66,26 @@ class ProcessPage(BasePage):
         self.content_layout.addWidget(ctrl_card)
 
     def _load(self):
-        """加载任务状态：GET /tasks/status，响应字段为 status（dict: {serial: {...}}）"""
-        data = api_get("/tasks/status")
+        """异步加载任务状态：GET /tasks/status。
+
+        P1修复：原同步 api_get 会阻塞 GUI 线程最长 10 秒，
+        改为 ApiWorker 后台请求，回调中更新 UI。
+        """
+        # 重入保护：上一次状态查询仍在运行时跳过
+        if self._status_worker is not None:
+            try:
+                if self._status_worker.isRunning():
+                    return
+            except RuntimeError:
+                pass
+        worker = ApiWorker("GET", "/tasks/status")
+        worker.finished.connect(self._on_status_loaded)
+        worker.start()
+        self._status_worker = worker  # 防 GC
+
+    def _on_status_loaded(self, data: dict):
+        """状态查询完成回调（GUI 线程执行）。"""
+        self._status_worker = None  # 释放引用
         if data.get("success"):
             status_dict = data.get("status", {}) or {}
             # 已选设备数取自跨页面共享状态 AppState
@@ -91,16 +114,12 @@ class ProcessPage(BasePage):
                 main_status = max(status_counts.items(), key=lambda x: x[1])[0]
                 self._update_metric(self.status_metric, summary_text, "任务状态",
                                     color=self._status_color(main_status))
-            self.set_status("状态已加载", "success")
         else:
-            self.set_status(f"加载状态失败：{data.get('message', '')}", "danger")
+            self._update_metric(self.status_metric, "—", "任务状态",
+                                color=c("context_color"))
 
     def _update_metric(self, frame, value: str, label: str, color: str = None):
-        """更新指标卡内容。
-
-        make_metric_card 内部为 QVBoxLayout，第 0 项是 value QLabel，
-        第 1 项是 label QLabel，按 layout 顺序定位最稳妥。
-        """
+        """更新指标卡内容。"""
         layout = frame.layout()
         if layout is None or layout.count() < 2:
             return
@@ -134,6 +153,13 @@ class ProcessPage(BasePage):
         if not selected:
             self.set_status("请先在AI员工管理页选择控制设备", "warning")
             return
+        # 重入保护：上一个动作请求仍在运行时忽略
+        if self._action_worker is not None:
+            try:
+                if self._action_worker.isRunning():
+                    return
+            except RuntimeError:
+                pass
         self._set_buttons_enabled(False)
         action = path.split("/")[-1]
         self.set_status(f"正在执行 {action} ...", "info")
@@ -141,13 +167,19 @@ class ProcessPage(BasePage):
         worker = ApiWorker("POST", path, json_body=payload)
         worker.finished.connect(self._on_action_done)
         worker.start()
-        self._worker = worker  # 防 GC
+        self._action_worker = worker  # 防 GC
 
     def _on_action_done(self, data: dict):
+        """动作请求完成回调（GUI 线程执行）。
+
+        P1修复：不再调用同步 _load()，改为异步 _load()。
+        P2修复：释放旧 worker 引用。
+        """
+        self._action_worker = None  # 释放引用
         self._set_buttons_enabled(True)
         if data.get("success"):
             self.set_status(f"操作成功：{data.get('message', '已完成')}", "success")
-            self._load()  # 刷新状态
+            self._load()  # 异步刷新状态，不阻塞 GUI
         else:
             self.set_status(f"失败：{data.get('message', '')}", "danger")
 

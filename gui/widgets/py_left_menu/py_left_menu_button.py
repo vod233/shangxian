@@ -61,7 +61,10 @@ class PyLeftMenuButton(QPushButton):
         self.setObjectName(btn_id)
 
         # APP PATH
-        self._icon_path = Functions.set_svg_icon(icon_path)
+        if icon_path.lower().endswith(".png"):
+            self._icon_path = Functions.set_image(icon_path)
+        else:
+            self._icon_path = Functions.set_svg_icon(icon_path)
         self._icon_active_menu = Functions.set_svg_icon(icon_active_menu)
 
         # PROPERTIES
@@ -234,15 +237,27 @@ class PyLeftMenuButton(QPushButton):
     # ///////////////////////////////////////////////////////////////
     def icon_paint(self, qp, image, rect, color):
         icon = QPixmap(image)
-        painter = QPainter(icon)
-        painter.setCompositionMode(QPainter.CompositionMode_SourceIn)
-        painter.fillRect(icon.rect(), color)
-        qp.drawPixmap(
-            (rect.width() - icon.width()) / 2, 
-            (rect.height() - icon.height()) / 2,
-            icon
-        )        
-        painter.end()
+        # PNG 图片保留原始颜色，不做着色处理
+        if image.lower().endswith(".png"):
+            scaled = icon.scaled(
+                rect.height() - 10, rect.height() - 10,
+                Qt.KeepAspectRatio, Qt.SmoothTransformation
+            )
+            qp.drawPixmap(
+                (rect.width() - scaled.width()) // 2,
+                (rect.height() - scaled.height()) // 2,
+                scaled
+            )
+        else:
+            painter = QPainter(icon)
+            painter.setCompositionMode(QPainter.CompositionMode_SourceIn)
+            painter.fillRect(icon.rect(), color)
+            qp.drawPixmap(
+                (rect.width() - icon.width()) / 2, 
+                (rect.height() - icon.height()) / 2,
+                icon
+            )        
+            painter.end()
 
     # DRAW ACTIVE ICON / RIGHT SIDE
     # ///////////////////////////////////////////////////////////////

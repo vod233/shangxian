@@ -137,6 +137,34 @@ class MainWindow(QMainWindow):
         # SET DRAG POS WINDOW
         self.dragPos = event.globalPos()
 
+    # CLOSE EVENT
+    # P3修复：窗口关闭时优雅终止所有 QThread，防止 segfault
+    # ///////////////////////////////////////////////////////////////
+    def closeEvent(self, event):
+        """窗口关闭时清理所有后台线程，防止 QThread 被强制销毁导致 segfault。"""
+        print("info: 窗口关闭，清理后台线程...")
+        # 遍历所有子页面的 worker 线程
+        try:
+            stack = self.ui.load_pages
+            for i in range(stack.count()):
+                page = stack.widget(i)
+                if page is None:
+                    continue
+                # 检查页面持有的 worker 引用
+                for attr in ("_action_worker", "_status_worker", "_worker", "_auth_worker"):
+                    worker = getattr(page, attr, None)
+                    if worker is not None:
+                        try:
+                            if worker.isRunning():
+                                print(f"  等待线程 {worker.objectName() or attr} 结束...")
+                                worker.quit()
+                                worker.wait(3000)  # 最多等待 3 秒
+                        except RuntimeError:
+                            pass  # C++ 对象已被删除
+        except Exception as e:
+            print(f"warn: 清理线程时异常：{e}")
+        event.accept()
+
 
 # SETTINGS WHEN TO START
 # Set the initial class and also additional parameters of the "QApplication" class
@@ -146,6 +174,8 @@ def run_main_window(account_email: str = ""):
     供 launcher 调用，account_email 用于侧边栏显示。
     """
     app = QApplication.instance() or QApplication(sys.argv)
+    # P4修复：显式设置不在最后一个窗口关闭时退出，防止意外关窗导致应用退出
+    app.setQuitOnLastWindowClosed(False)
     if os.path.exists("icon.ico"):
         app.setWindowIcon(QIcon("icon.ico"))
 

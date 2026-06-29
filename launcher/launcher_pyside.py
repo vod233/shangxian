@@ -46,7 +46,11 @@ def setup_env(base_dir: str) -> None:
 
 
 def start_api_proc(base_dir: str, api_port: int, frozen: bool):
-    """启动后端 uvicorn 子进程。"""
+    """启动后端 uvicorn 子进程。
+
+    使用 CREATE_NEW_PROCESS_GROUP 隔离后端进程组，
+    防止后端信号传播到 GUI 主进程导致窗口意外关闭。
+    """
     env = os.environ.copy()
     env["APP_API_PORT"] = str(api_port)
     env["APP_MODE"] = "api"
@@ -58,7 +62,10 @@ def start_api_proc(base_dir: str, api_port: int, frozen: bool):
         cmd = [sys.executable, "-m", "uvicorn", "backend.main:app",
                "--host", "127.0.0.1", "--port", str(api_port)]
 
-    proc = subprocess.Popen(cmd, cwd=base_dir, env=env)
+    proc = subprocess.Popen(
+        cmd, cwd=base_dir, env=env,
+        creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
+    )
     track(proc)
     return proc
 

@@ -179,8 +179,11 @@ class SettingsPage(BasePage):
     def _populate_font_families(self):
         """填充可用中文字体列表（优先常见免费商用/系统字体）。"""
         from PySide6.QtGui import QFontDatabase
-        db = QFontDatabase()
-        all_families = db.families()
+        try:
+            # PySide6 6.4+ 推荐使用静态方法，避免实例化 QFontDatabase
+            all_families = QFontDatabase.families()
+        except Exception:
+            all_families = []
 
         preferred = [
             "Microsoft YaHei UI", "Microsoft YaHei",
@@ -191,7 +194,7 @@ class SettingsPage(BasePage):
         ]
         available_preferred = [f for f in preferred if f in all_families]
         self.font_family_combo.addItems(available_preferred)
-        if not available_preferred:
+        if not available_preferred and all_families:
             self.font_family_combo.addItems(all_families[:20])
 
     def _load_settings(self):
