@@ -1,0 +1,46 @@
+#!/bin/bash
+# 简化版验证(避免引号嵌套)
+ADMIN="adm_N6utsCVXqZ2N_a3NWZUsvQMctaoJPKAWOcVbthUaRJM"
+BASE="http://127.0.0.1:8020/api"
+LICENSE="saa_DTFje43GdrtsYwWtax3xi5xQ79HOhT5o"
+MA="saam_066a2714863342ad8d3e80cd1f5ac702"
+MB="saam_ba645ea850724fbe9a22c18fef7970ac"
+DB="/www/wwwroot/CloudSever.lcjx.yun/app/data/credit_server.db"
+
+echo "=== V1 [Bug#1]: verify 对不同机器返回各自余额 ==="
+echo "--- MA ---"
+curl -s -X POST "$BASE/auth/verify" -H "authorization: Bearer $LICENSE" -H "content-type: application/json" -d "{\"machine_id\":\"$MA\"}" | python3 -c "import sys,json;d=json.load(sys.stdin);print('  verify余额=',round(d['balance_credits'],4))"
+echo "--- MB(应=0) ---"
+curl -s -X POST "$BASE/auth/verify" -H "authorization: Bearer $LICENSE" -H "content-type: application/json" -d "{\"machine_id\":\"$MB\"}" | python3 -c "import sys,json;d=json.load(sys.stdin);print('  verify余额=',round(d['balance_credits'],4))"
+echo "  DB: MA=$(sqlite3 $DB "SELECT round(balance_credits,4) FROM license_activations WHERE machine_id='$MA';") MB=$(sqlite3 $DB "SELECT round(balance_credits,4) FROM license_activations WHERE machine_id='$MB';")"
+
+echo ""
+echo "=== V3 [Bug#3]: 新机器激活，license 待分配余额应搬到新机器 ==="
+NEW_MACH="saam_revtest_$(date +%s)"
+echo "  新机器=$NEW_MACH"
+echo "--- 给 license 设待分配余额 8.0 ---"
+sqlite3 $DB "UPDATE licenses SET balance_credits=8.0, migrated_to_machine=0 WHERE license_key='$LICENSE';"
+sqlite3 $DB "SELECT '  license待分配=', balance_credits FROM licenses WHERE license_key='$LICENSE';"
+echo "--- 新机器激活 ---"
+curl -s -X POST "$BASE/auth/verify" -H "authorization: Bearer $LICENSE" -H "content-type: application/json" -d "{\"machine_id\":\"$NEW_MACH\"}" | python3 -c "import sys,json;d=json.load(sys.stdin);print('  verify返回余额=',round(d['balance_credits'],4),'(应=8)')"
+echo "--- 验证: 新机器余额=8, license 余额=0 ---"
+sqlite3 $DB "SELECT '  新机器余额=', round(balance_credits,4) FROM license_activations WHERE machine_id='$NEW_MACH';"
+sqlite3 $DB "SELECT '  license余额=', round(balance_credits,4), ' migrated=', migrated_to_machine FROM licenses WHERE license_key='$LICENSE';"
+echo "--- 清理测试机器 ---"
+sqlite3 $DB "DELETE FROM license_activations WHERE machine_id='$NEW_MACH';"
+echo "  已删除 $NEW_MACH"
+
+echo ""
+echo "=== V4 [回归]: 调整积分只影响该机器 ==="
+echo "--- 调整前 ---"
+sqlite3 $DB "SELECT '  MA=',round(balance_credits,4) FROM license_activations WHERE machine_id='$MA';"
+sqlite3 $DB "SELECT '  MB=',round(balance_credits,4) FROM license_activations WHERE machine_id='$MB';"
+curl -s -X POST "$BASE/admin/licenses/$LICENSE/adjust" -H "authorization: Bearer $ADMIN" -H "content-type: application/json" -d "{\"amount\":3.0,\"reason\":\"r\",\"machine_id\":\"$MB\"}" >/dev/null
+echo "--- 给 MB+3 后(MA应不变) ---"
+sqlite3 $DB "SELECT '  MA=',round(balance_credits,4) FROM license_activations WHERE machine_id='$MA';"
+sqlite3 $DB "SELECT '  MB=',round(balance_credits,4) FROM license_activations WHERE machine_id='$MB';"
+curl -s -X POST "$BASE/admin/licenses/$LICENSE/adjust" -H "authorization: Bearer $ADMIN" -H "content-type: application/json" -d "{\"amount\":-3.0,\"reason\":\"r\",\"machine_id\":\"$MB\"}" >/dev/null
+echo "--- 已还原 MB ---"
+
+echo ""
+echo "=== 完成 ==="

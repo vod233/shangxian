@@ -151,13 +151,16 @@ class DYReplyAgent:
         custom_keywords = custom_keywords or []
         preview = clean_comment[:30]
 
+        # AI 未启用时回退到本地规则判定
         if not self.is_enabled():
             final = self._local_intent_guess(clean_comment, custom_keywords)
             logger.info("[intent_stats] result=%s reason=AI_DISABLED_LOCAL comment=%s", final, preview)
             return final
 
+        # AI 模型判定
         result = self._call_intent_model(clean_comment, video_title, keyword, custom_keywords)
         if result is None:
+            # AI 调用失败，回退到本地规则
             final = self._local_intent_guess(clean_comment, custom_keywords)
             logger.info("[intent_stats] result=%s reason=AI_FAIL_LOCAL comment=%s", final, preview)
             return final
@@ -166,7 +169,7 @@ class DYReplyAgent:
             logger.info("[intent_stats] result=True reason=AI_YES comment=%s", preview)
             return True
 
-        # AI 返回 NO：是否允许自定义关键词复活 AI 判定（默认 True 保持旧行为）
+        # AI 返回 NO：检查是否允许自定义关键词复活 AI 判定（默认 True 保持旧行为）
         override = self.config.get("interaction", {}).get("keyword_override_ai", True)
         if override:
             final = self._check_custom_keywords(clean_comment, custom_keywords)

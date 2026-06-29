@@ -452,7 +452,14 @@ class ProcessCommentSectionAction(BaseAction):
 
     def _process_current_screen_comments(self, processed_comments, ai_agent, video_title, keyword, remaining_reviews, custom_keywords=None):
         logger.info("正在解析当前屏幕可见评论...")
-        text_nodes = self.d.xpath(L.COMMENT_TEXT_XPATH).all()
+        # FIX-XPATH: 只匹配评论卡片容器(k4x)内的 TextView，而非全页面 //android.widget.TextView。
+        # 全页面匹配会捕获用户名、时间戳、点赞数、导航栏等大量非评论节点，
+        # 导致第一个匹配到的可能是不可交互的 TextView，CS1 点击失败。
+        xpath = f'//*[@resource-id="{L.COMMENT_CARD_CONTAINER_ID}"]//android.widget.TextView'
+        text_nodes = self.d.xpath(xpath).all()
+        if not text_nodes:
+            # 兜底：k4x container ID 变动时的降级方案
+            text_nodes = self.d.xpath(L.COMMENT_TEXT_XPATH).all()
         custom_keywords = custom_keywords or []
 
         found_target = False
@@ -503,6 +510,30 @@ class ProcessCommentSectionAction(BaseAction):
         self.human_sleep('normal')
         return sent
 
+    def _do_cs1_click(self, comment_node):
+        """CS1 第一步：用坐标点击 + 短按兜底，让评论的"回复"UI 出现。
+        返回 True 表示 UI 已出现。"""
+        try:
+            _click_node_center(self.d, comment_node)
+            self.human_sleep('fast', custom_range=(0.8, 1.5))
+        except Exception as exc:
+            logger.warning(f"[CS1]坐标点击评论节点失败: {exc}")
+            return False
+        return self._verify_cs1_reply_ui()
+
+    def _verify_cs1_reply_ui(self):
+        """验证评论的"回复"UI 是否已出现（回复提示词 或 底部 EditText）。"""
+        has_reply_hint = any(
+            self.d(text=hint).exists(timeout=0.3)
+            for hint in ("回复", "回复评论", "举报", "不感兴趣")
+        )
+        has_edit_text = _find_bottom_edit_text(self.d, timeout=0.8) is not None
+        if has_reply_hint:
+            logger.info("[CS1]检测到回复提示词，UI 已就绪")
+        if has_edit_text:
+            logger.info("[CS1]检测到底部 EditText，输入框已就绪")
+        return has_reply_hint or has_edit_text
+
     def _send_comment_workflow(self, comment_node, text):
         """楼中楼回复 — 按 CS0→CS6 闭环实现，每阶段出口必须自证成功"""
         logger.info(f"回复内容: {text}")
@@ -513,24 +544,41 @@ class ProcessCommentSectionAction(BaseAction):
             logger.warning("[CS0]评论节点无 bounds，跳过楼中楼回复")
             return False
 
-        # === CS1 触发态：click 后必须出现"回复"提示词或可见 EditText ===
-        try:
-            comment_node.click()
-            self.human_sleep('fast', custom_range=(0.8, 1.5))
-        except Exception as exc:
-            logger.warning(f"[CS1]点击评论节点失败: {exc}")
-            return False
-
-        has_reply_hint = any(
-            self.d(text=hint).exists(timeout=0.3)
-            for hint in ("回复", "回复评论")
-        )
-        has_edit_text = _find_bottom_edit_text(self.d, timeout=0.8) is not None
-        if not (has_reply_hint or has_edit_text):
-            logger.warning("[CS1]click 后未出现回复入口或输入框，状态未闭环")
+        # === CS1 触发态：坐标点击 + 父容器兜底，click 后必须出现回复提示词或 EditText ===
+        # 原代码 comment_node.click() 使用 accessibility click，对非 clickable 节点静默失败。
+        # 改为 _click_node_center 做原始坐标点击，再加父容器兜底。
+        cs1_ok = self._do_cs1_click(comment_node)
+        if not cs1_ok:
+            # 兜底：尝试点击评论节点的父容器（comment card container 通常是 clickable 的）
+            logger.info("[CS1]直接点击评论文本失败，尝试点击父容器")
+            parent = comment_node.parent
+            if callable(parent): parent = parent()
+            if parent is not None:
+                try:
+                    _click_node_center(self.d, parent)
+                    self.human_sleep('fast', custom_range=(0.8, 1.5))
+                    cs1_ok = self._verify_cs1_reply_ui()
+                except Exception as exc:
+                    logger.warning(f"[CS1]父容器点击异常: {exc}")
+            if not cs1_ok:
+                # 最后兜底：长按评论节点（部分版本需长按弹出菜单）
+                logger.info("[CS1]父容器兜底也失败，尝试长按评论节点")
+                try:
+                    bounds = comment_node.info.get('bounds') if comment_node else None
+                    if bounds:
+                        x = int((bounds.get('left', 0) + bounds.get('right', 0)) / 2)
+                        y = int((bounds.get('top', 0) + bounds.get('bottom', 0)) / 2)
+                        self.d.long_click(x, y, duration=0.6)
+                        self.human_sleep('normal', custom_range=(1.0, 2.0))
+                        cs1_ok = self._verify_cs1_reply_ui()
+                except Exception as exc:
+                    logger.warning(f"[CS1]长按兜底异常: {exc}")
+        if not cs1_ok:
+            logger.warning("[CS1]所有点击方案均未触发回复界面或输入框，状态未闭环")
             return False
 
         # === CS2 聚焦态：必须验证 EditText 真的出现 ===
+        has_edit_text = _find_bottom_edit_text(self.d, timeout=0.8) is not None
         if not has_edit_text:
             if not self._focus_reply_input_verified():
                 logger.warning("[CS2]未能聚焦楼中楼回复输入框")
@@ -695,8 +743,8 @@ class CommentLeadPmAction(BaseAction):
         fresh_node = comment_node
         if lead_comment_text:
             try:
-                refound = self.d.xpath(f'//*[@text="{lead_comment_text}"]')
-                if refound.exists(timeout=0.8):
+                refound = self._refind_comment_node_by_text(lead_comment_text)
+                if refound is not None:
                     fresh_node = refound
                     logger.info(f"B.5 通过文本重新定位到意向评论节点: {lead_comment_text[:20]}")
             except Exception as exc:
@@ -704,6 +752,7 @@ class CommentLeadPmAction(BaseAction):
 
         try:
             parent = fresh_node.parent
+            if callable(parent): parent = parent()
             attempts = 0
             while parent is not None and attempts < 3:
                 parent_info = parent.info or {}
@@ -714,17 +763,74 @@ class CommentLeadPmAction(BaseAction):
                         return avatar
                     break
                 parent = parent.parent
+                if callable(parent): parent = parent()
                 attempts += 1
         except Exception as exc:
             logger.debug(f"B.5 通过父容器反查头像失败: {exc}")
 
-        # 兜底：全局查找 avatar 节点
+        # 兜底：全局查找所有 avatar 节点，按 bounds 底部排序取最后一个（评论区在屏幕下半部，最后出现的 avatar 最有可能是当前可见评论的）
         try:
-            avatar = self.d.xpath(L.COMMENTER_AVATAR_XPATH)
-            if avatar.exists(timeout=0.5):
-                return avatar
+            avatars = self.d.xpath(L.COMMENTER_AVATAR_XPATH).all()
+            if avatars:
+                # 按 bounds.bottom 排序，取最后一个（最靠下的 avatar，最可能是当前交互的评论）
+                sorted_avatars = sorted(avatars, key=lambda n: _bounds_bottom(n))
+                logger.info("B.5 全局兜底: 找到 %d 个 avatar 节点，取最底部", len(sorted_avatars))
+                return sorted_avatars[-1]
         except Exception as exc:
             logger.debug(f"B.5 全局查找头像失败: {exc}")
+        return None
+
+    @staticmethod
+    def _escape_xpath_text(text: str) -> str:
+        """为 XPath contains() 准备安全的子串。
+        策略: 取前30字符；含双引号用单引号包裹；含两种引号则去引号用 contains 部分匹配。
+        去引号后仍无有效字符则返回空串，调用方回退到原节点。
+        """
+        safe = text.strip()[:30]
+        if not safe:
+            return ""
+        if '"' not in safe:
+            return safe
+        if "'" not in safe:
+            return safe
+        # 含两种引号：去掉引号做 contains 部分匹配
+        return safe.replace('"', '').replace("'", '')
+
+    def _refind_comment_node_by_text(self, text: str):
+        """用评论文本在评论区重新定位节点，处理 XPath 转义和文本截断。
+        返回 XPathSelector 或 None。
+        """
+        safe = self._escape_xpath_text(text)
+        if not safe:
+            return None
+
+        # 策略1: contains() 部分匹配（兼容 UI 截断），根据内容选择引号风格
+        if '"' not in safe:
+            xpath = f'//*[contains(@text, "{safe}")]'
+        else:
+            xpath = f"//*[contains(@text, '{safe}')]"
+        try:
+            refound = self.d.xpath(xpath)
+            if refound.exists(timeout=0.8):
+                return refound
+        except Exception:
+            pass
+
+        # 策略2: 降级为前 15 字符 contains
+        short = safe[:15]
+        if short and short != safe:
+            if '"' not in short:
+                xpath = f'//*[contains(@text, "{short}")]'
+            else:
+                xpath = f"//*[contains(@text, '{short}')]"
+            try:
+                refound = self.d.xpath(xpath)
+                if refound.exists(timeout=0.5):
+                    logger.info("B.5 通过短文本 contains 重新定位到意向评论节点")
+                    return refound
+            except Exception:
+                pass
+
         return None
 
     def _enter_commenter_profile(self, avatar_node):

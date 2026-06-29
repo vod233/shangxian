@@ -229,7 +229,7 @@ class TikTokTaskFlow:
                 if L.SHARE_PANEL_CONTAINER in ui_xml or "复制链接" in ui_xml or "分享链接" in ui_xml:
                     return "share_panel"
 
-                if L.COMMENT_LIST_CONTAINER in ui_xml or "暂时没有更多了" in ui_xml:
+                if L.COMMENT_LIST_CONTAINER in ui_xml or L.COMMENT_CARD_CONTAINER_ID in ui_xml or "暂时没有更多了" in ui_xml:
                     return "comment_panel"
 
                 if re.search(r'class="android\.widget\.EditText"[^>]*focused="true"', ui_xml):
@@ -258,7 +258,7 @@ class TikTokTaskFlow:
             if self._resource_exists(L.SHARE_PANEL_CONTAINER) or self._xpath_exists(L.COPY_LINK_BTN):
                 return "share_panel"
 
-            if self._resource_exists(L.COMMENT_LIST_CONTAINER) or self._xpath_exists(L.COMMENT_NO_MORE_TEXT):
+            if self._resource_exists(L.COMMENT_LIST_CONTAINER) or self._resource_exists(L.COMMENT_CARD_CONTAINER_ID) or self._xpath_exists(L.COMMENT_NO_MORE_TEXT):
                 return "comment_panel"
 
             if self._xpath_exists(L.COMMENT_EDIT_TEXT_XPATH):
@@ -363,9 +363,15 @@ class TikTokTaskFlow:
             opened_state = self._detect_page_state()
             logger.info(f"功能中状态[打开评论区后]: {opened_state}")
             if not opened or opened_state not in ("comment_panel", "input_or_chat"):
-                logger.warning(f"评论区未可靠打开，当前状态: {opened_state}")
-                recovered = self._recover_to_video_page(f"{feature_name}-打开失败后")
-                return {"recovered": recovered, "lead_reply_sent": False, "lead_pm_sent": False, "lead_pm_reason": "open_failed"}
+                # 第二层兜底：_detect_page_state 可能因 rlp 资源ID 变动而误判，
+                # 但 OpenCommentSectionAction 已确认评论区打开。直接检查关键容器。
+                if opened and (self._resource_exists(L.COMMENT_CARD_CONTAINER_ID, timeout=0.5)
+                               or self._resource_exists(L.COMMENT_LIST_CONTAINER, timeout=0.5)):
+                    logger.info("评论区已打开（直接容器检测通过，忽略 _detect_page_state 误判）")
+                else:
+                    logger.warning(f"评论区未可靠打开，当前状态: {opened_state}")
+                    recovered = self._recover_to_video_page(f"{feature_name}-打开失败后")
+                    return {"recovered": recovered, "lead_reply_sent": False, "lead_pm_sent": False, "lead_pm_reason": "open_failed"}
 
             self._check_stop()
             # 手动实例化 ProcessCommentSectionAction，以便读取 lead_comment_node 供 B.5 使用
