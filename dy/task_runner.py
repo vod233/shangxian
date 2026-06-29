@@ -876,10 +876,15 @@ class TikTokTaskFlow:
                                 self.db.update_interaction(video_id, "lead_pm")
                                 self._report(executed_action="楼中楼私信评论者")
                                 self.db.update_video_detail(video_id, lead_pm_sent=1, action_event={"t": _now_str(), "phase": "B.5", "msg": "楼中楼私信已发送"})
-                            elif lead_result.get("lead_pm_reason") and lead_result.get("lead_pm_reason") not in ("skipped",):
+                            else:
                                 reason = lead_result.get("lead_pm_reason", "unknown")
-                                logger.warning(f"B.5 楼中楼私信失败: {reason}")
-                                self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.5", "msg": f"私信失败({reason})"})
+                                # lead_reply_not_sent / skipped 是正常跳过（未发现意向评论或未启用 B.5），不算失败
+                                if reason in ("skipped", "lead_reply_not_sent"):
+                                    logger.info(f"B.5 跳过: {reason}")
+                                    self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.5", "msg": f"跳过({reason})"})
+                                else:
+                                    logger.warning(f"B.5 楼中楼私信失败: {reason}")
+                                    self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.5", "msg": f"私信失败({reason})"})
                         else:
                             logger.info("限额/概率决策: 跳过评论区截流")
                             self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.4", "msg": "跳过截流(comment限额/概率)"})

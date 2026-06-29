@@ -5,7 +5,7 @@ ai_reply:
   base_url: https://api.deepseek.com/v1
   api_key: sk-38922203e64643f89e33b53cfc74db5f
   model: deepseek-chat
-  temperature: 0.7
+  temperature: 1.1
   max_tokens: 120
   persona: a_zhen
   license:
