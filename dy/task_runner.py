@@ -339,12 +339,19 @@ class TikTokTaskFlow:
             return False, result
         return True, result
 
-    def _run_comment_lead_safely(self, video_title, keyword, enable_lead_pm=False):
+    def _run_comment_lead_safely(self, video_title, keyword, enable_lead_pm=False, video_started_at=None):
         """评论区截流 + 楼中楼私信评论者（B.4 + B.5）。
         当 enable_lead_pm=True 时，B.4 发现意向评论后不关闭评论区，直接在评论区打开状态下执行 B.5。
         返回 dict: {"recovered": bool, "lead_reply_sent": bool, "lead_pm_sent": bool, "lead_pm_reason": str}
         """
         feature_name = "评论区AI截流/楼中楼回复"
+        # FIX(单视频卡死): 把 max_seconds_per_video 预算换算成绝对截止时间戳，
+        # 下沉给 B.4 评论区扫描循环和 B.5 私信链路，使最耗时的楼中楼/私信全链路
+        # 也受单视频熔断约束，而不是只在 B.x 之间做检查点。
+        deadline_ts = None
+        if video_started_at is not None:
+            max_seconds = float(self.config.get('crawler', {}).get('max_seconds_per_video', 90))
+            deadline_ts = video_started_at + max_seconds
         before_state = self._detect_page_state()
         logger.info(f"功能前状态[{feature_name}]: {before_state}")
         if not self._recover_to_video_page(f"{feature_name}-执行前"):
@@ -383,6 +390,7 @@ class TikTokTaskFlow:
                 keyword=keyword,
                 check_stop_callback=self._check_stop,
                 keep_open_after_lead=enable_lead_pm,  # B.5 启用时不关闭评论区
+                deadline_ts=deadline_ts,  # FIX: 评论区扫描/楼中楼发送纳入单视频时间预算
             )
             action_instance.perform()
             # 读取意向评论节点信息
@@ -405,6 +413,8 @@ class TikTokTaskFlow:
                     config=self.config,
                     lead_comment_node=lead_comment_node,
                     lead_comment_text=lead_comment_text,  # FIX-05: 传文本以便重新定位节点
+                    check_stop_callback=self._check_stop,  # FIX: 停止指令可即时打断 B.5
+                    deadline_ts=deadline_ts,               # FIX: B.5 纳入单视频时间预算
                 )
                 pm_executed = True  # FIX-02: 标记 B.5 已执行
                 try:
@@ -866,7 +876,7 @@ class TikTokTaskFlow:
                                     enable_lead_pm = False
                                     logger.info("B.5 跳过：概率决策")
                                     self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.5", "msg": "跳过(概率)"})
-                            lead_result = self._run_comment_lead_safely(video_title, self.current_keyword or "", enable_lead_pm=enable_lead_pm)
+                            lead_result = self._run_comment_lead_safely(video_title, self.current_keyword or "", enable_lead_pm=enable_lead_pm, video_started_at=video_started_at)
                             if not lead_result.get("recovered"):
                                 skip_remaining_features = True
                                 self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.4", "msg": "评论区截流失败"})

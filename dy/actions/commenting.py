@@ -197,6 +197,21 @@ def _input_still_contains(d, text):
     return bool(current_text and text in current_text)
 
 
+def _input_found_and_cleared(d, text):
+    """仅当【确实找到输入框且其中不再包含待发文本】时才判定为已清空。
+
+    FIX(发送假阳性): 旧判定 `not _input_still_contains(...)` 在键盘收起/页面切走、
+    输入框查不到时返回 True，把"找不到输入框"误当成"已发送"。
+    这里把"找不到输入框"显式视为【无法确认清空】(返回 False)，发送成功只能由
+    评论气泡可见(_message_visible)或"输入框存在且已清空"两条正向证据之一来确认。
+    """
+    edit_text = _find_bottom_edit_text(d, timeout=0.8)
+    if not edit_text:
+        return False
+    current_text = str(edit_text.info.get("text", "") or "").strip()
+    return not (current_text and text in current_text)
+
+
 def _close_comment_input_if_open(d, text=""):
     """关闭评论输入态，避免键盘或输入框覆盖后续评论区入口。"""
     edit_text = _find_bottom_edit_text(d, timeout=0.8)
@@ -230,7 +245,14 @@ def _close_comment_input_if_open(d, text=""):
     return _find_bottom_edit_text(d, timeout=0.5) is None
 
 
-def _send_text_from_focused_input(d, text, log_label):
+def _run_guard(stop_check):
+    """执行可选的停止/超时守卫回调；回调可抛 InterruptedError 立即中断。"""
+    if stop_check is not None:
+        stop_check()
+
+
+def _send_text_from_focused_input(d, text, log_label, stop_check=None):
+    _run_guard(stop_check)
     edit_text = _find_bottom_edit_text(d, timeout=3)
     if not edit_text:
         logger.warning(f"{log_label}: 未找到可用输入框")
@@ -241,21 +263,24 @@ def _send_text_from_focused_input(d, text, log_label):
     HumanSleep.sleep(custom_range=(0.5, 1.2))
 
     for attempt in range(3):
+        _run_guard(stop_check)
         send_btn = _find_clickable_send_button(d)
         if send_btn:
             _click_node_center(d, send_btn)
             logger.info(f"{log_label}: 已点击发送按钮")
             HumanSleep.sleep(custom_range=(1.0, 2.0))
-            if _message_visible(d, text) or not _input_still_contains(d, text):
+            # FIX(假阳性): 成功必须有正向证据——评论气泡可见 或 输入框存在且已清空。
+            if _message_visible(d, text) or _input_found_and_cleared(d, text):
                 return True
             logger.info(f"{log_label}: 点击发送后文本仍在输入框，继续重试")
         logger.info(f"{log_label}: 发送按钮未就绪，重试 {attempt + 1}/3")
         HumanSleep.sleep(custom_range=(0.5, 1.2))
 
+    _run_guard(stop_check)
     logger.info(f"{log_label}: 尝试回车键发送")
     d.press("enter")
     HumanSleep.sleep(custom_range=(1.0, 2.0))
-    return _message_visible(d, text) or not _input_still_contains(d, text)
+    return _message_visible(d, text) or _input_found_and_cleared(d, text)
 
 
 class PostCommentAction(BaseAction):
@@ -399,9 +424,16 @@ class ProcessCommentSectionAction(BaseAction):
         # keep_open_after_lead=True 时，发现意向评论后不关闭评论区（供 B.5 在评论区打开状态下操作）
         keep_open_after_lead = bool(getattr(self, 'keep_open_after_lead', False))
 
+        deadline = getattr(self, 'deadline_ts', None)
         while swipe_count < max_swipes and reviewed_count < max_reviews:
             if hasattr(self, 'check_stop_callback'):
                 self.check_stop_callback()
+
+            # FIX(单视频卡死): 评论区扫描循环纳入单视频时间预算，超时立即收尾，
+            # 不再让最耗时的楼中楼/私信链路游离在 max_seconds_per_video 之外。
+            if deadline is not None and time.time() > deadline:
+                logger.warning("评论区扫描已超过单视频时间预算，停止扫描")
+                break
 
             found_target, reviewed_now, should_break, lead_info = self._process_current_screen_comments(
                 processed_comments,
@@ -468,8 +500,14 @@ class ProcessCommentSectionAction(BaseAction):
         lead_info = None  # 保存意向评论的节点和文本（供 B.5 私信评论者使用）
         for node in text_nodes:
             text = node.info.get('text', '')
-            if text and text not in processed_comments:
-                processed_comments.add(text)
+            if not text:
+                continue
+            # FIX(去重漏洞): 旧实现仅以"评论文本"为去重键，不同用户发相同短句(如"怎么买")
+            # 会被误当成同一条而漏掉。改为 (评论者用户名 + 文本) 复合键，
+            # 取不到用户名时回退到文本，至少不弱于原行为。
+            dedup_key = self._comment_dedup_key(node, text)
+            if dedup_key not in processed_comments:
+                processed_comments.add(dedup_key)
                 if not self._is_reviewable_comment(text):
                     continue
                 reviewed_count += 1
@@ -486,6 +524,29 @@ class ProcessCommentSectionAction(BaseAction):
                 if reviewed_count >= remaining_reviews:
                     break
         return found_target, reviewed_count, should_break, lead_info
+
+    def _comment_dedup_key(self, node, text):
+        """构造评论去重键：优先 (同卡片用户名 + 文本)，回退到纯文本。
+
+        抖音评论卡片 k4x 内，username 节点(resource-id=title) 与评论 content 是兄弟节点。
+        借助底层 lxml 在同卡片子树内取 title 文本即可区分"不同用户的相同短句"。
+        """
+        author = ""
+        try:
+            elem = getattr(node, 'elem', None)
+            hops = 0
+            while elem is not None and hops < 6:
+                if elem.attrib.get('resource-id', '') == L.COMMENT_CARD_CONTAINER_ID:
+                    for sub in elem.iter():
+                        if sub.attrib.get('resource-id', '').endswith('/title'):
+                            author = str(sub.attrib.get('text', '') or '').strip()
+                            break
+                    break
+                elem = elem.getparent()
+                hops += 1
+        except Exception:
+            author = ""
+        return f"{author}{text}" if author else text
 
     def _is_reviewable_comment(self, text):
         if not text:
@@ -590,7 +651,19 @@ class ProcessCommentSectionAction(BaseAction):
             return False
 
         # === CS4 发送态 + CS5 验证态（由 _send_text_from_focused_input 内部完成） ===
-        return _send_text_from_focused_input(self.d, text, "楼中楼回复")
+        # FIX(停止无响应): 把停止/超时守卫透传进发送重试循环，避免点"停止"后仍卡在 6 次重试里。
+        return _send_text_from_focused_input(
+            self.d, text, "楼中楼回复", stop_check=self._guard
+        )
+
+    def _guard(self):
+        """统一的停止 + 单视频超时守卫；任一触发即抛 InterruptedError/超时中断。"""
+        cb = getattr(self, 'check_stop_callback', None)
+        if cb is not None:
+            cb()
+        deadline = getattr(self, 'deadline_ts', None)
+        if deadline is not None and time.time() > deadline:
+            raise TimeoutError("评论区处理超过单视频时间预算，主动中断楼中楼链路")
 
     def _focus_reply_input_verified(self):
         """CS2 守卫：点击回复提示词后必须验证 EditText 真的出现"""
@@ -679,6 +752,16 @@ class CommentLeadPmAction(BaseAction):
     从已识别的意向评论节点反查评论者头像，进入评论者主页发送私信。
     前置：评论区必须处于打开状态（由 _run_comment_lead_safely 保证），lead_comment_node 有效。
     """
+    def _guard(self):
+        """停止 + 单视频超时守卫：任一触发即抛异常中断 B.5，保证'停止'立即响应、
+        且 B.5 也纳入 max_seconds_per_video 时间预算（修复链路游离在熔断之外的问题）。"""
+        cb = getattr(self, 'check_stop_callback', None)
+        if cb is not None:
+            cb()
+        deadline = getattr(self, 'deadline_ts', None)
+        if deadline is not None and time.time() > deadline:
+            raise TimeoutError("B.5 私信链路超过单视频时间预算，主动中断")
+
     def execute(self):
         # 从 self 读取 lead_comment_node（由 run_action 通过 kwargs setattr）
         lead_comment_node = getattr(self, 'lead_comment_node', None)
@@ -686,17 +769,20 @@ class CommentLeadPmAction(BaseAction):
             logger.warning("B.5 未提供意向评论节点，跳过楼中楼私信")
             return {"pm_sent": False, "reason": "no_lead_node"}
 
+        self._guard()
         # ① 从意向评论节点反查头像节点（同一 k4x 父容器下的 avatar）
         avatar_node = self._find_avatar_from_comment_node(lead_comment_node)
         if avatar_node is None:
             logger.warning("B.5 未能从意向评论节点反查到头像，跳过私信")
             return {"pm_sent": False, "reason": "avatar_not_found"}
 
+        self._guard()
         # ② 点击头像进入评论者主页
         if not self._enter_commenter_profile(avatar_node):
             logger.warning("B.5 进入评论者主页失败，跳过私信")
             return {"pm_sent": False, "reason": "enter_profile_failed"}
 
+        self._guard()
         # ③ 在评论者主页点击"发私信"按钮进入聊天页
         if not self._click_commenter_pm_button():
             logger.warning("B.5 评论者主页未找到私信按钮（可能已关闭陌生人私信），跳过")
@@ -734,11 +820,22 @@ class CommentLeadPmAction(BaseAction):
         return {"pm_sent": pm_sent, "reason": "ok" if pm_sent else "send_failed"}
 
     def _find_avatar_from_comment_node(self, comment_node):
-        """从意向评论 content 节点反查同卡片内的头像节点。
-        dump 实测：comment_node（content）与 avatar 同属 k4x ViewGroup，是兄弟节点。
-        FIX-05: 优先用 lead_comment_text 重新定位节点，避免 B.4 回复后 UI 刷新导致旧节点引用失效。
+        """从意向评论 content 节点反查【同一评论卡片 k4x】内的头像节点。
+
+        FIX(发错人根因, 高危):
+        旧实现 `parent.child(resourceId=...)` 在 uiautomator2 3.6.0 必抛 AttributeError
+        （XMLElement 根本没有 child 方法），且 `_refind_comment_node_by_text` 返回的是
+        XPathSelector 而非真实节点，`.parent` 语义也不对——两处都被 `except` 吞掉后，
+        代码每次都跌入"全局取屏幕最底部 avatar"的兜底，于是私信发给了屏幕最下面那个人。
+
+        重写策略（全部基于稳定可用的能力，杜绝"猜最底部头像"）：
+          ① 用评论文本重新定位到【真实节点】(XMLElement，非 selector)。
+          ② 沿底层 lxml 向上找到该评论所属的 k4x 卡片。
+          ③ 仅在该卡片子树内取 clickable 头像（avatar）。
+          ④ 卡片内无头像（典型：楼中楼子评论没有独立头像）或定位不到卡片时，
+             用"几何就近"在评论文本左上方匹配头像，并要求足够接近；仍不确定则返回 None
+             （宁可这条不私信，也绝不发错人）。
         """
-        # FIX-05: 先尝试用评论文本重新定位节点（UI 刷新后旧引用 bounds 可能已失效）
         lead_comment_text = getattr(self, 'lead_comment_text', '') or ''
         fresh_node = comment_node
         if lead_comment_text:
@@ -750,34 +847,98 @@ class CommentLeadPmAction(BaseAction):
             except Exception as exc:
                 logger.debug(f"B.5 文本反查节点失败，使用原节点: {exc}")
 
-        try:
-            parent = fresh_node.parent
-            if callable(parent): parent = parent()
-            attempts = 0
-            while parent is not None and attempts < 3:
-                parent_info = parent.info or {}
-                parent_rid = parent_info.get('resourceName', '') or parent_info.get('resource-id', '')
-                if parent_rid == L.COMMENT_CARD_CONTAINER_ID:
-                    avatar = parent.child(resourceId=L.COMMENTER_AVATAR_ID)
-                    if avatar is not None and avatar.exists():
-                        return avatar
-                    break
-                parent = parent.parent
-                if callable(parent): parent = parent()
-                attempts += 1
-        except Exception as exc:
-            logger.debug(f"B.5 通过父容器反查头像失败: {exc}")
+        if fresh_node is None:
+            return None
 
-        # 兜底：全局查找所有 avatar 节点，按 bounds 底部排序取最后一个（评论区在屏幕下半部，最后出现的 avatar 最有可能是当前可见评论的）
+        # ① + ② + ③ 卡片内精确取头像
+        card_elem = self._find_card_elem(fresh_node)
+        if card_elem is not None:
+            avatar = self._find_clickable_avatar_in(card_elem)
+            if avatar is not None:
+                logger.info("B.5 已在意向评论所属卡片内定位到头像")
+                return avatar
+            logger.warning("B.5 意向评论所属卡片内无可点击头像（可能是楼中楼子评论），改用几何就近匹配")
+
+        # ④ 几何就近兜底（严格：必须在文本左上方且足够接近）
+        avatar = self._find_avatar_by_geometry(fresh_node)
+        if avatar is not None:
+            logger.info("B.5 通过几何就近匹配定位到意向评论头像")
+            return avatar
+
+        logger.warning("B.5 未能稳妥定位意向评论头像，跳过私信（已废弃'取屏幕最底部头像'兜底，避免发错人）")
+        return None
+
+    @staticmethod
+    def _elem_of(node):
+        """取 XMLElement/DeviceXMLElement 底层 lxml 元素；非此类型返回 None。"""
+        return getattr(node, 'elem', None)
+
+    def _wrap_elem(self, elem):
+        """把底层 lxml 元素包成可读 .info（含 bounds）的节点对象，供点击使用。"""
+        try:
+            from uiautomator2.xpath import XMLElement
+            return XMLElement(elem)
+        except Exception:
+            return None
+
+    def _find_card_elem(self, node):
+        """沿底层 lxml 向上查找评论卡片 k4x 元素；找不到返回 None。"""
+        elem = self._elem_of(node)
+        hops = 0
+        while elem is not None and hops < 6:
+            try:
+                if elem.attrib.get('resource-id', '') == L.COMMENT_CARD_CONTAINER_ID:
+                    return elem
+                elem = elem.getparent()
+            except Exception:
+                return None
+            hops += 1
+        return None
+
+    def _find_clickable_avatar_in(self, card_elem):
+        """在卡片子树内查找 clickable 头像，返回可读 .info 的节点对象；无则 None。"""
+        try:
+            for sub in card_elem.iter():
+                if (sub.attrib.get('resource-id', '') == L.COMMENTER_AVATAR_ID
+                        and sub.attrib.get('clickable') == 'true'):
+                    return self._wrap_elem(sub)
+        except Exception as exc:
+            logger.debug(f"B.5 卡片内查找头像失败: {exc}")
+        return None
+
+    def _find_avatar_by_geometry(self, node):
+        """按几何关系匹配头像：头像应位于评论文本的【左侧且不低于文本太多】，
+        取垂直最接近的一个，且要求在同卡片量级的距离内（<=260px），否则放弃。
+        """
+        try:
+            cb = node.info.get('bounds', {}) or {}
+        except Exception:
+            cb = {}
+        c_top = cb.get('top')
+        c_left = cb.get('left')
+        if c_top is None:
+            return None
         try:
             avatars = self.d.xpath(L.COMMENTER_AVATAR_XPATH).all()
-            if avatars:
-                # 按 bounds.bottom 排序，取最后一个（最靠下的 avatar，最可能是当前交互的评论）
-                sorted_avatars = sorted(avatars, key=lambda n: _bounds_bottom(n))
-                logger.info("B.5 全局兜底: 找到 %d 个 avatar 节点，取最底部", len(sorted_avatars))
-                return sorted_avatars[-1]
-        except Exception as exc:
-            logger.debug(f"B.5 全局查找头像失败: {exc}")
+        except Exception:
+            avatars = []
+        best = None
+        best_gap = None
+        for a in avatars:
+            ab = a.info.get('bounds', {}) or {}
+            a_top = ab.get('top', 0)
+            a_left = ab.get('left', 0)
+            # 头像在评论下方明显处（>40px）排除；头像应在文本左侧
+            if c_top - a_top < -40:
+                continue
+            if c_left is not None and a_left > c_left:
+                continue
+            gap = abs(c_top - a_top)
+            if best_gap is None or gap < best_gap:
+                best_gap = gap
+                best = a
+        if best is not None and best_gap is not None and best_gap <= 260:
+            return best
         return None
 
     @staticmethod
@@ -797,39 +958,44 @@ class CommentLeadPmAction(BaseAction):
         return safe.replace('"', '').replace("'", '')
 
     def _refind_comment_node_by_text(self, text: str):
-        """用评论文本在评论区重新定位节点，处理 XPath 转义和文本截断。
-        返回 XPathSelector 或 None。
+        """用评论文本在评论区重新定位到【真实节点】(XMLElement)，而非 XPathSelector。
+
+        FIX(高危-节点定位错误):
+        旧实现返回 `self.d.xpath(xpath)`(XPathSelector)，下游 `.parent` 语义不对；
+        且 uiautomator2 3.6.0 中 DeviceXPathSelector.exists 是 property，调用
+        `.exists(timeout=0.8)` 会抛 TypeError 被 `except` 吞掉，导致此函数实际恒返回 None，
+        FIX-05"按文本重定位"形同虚设。
+        这里改用 `.all()`（方法，安全），返回真实 DeviceXMLElement 并做文本择优匹配。
+        返回 XMLElement 或 None。
         """
         safe = self._escape_xpath_text(text)
         if not safe:
             return None
 
-        # 策略1: contains() 部分匹配（兼容 UI 截断），根据内容选择引号风格
+        full = text.strip()
+        xpaths = []
         if '"' not in safe:
-            xpath = f'//*[contains(@text, "{safe}")]'
+            xpaths.append(f'//*[contains(@text, "{safe}")]')
         else:
-            xpath = f"//*[contains(@text, '{safe}')]"
-        try:
-            refound = self.d.xpath(xpath)
-            if refound.exists(timeout=0.8):
-                return refound
-        except Exception:
-            pass
-
-        # 策略2: 降级为前 15 字符 contains
+            xpaths.append(f"//*[contains(@text, '{safe}')]")
         short = safe[:15]
         if short and short != safe:
             if '"' not in short:
-                xpath = f'//*[contains(@text, "{short}")]'
+                xpaths.append(f'//*[contains(@text, "{short}")]')
             else:
-                xpath = f"//*[contains(@text, '{short}')]"
+                xpaths.append(f"//*[contains(@text, '{short}')]")
+
+        for xpath in xpaths:
             try:
-                refound = self.d.xpath(xpath)
-                if refound.exists(timeout=0.5):
-                    logger.info("B.5 通过短文本 contains 重新定位到意向评论节点")
-                    return refound
+                nodes = self.d.xpath(xpath).all()
             except Exception:
-                pass
+                nodes = []
+            if not nodes:
+                continue
+            # 优先选择文本完整包含原评论全文的节点，避免命中片段/无关节点
+            exact = [n for n in nodes if full and full in str(n.info.get('text', '') or '')]
+            chosen = exact[0] if exact else nodes[0]
+            return chosen
 
         return None
 
@@ -837,12 +1003,13 @@ class CommentLeadPmAction(BaseAction):
         """点击头像进入评论者主页，并验证已进入 UserProfileActivity。"""
         try:
             bounds = avatar_node.info.get('bounds') if avatar_node else None
-            if bounds:
-                x = int((bounds.get('left', 0) + bounds.get('right', 0)) / 2)
-                y = int((bounds.get('top', 0) + bounds.get('bottom', 0)) / 2)
-                self.human_click(x, y, jitter_range=4)
-            else:
-                avatar_node.click()
+            if not bounds:
+                # 头像节点统一以 bounds 坐标点击（卡片内取到的是普通 XMLElement，无 .click()）。
+                logger.warning("B.5 头像节点缺少 bounds，跳过私信避免误点")
+                return False
+            x = int((bounds.get('left', 0) + bounds.get('right', 0)) / 2)
+            y = int((bounds.get('top', 0) + bounds.get('bottom', 0)) / 2)
+            self.human_click(x, y, jitter_range=4)
             self.human_sleep('slow', custom_range=(2.5, 3.5))
         except Exception as exc:
             logger.warning(f"B.5 点击头像异常: {exc}")
@@ -869,10 +1036,14 @@ class CommentLeadPmAction(BaseAction):
         优先用 COMMENTER_PM_BTN_XPATH（zbl），兜底用图标 content-desc 取父。
         """
         # 优先定位可点击父容器 zbl
+        # FIX(私信整体失效, 高危): 旧代码对 self.d.xpath(...) 的【selector】调用 .exists(timeout=)，
+        # 但 uiautomator2 3.6.0 中 DeviceXPathSelector.exists 是 property，带参调用必抛 TypeError，
+        # 被 except 吞掉后 pm_btn 恒为 None -> 本函数每次返回 False -> 私信按钮永远点不到，
+        # B.5 私信评论区用户功能整体失效。改用 .wait(timeout=)（真正的方法，返回 bool）。
         pm_btn = None
         try:
             btn = self.d.xpath(L.COMMENTER_PM_BTN_XPATH)
-            if btn.exists(timeout=1.0):
+            if btn.wait(timeout=1.0):
                 pm_btn = btn
                 logger.info("B.5 通过 zbl 定位到评论者主页私信按钮")
         except Exception:
@@ -882,7 +1053,7 @@ class CommentLeadPmAction(BaseAction):
         if pm_btn is None:
             try:
                 btn_parent = self.d.xpath(L.COMMENTER_PM_BTN_PARENT_XPATH)
-                if btn_parent.exists(timeout=0.5):
+                if btn_parent.wait(timeout=0.5):
                     pm_btn = btn_parent
                     logger.info("B.5 通过 zbk 父容器定位到评论者主页私信按钮")
             except Exception:
@@ -892,7 +1063,7 @@ class CommentLeadPmAction(BaseAction):
         if pm_btn is None:
             try:
                 btn_desc = self.d.xpath(L.PM_BTN_DESC)
-                if btn_desc.exists(timeout=0.5):
+                if btn_desc.wait(timeout=0.5):
                     pm_btn = btn_desc
                     logger.info("B.5 通过 PM_BTN_DESC 兜底定位到私信图标")
             except Exception:
@@ -913,8 +1084,8 @@ class CommentLeadPmAction(BaseAction):
             if self.d(resourceId=L.PM_EDIT_TEXT_ID).exists(timeout=2.0):
                 logger.info("B.5 已进入评论者私信聊天页")
                 return True
-            # 兜底：检测 EditText
-            if self.d.xpath(f'//{L.PM_EDIT_TEXT_CLASS}').exists(timeout=1.0):
+            # 兜底：检测 EditText（同上，xpath selector 必须用 .wait 而非 .exists(timeout=)）
+            if self.d.xpath(f'//{L.PM_EDIT_TEXT_CLASS}').wait(timeout=1.0):
                 logger.info("B.5 已进入评论者私信聊天页（EditText 兜底）")
                 return True
             logger.warning("B.5 点击私信按钮后未检测到聊天页")
