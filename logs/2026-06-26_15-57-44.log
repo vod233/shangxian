@@ -1,0 +1,325 @@
+2026-06-26 15:57:44,681 - root - INFO - 已初始化日志系统，当前日志文件: D:\CodingTest\111test\111\logs\2026-06-26_15-57-44.log
+2026-06-26 15:57:44,683 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260626
+2026-06-26 15:57:44,764 - root - INFO - 已初始化日志系统，当前日志文件: D:\CodingTest\111test\111\logs\2026-06-26_15-57-44.log
+2026-06-26 15:57:44,765 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260626
+2026-06-26 15:58:26,780 - root - INFO - USB 设备检测结果: 检测到 1 台可用 USB 设备。
+2026-06-26 15:58:59,139 - root - INFO - 授权码验证通过，客户: test-customer，剩余积分: 0.012000000000001176
+2026-06-26 15:58:59,140 - root - INFO - ==> API: 开始初始化设备 V4DUT20422013309 的douyin平台任务
+2026-06-26 15:58:59,140 - dy.main_controller - INFO - 初始化任务调度中心...
+2026-06-26 15:58:59,189 - root - INFO - 当前 ADB 连接设备列表: ['V4DUT20422013309']
+2026-06-26 15:58:59,189 - root - INFO - 使用传入的序列号: V4DUT20422013309
+2026-06-26 15:58:59,192 - root - INFO - 正在向设备 V4DUT20422013309 挂载 UIAutomator2 引擎...
+2026-06-26 15:58:59,369 - root - INFO - 设备 V4DUT20422013309 uiautomator2 引擎挂载成功。
+2026-06-26 15:58:59,447 - root - INFO - 心跳检查 - 设备 V4DUT20422013309 屏幕状态: 亮起
+2026-06-26 15:58:59,448 - dy.main_controller - INFO - 设备通讯正常，引擎挂载完毕。
+2026-06-26 15:58:59,449 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260626
+2026-06-26 15:58:59,449 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-26 15:58:59,449 - root - INFO - ==> API: 设备 V4DUT20422013309 已进入运行状态
+2026-06-26 15:58:59,449 - dy.task_runner - INFO - === 任务流开始 ===
+2026-06-26 15:58:59,450 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260626
+2026-06-26 15:58:59,450 - dy.task_runner - INFO - 📊 今日已处理视频: 5 个 | 点赞: 0 次 | 评论: 0 次 | 关注: 0 人
+2026-06-26 15:58:59,451 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260626
+2026-06-26 15:58:59,451 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260626
+2026-06-26 15:58:59,452 - dy.main_controller - INFO - 调度中心正在拉起抖音 APP...
+2026-06-26 15:58:59,453 - dy.core.app_mgr - INFO - 正在启动应用: com.ss.android.ugc.aweme
+2026-06-26 15:59:00,788 - dy.core.app_mgr - INFO - 等待抖音进入前台，超时时间: 8秒
+2026-06-26 15:59:09,245 - dy.core.app_mgr - WARNING - 普通启动后应用未进入前台，尝试 monkey 启动兜底
+2026-06-26 15:59:09,659 - dy.core.app_mgr - INFO - 等待抖音进入前台，超时时间: 10秒
+2026-06-26 15:59:10,249 - dy.main_controller - INFO - 调度器开始装载动作: EnsureHomeAction
+2026-06-26 15:59:10,249 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-26 15:59:10,249 - dy.actions.base_action - INFO - ==> 准备执行动作: [EnsureHomeAction]
+2026-06-26 15:59:19,051 - dy.actions.navigation - INFO - ✅ 抖音首页加载成功
+2026-06-26 15:59:20,577 - dy.actions.base_action - INFO - <== 动作执行完成: [EnsureHomeAction]
+2026-06-26 15:59:20,577 - dy.main_controller - INFO - 抖音启动完成，准备就绪。
+2026-06-26 15:59:20,765 - dy.task_runner - INFO - 🧹 已清理设备自动化痕迹
+2026-06-26 15:59:20,765 - dy.task_runner - INFO - 
+>>> 开始处理关键词: 凳子 <<<
+2026-06-26 15:59:20,765 - dy.main_controller - INFO - 调度器开始装载动作: EnterSearchAction
+2026-06-26 15:59:20,765 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-26 15:59:20,766 - dy.actions.base_action - INFO - ==> 准备执行动作: [EnterSearchAction]
+2026-06-26 15:59:21,190 - dy.actions.navigation - INFO - 正在搜索关键词: 凳子
+2026-06-26 15:59:22,134 - dy.actions.navigation - INFO - 通过 XPath 成功点击搜索按钮
+2026-06-26 15:59:32,723 - dy.actions.navigation - INFO - 成功切换到'视频'页签
+2026-06-26 15:59:34,513 - dy.actions.base_action - INFO - <== 动作执行完成: [EnterSearchAction]
+2026-06-26 15:59:34,513 - dy.main_controller - INFO - 调度器开始装载动作: ApplyFiltersAction
+2026-06-26 15:59:34,513 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-26 15:59:34,513 - dy.actions.base_action - INFO - ==> 准备执行动作: [ApplyFiltersAction]
+2026-06-26 15:59:34,902 - dy.actions.navigation - INFO - >>> 自动化配对成功：模式[latest] -> 点击按钮[最新发布] <<<
+2026-06-26 15:59:37,916 - dy.actions.navigation - INFO - 已成功选择排序方式: 最新发布
+2026-06-26 15:59:39,048 - dy.actions.navigation - INFO - 已点击选择: 还未看过
+2026-06-26 15:59:42,466 - dy.actions.navigation - INFO - 已点击'视频'页签辅助收起面板
+2026-06-26 15:59:44,753 - dy.actions.navigation - INFO - --- 工作流切换完全执行：最新发布 ---
+2026-06-26 15:59:44,756 - dy.actions.base_action - INFO - <== 动作执行完成: [ApplyFiltersAction]
+2026-06-26 15:59:44,757 - dy.main_controller - INFO - 调度器开始装载动作: EnterFirstVideoAction
+2026-06-26 15:59:44,757 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-26 15:59:44,758 - dy.actions.base_action - INFO - ==> 准备执行动作: [EnterFirstVideoAction]
+2026-06-26 15:59:45,164 - dy.actions.navigation - INFO - 正在定位第一个视频...
+2026-06-26 15:59:45,463 - dy.actions.navigation - INFO - 识别到视频文案: 生日穿这个会不会太好看了！快艾特你的好闺...
+2026-06-26 15:59:46,847 - dy.actions.base_action - INFO - <== 动作执行完成: [EnterFirstVideoAction]
+2026-06-26 15:59:49,852 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260626
+2026-06-26 15:59:49,853 - dy.task_runner - INFO - 
+--- 正在处理第 1/5 个视频 ---
+2026-06-26 15:59:50,638 - dy.task_runner - INFO - 状态检查[提取视频信息前] 第 1/4 次: video_page
+2026-06-26 15:59:51,019 - dy.task_runner - INFO - 功能前状态[提取视频信息/分享链接]: video_page
+2026-06-26 15:59:51,264 - dy.task_runner - INFO - 状态检查[提取视频信息/分享链接-执行前] 第 1/6 次: video_page
+2026-06-26 15:59:51,264 - dy.main_controller - INFO - 调度器开始装载动作: GetCurrentVideoLinkAction
+2026-06-26 15:59:51,265 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-26 15:59:51,265 - dy.actions.base_action - INFO - ==> 准备执行动作: [GetCurrentVideoLinkAction]
+2026-06-26 15:59:52,242 - dy.actions.interaction - INFO - 当前视频可见文案兜底: 生日穿这个会不会太好看了！快艾特你的好闺闺给你买 #名井南进行... 展开
+2026-06-26 15:59:52,243 - dy.actions.interaction - WARNING - 稳定模式未打开分享面板提取链接，使用当前页面文案生成兜底视频标识: dy_visible_0a9650a4d24b96d6
+2026-06-26 15:59:52,243 - dy.actions.base_action - INFO - <== 动作执行完成: [GetCurrentVideoLinkAction]
+2026-06-26 15:59:53,055 - dy.task_runner - INFO - 功能后状态[提取视频信息/分享链接]: video_page
+2026-06-26 15:59:53,480 - dy.task_runner - INFO - 状态检查[提取视频信息/分享链接-执行后] 第 1/6 次: video_page
+2026-06-26 15:59:53,481 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260626
+2026-06-26 15:59:53,483 - dy.task_runner - INFO - 🎬 开始对新视频执行互动...
+2026-06-26 15:59:53,483 - dy.task_runner - INFO - 📝 当前视频标题: 生日穿这个会不会太好看了！快艾特你的好闺闺给你买 #名井南进行... 展开
+2026-06-26 15:59:53,874 - dy.task_runner - INFO - 功能前状态[点赞]: video_page
+2026-06-26 15:59:54,294 - dy.task_runner - INFO - 状态检查[点赞-执行前] 第 1/6 次: video_page
+2026-06-26 15:59:54,294 - dy.main_controller - INFO - 调度器开始装载动作: DoubleClickLikeAction
+2026-06-26 15:59:54,294 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-26 15:59:54,295 - dy.actions.base_action - INFO - ==> 准备执行动作: [DoubleClickLikeAction]
+2026-06-26 15:59:55,280 - dy.actions.interaction - INFO - 已短按右侧喜欢按钮: (990, 1377)
+2026-06-26 15:59:55,280 - dy.actions.base_action - INFO - <== 动作执行完成: [DoubleClickLikeAction]
+2026-06-26 15:59:56,104 - dy.task_runner - INFO - 功能后状态[点赞]: video_page
+2026-06-26 15:59:56,540 - dy.task_runner - INFO - 状态检查[点赞-执行后] 第 1/6 次: video_page
+2026-06-26 15:59:56,549 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260626
+2026-06-26 15:59:58,052 - dy.task_runner - INFO - 已关闭功能: 作者主页/关注/私信，跳过
+2026-06-26 15:59:58,052 - dy.task_runner - INFO - 已关闭功能: AI 视频评论，跳过
+2026-06-26 15:59:58,543 - dy.task_runner - INFO - 功能前状态[评论区AI截流/楼中楼回复]: video_page
+2026-06-26 15:59:58,992 - dy.task_runner - INFO - 状态检查[评论区AI截流/楼中楼回复-执行前] 第 1/6 次: video_page
+2026-06-26 15:59:58,992 - dy.main_controller - INFO - 调度器开始装载动作: OpenCommentSectionAction
+2026-06-26 15:59:58,992 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-26 15:59:58,993 - dy.actions.base_action - INFO - ==> 准备执行动作: [OpenCommentSectionAction]
+2026-06-26 15:59:59,395 - dy.actions.commenting - INFO - 正在通过 content-desc 规律寻找主评论区按钮...
+2026-06-26 15:59:59,889 - dy.actions.commenting - INFO - 成功锁定评论区入口，当前评论数标识: 评论51，按钮
+2026-06-26 16:00:02,610 - dy.actions.base_action - INFO - <== 动作执行完成: [OpenCommentSectionAction]
+2026-06-26 16:00:03,553 - dy.task_runner - INFO - 功能中状态[打开评论区后]: profile_page
+2026-06-26 16:00:03,553 - dy.task_runner - WARNING - 评论区未可靠打开，当前状态: profile_page
+2026-06-26 16:00:03,994 - dy.task_runner - INFO - 状态检查[评论区AI截流/楼中楼回复-打开失败后] 第 1/6 次: profile_page
+2026-06-26 16:00:03,995 - dy.task_runner - INFO - 尝试关闭/返回当前状态[profile_page] -> 视频页
+2026-06-26 16:00:05,726 - dy.task_runner - INFO - 状态检查[评论区AI截流/楼中楼回复-打开失败后] 第 2/6 次: video_page
+2026-06-26 16:00:05,728 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260626
+2026-06-26 16:00:05,728 - dy.task_runner - INFO - 📊 实时数据 -> 视频:6 | 赞:1 | 评:0 | 关:0
+2026-06-26 16:00:06,207 - dy.task_runner - INFO - 状态检查[滑动下一个视频前] 第 1/5 次: video_page
+2026-06-26 16:00:06,208 - dy.main_controller - INFO - 调度器开始装载动作: SwipeNextVideoAction
+2026-06-26 16:00:06,208 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-26 16:00:06,208 - dy.actions.base_action - INFO - ==> 准备执行动作: [SwipeNextVideoAction]
+2026-06-26 16:00:07,964 - dy.actions.base_action - INFO - <== 动作执行完成: [SwipeNextVideoAction]
+2026-06-26 16:00:07,964 - dy.task_runner - INFO - 📺 长停留模式: 预计停留 7.5 秒
+2026-06-26 16:00:07,964 - dy.task_runner - INFO - 等待 7.5 秒后处理下一个视频...
+2026-06-26 16:00:15,472 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260626
+2026-06-26 16:00:15,474 - dy.task_runner - INFO - 
+--- 正在处理第 2/5 个视频 ---
+2026-06-26 16:00:16,788 - dy.task_runner - INFO - 状态检查[提取视频信息前] 第 1/4 次: video_page
+2026-06-26 16:00:17,422 - dy.task_runner - INFO - 功能前状态[提取视频信息/分享链接]: video_page
+2026-06-26 16:00:18,100 - dy.task_runner - INFO - 状态检查[提取视频信息/分享链接-执行前] 第 1/6 次: video_page
+2026-06-26 16:00:18,100 - dy.main_controller - INFO - 调度器开始装载动作: GetCurrentVideoLinkAction
+2026-06-26 16:00:18,100 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-26 16:00:18,100 - dy.actions.base_action - INFO - ==> 准备执行动作: [GetCurrentVideoLinkAction]
+2026-06-26 16:00:19,372 - dy.actions.interaction - INFO - 当前视频可见文案兜底: 结实又好看的小凳子#小板凳矮凳家用 #家用凳子推荐 #结实耐用 #... 展开
+2026-06-26 16:00:19,373 - dy.actions.interaction - WARNING - 稳定模式未打开分享面板提取链接，使用当前页面文案生成兜底视频标识: dy_visible_68dc5f2d9068d288
+2026-06-26 16:00:19,373 - dy.actions.base_action - INFO - <== 动作执行完成: [GetCurrentVideoLinkAction]
+2026-06-26 16:00:20,759 - dy.task_runner - INFO - 功能后状态[提取视频信息/分享链接]: video_page
+2026-06-26 16:00:21,446 - dy.task_runner - INFO - 状态检查[提取视频信息/分享链接-执行后] 第 1/6 次: video_page
+2026-06-26 16:00:21,446 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260626
+2026-06-26 16:00:21,448 - dy.task_runner - INFO - 🎬 开始对新视频执行互动...
+2026-06-26 16:00:21,449 - dy.task_runner - INFO - 📝 当前视频标题: 结实又好看的小凳子#小板凳矮凳家用 #家用凳子推荐 #结实耐用 #... 展开
+2026-06-26 16:00:22,180 - dy.task_runner - INFO - 功能前状态[点赞]: video_page
+2026-06-26 16:00:22,944 - dy.task_runner - INFO - 状态检查[点赞-执行前] 第 1/6 次: video_page
+2026-06-26 16:00:22,945 - dy.main_controller - INFO - 调度器开始装载动作: DoubleClickLikeAction
+2026-06-26 16:00:22,945 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-26 16:00:22,945 - dy.actions.base_action - INFO - ==> 准备执行动作: [DoubleClickLikeAction]
+2026-06-26 16:00:24,277 - dy.actions.interaction - INFO - 已短按右侧喜欢按钮: (989, 1376)
+2026-06-26 16:00:24,278 - dy.actions.base_action - INFO - <== 动作执行完成: [DoubleClickLikeAction]
+2026-06-26 16:00:25,251 - dy.task_runner - INFO - 功能后状态[点赞]: video_page
+2026-06-26 16:00:25,888 - dy.task_runner - INFO - 状态检查[点赞-执行后] 第 1/6 次: video_page
+2026-06-26 16:00:25,895 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260626
+2026-06-26 16:00:26,897 - dy.task_runner - INFO - 已关闭功能: 作者主页/关注/私信，跳过
+2026-06-26 16:00:26,897 - dy.task_runner - INFO - 已关闭功能: AI 视频评论，跳过
+2026-06-26 16:00:27,437 - dy.task_runner - INFO - 功能前状态[评论区AI截流/楼中楼回复]: video_page
+2026-06-26 16:00:28,299 - dy.task_runner - INFO - 状态检查[评论区AI截流/楼中楼回复-执行前] 第 1/6 次: video_page
+2026-06-26 16:00:28,299 - dy.main_controller - INFO - 调度器开始装载动作: OpenCommentSectionAction
+2026-06-26 16:00:28,299 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-26 16:00:28,299 - dy.actions.base_action - INFO - ==> 准备执行动作: [OpenCommentSectionAction]
+2026-06-26 16:00:28,734 - dy.actions.commenting - INFO - 正在通过 content-desc 规律寻找主评论区按钮...
+2026-06-26 16:00:29,338 - dy.actions.commenting - INFO - 成功锁定评论区入口，当前评论数标识: 评论7，按钮
+2026-06-26 16:00:32,386 - dy.actions.base_action - INFO - <== 动作执行完成: [OpenCommentSectionAction]
+2026-06-26 16:00:33,585 - dy.task_runner - INFO - 功能中状态[打开评论区后]: home_or_search
+2026-06-26 16:00:33,585 - dy.task_runner - WARNING - 评论区未可靠打开，当前状态: home_or_search
+2026-06-26 16:00:34,107 - dy.task_runner - INFO - 状态检查[评论区AI截流/楼中楼回复-打开失败后] 第 1/6 次: home_or_search
+2026-06-26 16:00:34,107 - dy.task_runner - INFO - 尝试关闭/返回当前状态[home_or_search] -> 视频页
+2026-06-26 16:00:36,073 - dy.task_runner - INFO - 状态检查[评论区AI截流/楼中楼回复-打开失败后] 第 2/6 次: video_page
+2026-06-26 16:00:36,076 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260626
+2026-06-26 16:00:36,077 - dy.task_runner - INFO - 📊 实时数据 -> 视频:7 | 赞:2 | 评:0 | 关:0
+2026-06-26 16:00:36,772 - dy.task_runner - INFO - 状态检查[滑动下一个视频前] 第 1/5 次: video_page
+2026-06-26 16:00:36,772 - dy.main_controller - INFO - 调度器开始装载动作: SwipeNextVideoAction
+2026-06-26 16:00:36,772 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-26 16:00:36,772 - dy.actions.base_action - INFO - ==> 准备执行动作: [SwipeNextVideoAction]
+2026-06-26 16:00:38,509 - dy.actions.base_action - INFO - <== 动作执行完成: [SwipeNextVideoAction]
+2026-06-26 16:00:38,509 - dy.anti_detection - INFO - 概率决策: 跳过 long_watch (概率=15%)
+2026-06-26 16:00:38,509 - dy.task_runner - INFO - 等待 1.2 秒后处理下一个视频...
+2026-06-26 16:00:40,013 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260626
+2026-06-26 16:00:40,014 - dy.task_runner - INFO - 
+--- 正在处理第 3/5 个视频 ---
+2026-06-26 16:00:40,985 - dy.task_runner - INFO - 状态检查[提取视频信息前] 第 1/4 次: video_page
+2026-06-26 16:00:41,593 - dy.task_runner - INFO - 功能前状态[提取视频信息/分享链接]: video_page
+2026-06-26 16:00:42,338 - dy.task_runner - INFO - 状态检查[提取视频信息/分享链接-执行前] 第 1/6 次: video_page
+2026-06-26 16:00:42,339 - dy.main_controller - INFO - 调度器开始装载动作: GetCurrentVideoLinkAction
+2026-06-26 16:00:42,339 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-26 16:00:42,339 - dy.actions.base_action - INFO - ==> 准备执行动作: [GetCurrentVideoLinkAction]
+2026-06-26 16:00:43,766 - dy.actions.interaction - INFO - 当前视频可见文案兜底: 闭眼冲啊！质量真的老好啦！这款坐着舒服、价格实惠、收纳还不占... 展开
+2026-06-26 16:00:43,767 - dy.actions.interaction - WARNING - 稳定模式未打开分享面板提取链接，使用当前页面文案生成兜底视频标识: dy_visible_2b6a2bf9cd8544ab
+2026-06-26 16:00:43,767 - dy.actions.base_action - INFO - <== 动作执行完成: [GetCurrentVideoLinkAction]
+2026-06-26 16:00:45,343 - dy.task_runner - INFO - 功能后状态[提取视频信息/分享链接]: video_page
+2026-06-26 16:00:46,180 - dy.task_runner - INFO - 状态检查[提取视频信息/分享链接-执行后] 第 1/6 次: video_page
+2026-06-26 16:00:46,180 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260626
+2026-06-26 16:00:46,183 - dy.task_runner - INFO - 🎬 开始对新视频执行互动...
+2026-06-26 16:00:46,183 - dy.task_runner - INFO - 📝 当前视频标题: 闭眼冲啊！质量真的老好啦！这款坐着舒服、价格实惠、收纳还不占... 展开
+2026-06-26 16:00:46,878 - dy.task_runner - INFO - 功能前状态[点赞]: video_page
+2026-06-26 16:00:47,765 - dy.task_runner - INFO - 状态检查[点赞-执行前] 第 1/6 次: video_page
+2026-06-26 16:00:47,765 - dy.main_controller - INFO - 调度器开始装载动作: DoubleClickLikeAction
+2026-06-26 16:00:47,766 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-26 16:00:47,766 - dy.actions.base_action - INFO - ==> 准备执行动作: [DoubleClickLikeAction]
+2026-06-26 16:00:49,064 - dy.actions.interaction - INFO - 已短按右侧喜欢按钮: (990, 1377)
+2026-06-26 16:00:49,064 - dy.actions.base_action - INFO - <== 动作执行完成: [DoubleClickLikeAction]
+2026-06-26 16:00:50,063 - dy.task_runner - INFO - 功能后状态[点赞]: video_page
+2026-06-26 16:00:50,873 - dy.task_runner - INFO - 状态检查[点赞-执行后] 第 1/6 次: video_page
+2026-06-26 16:00:50,881 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260626
+2026-06-26 16:00:52,383 - dy.task_runner - INFO - 已关闭功能: 作者主页/关注/私信，跳过
+2026-06-26 16:00:52,383 - dy.task_runner - INFO - 已关闭功能: AI 视频评论，跳过
+2026-06-26 16:00:53,175 - dy.task_runner - INFO - 功能前状态[评论区AI截流/楼中楼回复]: video_page
+2026-06-26 16:00:53,904 - dy.task_runner - INFO - 状态检查[评论区AI截流/楼中楼回复-执行前] 第 1/6 次: video_page
+2026-06-26 16:00:53,905 - dy.main_controller - INFO - 调度器开始装载动作: OpenCommentSectionAction
+2026-06-26 16:00:53,905 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-26 16:00:53,905 - dy.actions.base_action - INFO - ==> 准备执行动作: [OpenCommentSectionAction]
+2026-06-26 16:00:54,362 - dy.actions.commenting - INFO - 正在通过 content-desc 规律寻找主评论区按钮...
+2026-06-26 16:00:55,320 - dy.actions.commenting - INFO - 成功锁定评论区入口，当前评论数标识: 评论5，按钮
+2026-06-26 16:00:58,451 - dy.actions.base_action - INFO - <== 动作执行完成: [OpenCommentSectionAction]
+2026-06-26 16:00:59,362 - dy.task_runner - INFO - 功能中状态[打开评论区后]: home_or_search
+2026-06-26 16:00:59,362 - dy.task_runner - WARNING - 评论区未可靠打开，当前状态: home_or_search
+2026-06-26 16:00:59,917 - dy.task_runner - INFO - 状态检查[评论区AI截流/楼中楼回复-打开失败后] 第 1/6 次: home_or_search
+2026-06-26 16:00:59,917 - dy.task_runner - INFO - 尝试关闭/返回当前状态[home_or_search] -> 视频页
+2026-06-26 16:01:01,821 - dy.task_runner - INFO - 状态检查[评论区AI截流/楼中楼回复-打开失败后] 第 2/6 次: video_page
+2026-06-26 16:01:01,828 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260626
+2026-06-26 16:01:01,828 - dy.task_runner - INFO - 📊 实时数据 -> 视频:8 | 赞:3 | 评:0 | 关:0
+2026-06-26 16:01:02,679 - dy.task_runner - INFO - 状态检查[滑动下一个视频前] 第 1/5 次: video_page
+2026-06-26 16:01:02,680 - dy.main_controller - INFO - 调度器开始装载动作: SwipeNextVideoAction
+2026-06-26 16:01:02,680 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-26 16:01:02,680 - dy.actions.base_action - INFO - ==> 准备执行动作: [SwipeNextVideoAction]
+2026-06-26 16:01:04,569 - dy.actions.base_action - INFO - <== 动作执行完成: [SwipeNextVideoAction]
+2026-06-26 16:01:04,569 - dy.task_runner - INFO - 📺 长停留模式: 预计停留 15.5 秒
+2026-06-26 16:01:04,569 - dy.task_runner - INFO - 等待 15.5 秒后处理下一个视频...
+2026-06-26 16:01:20,087 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260626
+2026-06-26 16:01:20,088 - dy.task_runner - INFO - 
+--- 正在处理第 4/5 个视频 ---
+2026-06-26 16:01:21,925 - dy.task_runner - INFO - 状态检查[提取视频信息前] 第 1/4 次: video_page
+2026-06-26 16:01:22,752 - dy.task_runner - INFO - 功能前状态[提取视频信息/分享链接]: video_page
+2026-06-26 16:01:23,608 - dy.task_runner - INFO - 状态检查[提取视频信息/分享链接-执行前] 第 1/6 次: video_page
+2026-06-26 16:01:23,608 - dy.main_controller - INFO - 调度器开始装载动作: GetCurrentVideoLinkAction
+2026-06-26 16:01:23,608 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-26 16:01:23,608 - dy.actions.base_action - INFO - ==> 准备执行动作: [GetCurrentVideoLinkAction]
+2026-06-26 16:01:24,990 - dy.actions.interaction - INFO - 当前视频可见文案兜底: 升级加厚款！承重500斤的椅子，环抱式支撑做起来很舒服，库存不... 展开
+2026-06-26 16:01:24,992 - dy.actions.interaction - WARNING - 稳定模式未打开分享面板提取链接，使用当前页面文案生成兜底视频标识: dy_visible_135f188447d4a664
+2026-06-26 16:01:24,993 - dy.actions.base_action - INFO - <== 动作执行完成: [GetCurrentVideoLinkAction]
+2026-06-26 16:01:26,484 - dy.task_runner - INFO - 功能后状态[提取视频信息/分享链接]: video_page
+2026-06-26 16:01:27,278 - dy.task_runner - INFO - 状态检查[提取视频信息/分享链接-执行后] 第 1/6 次: video_page
+2026-06-26 16:01:27,280 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260626
+2026-06-26 16:01:27,282 - dy.task_runner - INFO - 🎬 开始对新视频执行互动...
+2026-06-26 16:01:27,283 - dy.task_runner - INFO - 📝 当前视频标题: 升级加厚款！承重500斤的椅子，环抱式支撑做起来很舒服，库存不... 展开
+2026-06-26 16:01:27,795 - dy.task_runner - INFO - 功能前状态[点赞]: video_page
+2026-06-26 16:01:28,562 - dy.task_runner - INFO - 状态检查[点赞-执行前] 第 1/6 次: video_page
+2026-06-26 16:01:28,562 - dy.main_controller - INFO - 调度器开始装载动作: DoubleClickLikeAction
+2026-06-26 16:01:28,563 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-26 16:01:28,563 - dy.actions.base_action - INFO - ==> 准备执行动作: [DoubleClickLikeAction]
+2026-06-26 16:01:29,897 - dy.actions.interaction - INFO - 已短按右侧喜欢按钮: (987, 1254)
+2026-06-26 16:01:29,897 - dy.actions.base_action - INFO - <== 动作执行完成: [DoubleClickLikeAction]
+2026-06-26 16:01:31,184 - dy.task_runner - INFO - 功能后状态[点赞]: video_page
+2026-06-26 16:01:31,967 - dy.task_runner - INFO - 状态检查[点赞-执行后] 第 1/6 次: video_page
+2026-06-26 16:01:31,974 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260626
+2026-06-26 16:01:33,978 - dy.task_runner - INFO - 已关闭功能: 作者主页/关注/私信，跳过
+2026-06-26 16:01:33,978 - dy.task_runner - INFO - 已关闭功能: AI 视频评论，跳过
+2026-06-26 16:01:34,738 - dy.task_runner - INFO - 功能前状态[评论区AI截流/楼中楼回复]: video_page
+2026-06-26 16:01:35,527 - dy.task_runner - INFO - 状态检查[评论区AI截流/楼中楼回复-执行前] 第 1/6 次: video_page
+2026-06-26 16:01:35,527 - dy.main_controller - INFO - 调度器开始装载动作: OpenCommentSectionAction
+2026-06-26 16:01:35,527 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-26 16:01:35,528 - dy.actions.base_action - INFO - ==> 准备执行动作: [OpenCommentSectionAction]
+2026-06-26 16:01:35,967 - dy.actions.commenting - INFO - 正在通过 content-desc 规律寻找主评论区按钮...
+2026-06-26 16:01:36,737 - dy.actions.commenting - INFO - 成功锁定评论区入口，当前评论数标识: 评论174，按钮
+2026-06-26 16:01:39,798 - dy.actions.base_action - INFO - <== 动作执行完成: [OpenCommentSectionAction]
+2026-06-26 16:01:41,180 - dy.task_runner - INFO - 功能中状态[打开评论区后]: home_or_search
+2026-06-26 16:01:41,180 - dy.task_runner - WARNING - 评论区未可靠打开，当前状态: home_or_search
+2026-06-26 16:01:41,926 - dy.task_runner - INFO - 状态检查[评论区AI截流/楼中楼回复-打开失败后] 第 1/6 次: home_or_search
+2026-06-26 16:01:41,926 - dy.task_runner - INFO - 尝试关闭/返回当前状态[home_or_search] -> 视频页
+2026-06-26 16:01:43,950 - dy.task_runner - INFO - 状态检查[评论区AI截流/楼中楼回复-打开失败后] 第 2/6 次: video_page
+2026-06-26 16:01:43,959 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260626
+2026-06-26 16:01:43,960 - dy.task_runner - INFO - 📊 实时数据 -> 视频:9 | 赞:4 | 评:0 | 关:0
+2026-06-26 16:01:44,767 - dy.task_runner - INFO - 状态检查[滑动下一个视频前] 第 1/5 次: video_page
+2026-06-26 16:01:44,767 - dy.anti_detection - INFO - 模拟行为: 快速划过视频
+2026-06-26 16:01:45,850 - dy.anti_detection - INFO - 概率决策: 跳过 long_watch (概率=15%)
+2026-06-26 16:01:45,850 - dy.task_runner - INFO - 等待 3.0 秒后处理下一个视频...
+2026-06-26 16:01:48,854 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260626
+2026-06-26 16:01:48,855 - dy.task_runner - INFO - 
+--- 正在处理第 5/5 个视频 ---
+2026-06-26 16:01:50,521 - dy.task_runner - INFO - 状态检查[提取视频信息前] 第 1/4 次: video_page
+2026-06-26 16:01:51,362 - dy.task_runner - INFO - 功能前状态[提取视频信息/分享链接]: video_page
+2026-06-26 16:01:52,232 - dy.task_runner - INFO - 状态检查[提取视频信息/分享链接-执行前] 第 1/6 次: video_page
+2026-06-26 16:01:52,232 - dy.main_controller - INFO - 调度器开始装载动作: GetCurrentVideoLinkAction
+2026-06-26 16:01:52,232 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-26 16:01:52,233 - dy.actions.base_action - INFO - ==> 准备执行动作: [GetCurrentVideoLinkAction]
+2026-06-26 16:01:53,696 - dy.actions.interaction - INFO - 当前视频可见文案兜底: 2026款升级款软包风车凳，凳面升级软坐面，加厚海绵更舒适 一体... 展开
+2026-06-26 16:01:53,697 - dy.actions.interaction - WARNING - 稳定模式未打开分享面板提取链接，使用当前页面文案生成兜底视频标识: dy_visible_2a59635600978aff
+2026-06-26 16:01:53,697 - dy.actions.base_action - INFO - <== 动作执行完成: [GetCurrentVideoLinkAction]
+2026-06-26 16:01:55,388 - dy.task_runner - INFO - 功能后状态[提取视频信息/分享链接]: video_page
+2026-06-26 16:01:56,155 - dy.task_runner - INFO - 状态检查[提取视频信息/分享链接-执行后] 第 1/6 次: video_page
+2026-06-26 16:01:56,155 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260626
+2026-06-26 16:01:56,156 - dy.task_runner - INFO - 🎬 开始对新视频执行互动...
+2026-06-26 16:01:56,156 - dy.task_runner - INFO - 📝 当前视频标题: 2026款升级款软包风车凳，凳面升级软坐面，加厚海绵更舒适 一体... 展开
+2026-06-26 16:01:57,022 - dy.task_runner - INFO - 功能前状态[点赞]: video_page
+2026-06-26 16:01:57,816 - dy.task_runner - INFO - 状态检查[点赞-执行前] 第 1/6 次: video_page
+2026-06-26 16:01:57,817 - dy.main_controller - INFO - 调度器开始装载动作: DoubleClickLikeAction
+2026-06-26 16:01:57,817 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-26 16:01:57,817 - dy.actions.base_action - INFO - ==> 准备执行动作: [DoubleClickLikeAction]
+2026-06-26 16:01:59,345 - dy.actions.interaction - INFO - 已短按右侧喜欢按钮: (987, 1374)
+2026-06-26 16:01:59,345 - dy.actions.base_action - INFO - <== 动作执行完成: [DoubleClickLikeAction]
+2026-06-26 16:02:00,380 - dy.task_runner - INFO - 功能后状态[点赞]: video_page
+2026-06-26 16:02:01,205 - dy.task_runner - INFO - 状态检查[点赞-执行后] 第 1/6 次: video_page
+2026-06-26 16:02:01,212 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260626
+2026-06-26 16:02:02,716 - dy.task_runner - INFO - 已关闭功能: 作者主页/关注/私信，跳过
+2026-06-26 16:02:02,716 - dy.task_runner - INFO - 已关闭功能: AI 视频评论，跳过
+2026-06-26 16:02:03,704 - dy.task_runner - INFO - 功能前状态[评论区AI截流/楼中楼回复]: video_page
+2026-06-26 16:02:04,418 - dy.task_runner - INFO - 状态检查[评论区AI截流/楼中楼回复-执行前] 第 1/6 次: video_page
+2026-06-26 16:02:04,419 - dy.main_controller - INFO - 调度器开始装载动作: OpenCommentSectionAction
+2026-06-26 16:02:04,419 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-26 16:02:04,419 - dy.actions.base_action - INFO - ==> 准备执行动作: [OpenCommentSectionAction]
+2026-06-26 16:02:04,854 - dy.actions.commenting - INFO - 正在通过 content-desc 规律寻找主评论区按钮...
+2026-06-26 16:02:05,584 - dy.actions.commenting - INFO - 成功锁定评论区入口，当前评论数标识: 评论23，按钮
+2026-06-26 16:02:08,012 - dy.actions.base_action - INFO - <== 动作执行完成: [OpenCommentSectionAction]
+2026-06-26 16:02:09,445 - dy.task_runner - INFO - 功能中状态[打开评论区后]: home_or_search
+2026-06-26 16:02:09,445 - dy.task_runner - WARNING - 评论区未可靠打开，当前状态: home_or_search
+2026-06-26 16:02:10,136 - dy.task_runner - INFO - 状态检查[评论区AI截流/楼中楼回复-打开失败后] 第 1/6 次: home_or_search
+2026-06-26 16:02:10,136 - dy.task_runner - INFO - 尝试关闭/返回当前状态[home_or_search] -> 视频页
+2026-06-26 16:02:12,046 - dy.task_runner - INFO - 状态检查[评论区AI截流/楼中楼回复-打开失败后] 第 2/6 次: video_page
+2026-06-26 16:02:12,048 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260626
+2026-06-26 16:02:12,049 - dy.task_runner - INFO - 📊 实时数据 -> 视频:10 | 赞:5 | 评:0 | 关:0
+2026-06-26 16:02:13,013 - dy.task_runner - INFO - 状态检查[滑动下一个视频前] 第 1/5 次: video_page
+2026-06-26 16:02:13,013 - dy.main_controller - INFO - 调度器开始装载动作: SwipeNextVideoAction
+2026-06-26 16:02:13,013 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-26 16:02:13,013 - dy.actions.base_action - INFO - ==> 准备执行动作: [SwipeNextVideoAction]
+2026-06-26 16:02:14,591 - dy.actions.base_action - INFO - <== 动作执行完成: [SwipeNextVideoAction]
+2026-06-26 16:02:14,591 - dy.task_runner - INFO - 📺 长停留模式: 预计停留 11.2 秒
+2026-06-26 16:02:14,591 - dy.task_runner - INFO - 等待 11.2 秒后处理下一个视频...
+2026-06-26 16:02:26,103 - dy.main_controller - INFO - 调度器开始装载动作: ResetToSearchAction
+2026-06-26 16:02:26,103 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-26 16:02:26,104 - dy.actions.base_action - INFO - ==> 准备执行动作: [ResetToSearchAction]
+2026-06-26 16:02:26,493 - dy.actions.navigation - INFO - 执行 5 次返回以重置到首页状态...
+2026-06-26 16:02:34,455 - dy.actions.base_action - INFO - <== 动作执行完成: [ResetToSearchAction]
+2026-06-26 16:02:34,455 - dy.task_runner - INFO - 所有关键词任务处理完毕！
+2026-06-26 16:02:34,455 - dy.main_controller - INFO - 任务执行完毕，清理资源...
+2026-06-26 16:02:34,455 - dy.main_controller - INFO - 资源清理完毕，安全退出。
+2026-06-26 16:02:34,456 - root - INFO - <== API: 设备 V4DUT20422013309 任务执行完毕
+2026-06-26 16:06:59,938 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260626
+2026-06-26 16:06:59,946 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260626
+2026-06-26 16:08:22,926 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260626
+2026-06-26 16:08:22,933 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260626
+2026-06-26 16:15:32,666 - root - INFO - 接收到关闭信号，正在停止所有后台设备任务...
+2026-06-26 16:15:32,667 - root - INFO - 线程池已关闭。

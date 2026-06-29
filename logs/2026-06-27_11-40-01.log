@@ -1,0 +1,550 @@
+2026-06-27 11:40:01,338 - root - INFO - 已初始化日志系统，当前日志文件: D:\CodingTest\111test\111\logs\2026-06-27_11-40-01.log
+2026-06-27 11:40:01,340 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260627
+2026-06-27 11:40:01,436 - root - INFO - 已初始化日志系统，当前日志文件: D:\CodingTest\111test\111\logs\2026-06-27_11-40-01.log
+2026-06-27 11:40:01,437 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260627
+2026-06-27 11:40:02,569 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260627
+2026-06-27 11:40:16,428 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260627
+2026-06-27 11:40:22,412 - root - INFO - 授权码验证通过，客户: test-customer，剩余积分: 200.012
+2026-06-27 11:40:22,414 - root - INFO - ==> API: 开始初始化设备 V4DUT20422013309 的douyin平台任务
+2026-06-27 11:40:22,414 - dy.main_controller - INFO - 初始化任务调度中心...
+2026-06-27 11:40:22,432 - root - INFO - 当前 ADB 连接设备列表: ['V4DUT20422013309']
+2026-06-27 11:40:22,432 - root - INFO - 使用传入的序列号: V4DUT20422013309
+2026-06-27 11:40:22,434 - root - INFO - 正在向设备 V4DUT20422013309 挂载 UIAutomator2 引擎...
+2026-06-27 11:40:23,834 - root - INFO - 设备 V4DUT20422013309 uiautomator2 引擎挂载成功。
+2026-06-27 11:40:23,993 - root - INFO - 心跳检查 - 设备 V4DUT20422013309 屏幕状态: 亮起
+2026-06-27 11:40:23,993 - dy.main_controller - INFO - 设备通讯正常，引擎挂载完毕。
+2026-06-27 11:40:23,995 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260627
+2026-06-27 11:40:23,995 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-27 11:40:23,995 - root - INFO - ==> API: 设备 V4DUT20422013309 已进入运行状态
+2026-06-27 11:40:23,995 - dy.task_runner - INFO - === 任务流开始 ===
+2026-06-27 11:40:23,996 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260627
+2026-06-27 11:40:23,996 - dy.task_runner - INFO - 📊 今日已处理视频: 0 个 | 点赞: 0 次 | 评论: 0 次 | 关注: 0 人
+2026-06-27 11:40:23,997 - dy.main_controller - INFO - 调度中心正在拉起抖音 APP...
+2026-06-27 11:40:23,997 - dy.core.app_mgr - INFO - 正在启动应用: com.ss.android.ugc.aweme
+2026-06-27 11:40:24,448 - dy.core.app_mgr - INFO - 等待抖音进入前台，超时时间: 8秒
+2026-06-27 11:40:25,004 - dy.core.app_mgr - INFO - 等待抖音进入前台，超时时间: 10秒
+2026-06-27 11:40:25,562 - dy.main_controller - INFO - 调度器开始装载动作: EnsureHomeAction
+2026-06-27 11:40:25,563 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-27 11:40:25,563 - dy.actions.base_action - INFO - ==> 准备执行动作: [EnsureHomeAction]
+2026-06-27 11:40:36,406 - dy.actions.navigation - INFO - ✅ 抖音首页加载成功
+2026-06-27 11:40:37,274 - dy.actions.base_action - INFO - <== 动作执行完成: [EnsureHomeAction]
+2026-06-27 11:40:37,274 - dy.main_controller - INFO - 抖音启动完成，准备就绪。
+2026-06-27 11:40:37,926 - dy.anti_detection - INFO - 📱 设备指纹: {'android_id': '8750be44adec00a2', 'model': 'CDY-TN90', 'brand': 'HONOR', 'sdk': '29'}
+2026-06-27 11:40:37,926 - dy.task_runner - INFO - 🧹 已清理设备自动化痕迹
+2026-06-27 11:40:38,043 - dy.task_runner - INFO - 
+>>> 开始处理关键词: 凳子 <<<
+2026-06-27 11:40:38,043 - dy.main_controller - INFO - 调度器开始装载动作: EnterSearchAction
+2026-06-27 11:40:38,043 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-27 11:40:38,044 - dy.actions.base_action - INFO - ==> 准备执行动作: [EnterSearchAction]
+2026-06-27 11:40:38,478 - dy.actions.navigation - INFO - 正在搜索关键词: 凳子
+2026-06-27 11:40:39,541 - dy.actions.navigation - INFO - 通过 XPath 成功点击搜索按钮
+2026-06-27 11:40:58,996 - dy.actions.navigation - INFO - 成功切换到'视频'页签
+2026-06-27 11:41:00,385 - dy.actions.base_action - INFO - <== 动作执行完成: [EnterSearchAction]
+2026-06-27 11:41:00,386 - dy.main_controller - INFO - 调度器开始装载动作: ApplyFiltersAction
+2026-06-27 11:41:00,386 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-27 11:41:00,386 - dy.actions.base_action - INFO - ==> 准备执行动作: [ApplyFiltersAction]
+2026-06-27 11:41:00,798 - dy.actions.navigation - INFO - >>> 自动化配对成功：模式[latest] -> 点击按钮[最新发布] <<<
+2026-06-27 11:41:04,107 - dy.actions.navigation - INFO - 已成功选择排序方式: 最新发布
+2026-06-27 11:41:05,502 - dy.actions.navigation - INFO - 已点击选择: 还未看过
+2026-06-27 11:41:09,304 - dy.actions.navigation - INFO - 已点击'视频'页签辅助收起面板
+2026-06-27 11:41:11,189 - dy.actions.navigation - INFO - --- 工作流切换完全执行：最新发布 ---
+2026-06-27 11:41:11,193 - dy.actions.base_action - INFO - <== 动作执行完成: [ApplyFiltersAction]
+2026-06-27 11:41:11,193 - dy.main_controller - INFO - 调度器开始装载动作: EnterFirstVideoAction
+2026-06-27 11:41:11,193 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-27 11:41:11,195 - dy.actions.base_action - INFO - ==> 准备执行动作: [EnterFirstVideoAction]
+2026-06-27 11:41:11,563 - dy.actions.navigation - INFO - 正在定位第一个视频...
+2026-06-27 11:41:11,756 - dy.actions.navigation - INFO - 识别到视频文案: pdd十几块的旋转小凳子颜值好高，物超所...
+2026-06-27 11:41:13,926 - dy.actions.base_action - INFO - <== 动作执行完成: [EnterFirstVideoAction]
+2026-06-27 11:41:16,932 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260627
+2026-06-27 11:41:16,932 - dy.task_runner - INFO - 
+--- 正在处理第 1/5 个视频 ---
+2026-06-27 11:41:18,473 - dy.task_runner - INFO - 状态检查[提取视频信息前] 第 1/4 次: video_page
+2026-06-27 11:41:18,993 - dy.task_runner - INFO - 功能前状态[提取视频信息/分享链接]: video_page
+2026-06-27 11:41:19,436 - dy.task_runner - INFO - 状态检查[提取视频信息/分享链接-执行前] 第 1/6 次: video_page
+2026-06-27 11:41:19,436 - dy.main_controller - INFO - 调度器开始装载动作: GetCurrentVideoLinkAction
+2026-06-27 11:41:19,437 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-27 11:41:19,437 - dy.actions.base_action - INFO - ==> 准备执行动作: [GetCurrentVideoLinkAction]
+2026-06-27 11:41:20,612 - dy.actions.interaction - INFO - 当前视频可见文案兜底: pdd十几块的旋转小凳子颜值好高，物超所值超级喜欢#旋转椅子#平... 展开
+2026-06-27 11:41:20,612 - dy.actions.interaction - WARNING - 稳定模式未打开分享面板提取链接，使用当前页面文案生成兜底视频标识: dy_visible_a204b432f4b1bd9c
+2026-06-27 11:41:20,613 - dy.actions.base_action - INFO - <== 动作执行完成: [GetCurrentVideoLinkAction]
+2026-06-27 11:41:21,740 - dy.task_runner - INFO - 功能后状态[提取视频信息/分享链接]: video_page
+2026-06-27 11:41:22,228 - dy.task_runner - INFO - 状态检查[提取视频信息/分享链接-执行后] 第 1/6 次: video_page
+2026-06-27 11:41:22,229 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260627
+2026-06-27 11:41:22,232 - dy.task_runner - INFO - 🎬 开始对新视频执行互动...
+2026-06-27 11:41:22,233 - dy.task_runner - INFO - 📝 当前视频标题: pdd十几块的旋转小凳子颜值好高，物超所值超级喜欢#旋转椅子#平... 展开
+2026-06-27 11:41:22,233 - dy.task_runner - INFO - 已关闭功能: 点赞，跳过
+2026-06-27 11:41:22,695 - dy.task_runner - INFO - 功能前状态[作者主页/关注/私信]: video_page
+2026-06-27 11:41:23,082 - dy.task_runner - INFO - 状态检查[作者主页/关注/私信-执行前] 第 1/6 次: video_page
+2026-06-27 11:41:23,082 - dy.main_controller - INFO - 调度器开始装载动作: FollowAuthorAction
+2026-06-27 11:41:23,083 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-27 11:41:23,083 - dy.actions.base_action - INFO - ==> 准备执行动作: [FollowAuthorAction]
+2026-06-27 11:41:50,155 - dy.actions.interaction - INFO - 作者粉丝数: 未知
+2026-06-27 11:41:50,155 - dy.actions.interaction - INFO - 本次任务配置为仅私信不关注，跳过关注步骤
+2026-06-27 11:41:50,155 - dy.actions.interaction - INFO - 作者粉丝数(None)未达到私信阈值(0.01)，跳过私信
+2026-06-27 11:41:50,471 - dy.actions.interaction - INFO - 尝试返回视频页... (1/2)
+2026-06-27 11:41:52,447 - dy.actions.interaction - INFO - 确认已经回到视频页
+2026-06-27 11:41:52,447 - dy.actions.base_action - INFO - <== 动作执行完成: [FollowAuthorAction]
+2026-06-27 11:41:53,196 - dy.task_runner - INFO - 功能后状态[作者主页/关注/私信]: video_page
+2026-06-27 11:41:53,739 - dy.task_runner - INFO - 状态检查[作者主页/关注/私信-执行后] 第 1/6 次: video_page
+2026-06-27 11:41:58,572 - dy.task_runner - INFO - 🤖 AI 生成回复: 这个凳子颜值高又实惠！
+2026-06-27 11:41:58,573 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260627
+2026-06-27 11:41:59,197 - dy.task_runner - INFO - 功能前状态[AI视频评论]: video_page
+2026-06-27 11:41:59,972 - dy.task_runner - INFO - 状态检查[AI视频评论-执行前] 第 1/6 次: video_page
+2026-06-27 11:41:59,972 - dy.main_controller - INFO - 调度器开始装载动作: PostCommentAction
+2026-06-27 11:41:59,972 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-27 11:41:59,972 - dy.actions.base_action - INFO - ==> 准备执行动作: [PostCommentAction]
+2026-06-27 11:42:00,375 - dy.actions.commenting - INFO - 准备发布视频评论: 这个凳子颜值高又实惠！
+2026-06-27 11:42:07,565 - dy.actions.commenting - INFO - 视频评论: 发送按钮未就绪，重试 1/3
+2026-06-27 11:42:12,525 - dy.actions.commenting - INFO - 视频评论: 发送按钮未就绪，重试 2/3
+2026-06-27 11:42:17,790 - dy.actions.commenting - INFO - 视频评论: 发送按钮未就绪，重试 3/3
+2026-06-27 11:42:18,591 - dy.actions.commenting - INFO - 视频评论: 尝试回车键发送
+2026-06-27 11:42:22,789 - dy.actions.commenting - INFO - 检测到评论输入框仍处于打开状态，执行返回关闭
+2026-06-27 11:42:24,298 - dy.actions.base_action - INFO - <== 动作执行完成: [PostCommentAction]
+2026-06-27 11:42:25,638 - dy.task_runner - INFO - 功能后状态[AI视频评论]: comment_panel
+2026-06-27 11:42:26,548 - dy.task_runner - INFO - 状态检查[AI视频评论-执行后] 第 1/6 次: video_page
+2026-06-27 11:42:26,548 - dy.anti_detection - INFO - 概率决策: 跳过 comment_lead (概率=30%)
+2026-06-27 11:42:26,548 - dy.task_runner - INFO - 限额/概率决策: 跳过评论区截流
+2026-06-27 11:42:26,551 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260627
+2026-06-27 11:42:26,551 - dy.task_runner - INFO - 📊 实时数据 -> 视频:1 | 赞:0 | 评:0 | 关:0
+2026-06-27 11:42:27,231 - dy.task_runner - INFO - 状态检查[滑动下一个视频前] 第 1/5 次: video_page
+2026-06-27 11:42:27,232 - dy.main_controller - INFO - 调度器开始装载动作: SwipeNextVideoAction
+2026-06-27 11:42:27,232 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-27 11:42:27,232 - dy.actions.base_action - INFO - ==> 准备执行动作: [SwipeNextVideoAction]
+2026-06-27 11:44:14,892 - dy.actions.base_action - INFO - <== 动作执行完成: [SwipeNextVideoAction]
+2026-06-27 11:44:14,981 - dy.anti_detection - INFO - 概率决策: 跳过 long_watch (概率=15%)
+2026-06-27 11:44:14,982 - dy.task_runner - INFO - 等待 5.5 秒后处理下一个视频...
+2026-06-27 11:44:20,497 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260627
+2026-06-27 11:44:20,497 - dy.task_runner - INFO - 
+--- 正在处理第 2/5 个视频 ---
+2026-06-27 11:44:21,657 - dy.task_runner - INFO - 状态检查[提取视频信息前] 第 1/4 次: video_page
+2026-06-27 11:44:22,507 - dy.task_runner - INFO - 功能前状态[提取视频信息/分享链接]: video_page
+2026-06-27 11:44:23,306 - dy.task_runner - INFO - 状态检查[提取视频信息/分享链接-执行前] 第 1/6 次: video_page
+2026-06-27 11:44:23,306 - dy.main_controller - INFO - 调度器开始装载动作: GetCurrentVideoLinkAction
+2026-06-27 11:44:23,306 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-27 11:44:23,306 - dy.actions.base_action - INFO - ==> 准备执行动作: [GetCurrentVideoLinkAction]
+2026-06-27 11:44:24,561 - dy.actions.interaction - INFO - 当前视频可见文案兜底: pdd十几块的旋转小凳子颜值好高，物超所值超级喜欢#旋转椅子#平... 展开
+2026-06-27 11:44:24,562 - dy.actions.interaction - WARNING - 稳定模式未打开分享面板提取链接，使用当前页面文案生成兜底视频标识: dy_visible_a204b432f4b1bd9c
+2026-06-27 11:44:24,563 - dy.actions.base_action - INFO - <== 动作执行完成: [GetCurrentVideoLinkAction]
+2026-06-27 11:44:25,675 - dy.task_runner - INFO - 功能后状态[提取视频信息/分享链接]: video_page
+2026-06-27 11:44:26,250 - dy.task_runner - INFO - 状态检查[提取视频信息/分享链接-执行后] 第 1/6 次: video_page
+2026-06-27 11:44:26,251 - dy.task_runner - WARNING - 检测到视频重复 (token一致)，可能已滑到底部
+2026-06-27 11:44:26,251 - dy.task_runner - INFO - 结束当前关键词的视频循环
+2026-06-27 11:44:26,251 - dy.main_controller - INFO - 调度器开始装载动作: ResetToSearchAction
+2026-06-27 11:44:26,251 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-27 11:44:26,252 - dy.actions.base_action - INFO - ==> 准备执行动作: [ResetToSearchAction]
+2026-06-27 11:44:26,689 - dy.actions.navigation - INFO - 执行 5 次返回以重置到首页状态...
+2026-06-27 11:44:34,710 - dy.actions.base_action - INFO - <== 动作执行完成: [ResetToSearchAction]
+2026-06-27 11:44:34,710 - dy.task_runner - INFO - 所有关键词任务处理完毕！
+2026-06-27 11:44:34,711 - dy.main_controller - INFO - 任务执行完毕，清理资源...
+2026-06-27 11:44:34,711 - dy.main_controller - INFO - 资源清理完毕，安全退出。
+2026-06-27 11:44:34,712 - root - INFO - <== API: 设备 V4DUT20422013309 任务执行完毕
+2026-06-27 11:49:32,505 - root - INFO - 授权码验证通过，客户: test-customer，剩余积分: 199.867
+2026-06-27 11:49:32,505 - root - INFO - ==> API: 开始初始化设备 V4DUT20422013309 的douyin平台任务
+2026-06-27 11:49:32,505 - dy.main_controller - INFO - 初始化任务调度中心...
+2026-06-27 11:49:32,545 - root - INFO - 当前 ADB 连接设备列表: ['V4DUT20422013309']
+2026-06-27 11:49:32,545 - root - INFO - 使用传入的序列号: V4DUT20422013309
+2026-06-27 11:49:32,547 - root - INFO - 正在向设备 V4DUT20422013309 挂载 UIAutomator2 引擎...
+2026-06-27 11:49:32,726 - root - INFO - 设备 V4DUT20422013309 uiautomator2 引擎挂载成功。
+2026-06-27 11:49:32,795 - root - INFO - 心跳检查 - 设备 V4DUT20422013309 屏幕状态: 亮起
+2026-06-27 11:49:32,795 - dy.main_controller - INFO - 设备通讯正常，引擎挂载完毕。
+2026-06-27 11:49:32,796 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260627
+2026-06-27 11:49:32,797 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-27 11:49:32,797 - root - INFO - ==> API: 设备 V4DUT20422013309 已进入运行状态
+2026-06-27 11:49:32,797 - dy.task_runner - INFO - === 任务流开始 ===
+2026-06-27 11:49:32,798 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260627
+2026-06-27 11:49:32,799 - dy.task_runner - INFO - 📊 今日已处理视频: 1 个 | 点赞: 0 次 | 评论: 0 次 | 关注: 0 人
+2026-06-27 11:49:32,799 - dy.main_controller - INFO - 调度中心正在拉起抖音 APP...
+2026-06-27 11:49:32,799 - dy.core.app_mgr - INFO - 正在启动应用: com.ss.android.ugc.aweme
+2026-06-27 11:49:33,402 - dy.core.app_mgr - INFO - 等待抖音进入前台，超时时间: 8秒
+2026-06-27 11:49:33,862 - dy.core.app_mgr - INFO - 等待抖音进入前台，超时时间: 10秒
+2026-06-27 11:49:34,457 - dy.main_controller - INFO - 调度器开始装载动作: EnsureHomeAction
+2026-06-27 11:49:34,457 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-27 11:49:34,457 - dy.actions.base_action - INFO - ==> 准备执行动作: [EnsureHomeAction]
+2026-06-27 11:49:39,792 - dy.actions.navigation - INFO - ✅ 抖音首页加载成功
+2026-06-27 11:49:41,649 - dy.actions.base_action - INFO - <== 动作执行完成: [EnsureHomeAction]
+2026-06-27 11:49:41,649 - dy.main_controller - INFO - 抖音启动完成，准备就绪。
+2026-06-27 11:49:42,104 - dy.anti_detection - INFO - 📱 设备指纹: {'android_id': '8750be44adec00a2', 'model': 'CDY-TN90', 'brand': 'HONOR', 'sdk': '29'}
+2026-06-27 11:49:42,104 - dy.task_runner - INFO - 🧹 已清理设备自动化痕迹
+2026-06-27 11:49:42,198 - dy.task_runner - INFO - 
+>>> 开始处理关键词: 手机 <<<
+2026-06-27 11:49:42,198 - dy.main_controller - INFO - 调度器开始装载动作: EnterSearchAction
+2026-06-27 11:49:42,198 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-27 11:49:42,199 - dy.actions.base_action - INFO - ==> 准备执行动作: [EnterSearchAction]
+2026-06-27 11:49:42,590 - dy.actions.navigation - INFO - 正在搜索关键词: 手机
+2026-06-27 11:49:43,087 - dy.actions.navigation - INFO - 通过 XPath 成功点击搜索按钮
+2026-06-27 11:49:45,707 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260627
+2026-06-27 11:49:49,875 - dy.actions.navigation - INFO - 成功切换到'视频'页签
+2026-06-27 11:49:50,893 - dy.actions.base_action - INFO - <== 动作执行完成: [EnterSearchAction]
+2026-06-27 11:49:50,894 - dy.main_controller - INFO - 调度器开始装载动作: ApplyFiltersAction
+2026-06-27 11:49:50,894 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-27 11:49:50,894 - dy.actions.base_action - INFO - ==> 准备执行动作: [ApplyFiltersAction]
+2026-06-27 11:49:51,318 - dy.actions.navigation - INFO - >>> 自动化配对成功：模式[latest] -> 点击按钮[最新发布] <<<
+2026-06-27 11:49:54,788 - dy.actions.navigation - INFO - 已成功选择排序方式: 最新发布
+2026-06-27 11:49:56,066 - dy.actions.navigation - INFO - 已点击选择: 还未看过
+2026-06-27 11:50:05,996 - dy.actions.navigation - INFO - 已点击'视频'页签辅助收起面板
+2026-06-27 11:50:08,063 - dy.actions.navigation - INFO - --- 工作流切换完全执行：最新发布 ---
+2026-06-27 11:50:08,065 - dy.actions.base_action - INFO - <== 动作执行完成: [ApplyFiltersAction]
+2026-06-27 11:50:08,066 - dy.main_controller - INFO - 调度器开始装载动作: EnterFirstVideoAction
+2026-06-27 11:50:08,066 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-27 11:50:08,066 - dy.actions.base_action - INFO - ==> 准备执行动作: [EnterFirstVideoAction]
+2026-06-27 11:50:08,491 - dy.actions.navigation - INFO - 正在定位第一个视频...
+2026-06-27 11:50:08,765 - dy.actions.navigation - INFO - 识别到视频文案: #老款手机 #推荐耐用手机 #经典手机推...
+2026-06-27 11:50:10,364 - dy.actions.base_action - INFO - <== 动作执行完成: [EnterFirstVideoAction]
+2026-06-27 11:50:13,368 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260627
+2026-06-27 11:50:13,369 - dy.task_runner - INFO - 
+--- 正在处理第 1/5 个视频 ---
+2026-06-27 11:50:14,319 - dy.task_runner - INFO - 状态检查[提取视频信息前] 第 1/4 次: video_page
+2026-06-27 11:50:14,724 - dy.task_runner - INFO - 功能前状态[提取视频信息/分享链接]: video_page
+2026-06-27 11:50:15,175 - dy.task_runner - INFO - 状态检查[提取视频信息/分享链接-执行前] 第 1/6 次: video_page
+2026-06-27 11:50:15,175 - dy.main_controller - INFO - 调度器开始装载动作: GetCurrentVideoLinkAction
+2026-06-27 11:50:15,175 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-27 11:50:15,175 - dy.actions.base_action - INFO - ==> 准备执行动作: [GetCurrentVideoLinkAction]
+2026-06-27 11:50:16,268 - dy.actions.interaction - INFO - 当前视频可见文案兜底: #老款手机 #推荐耐用手机 #经典手机推荐 #原机手感
+2026-06-27 11:50:16,269 - dy.actions.interaction - WARNING - 稳定模式未打开分享面板提取链接，使用当前页面文案生成兜底视频标识: dy_visible_209c65b372db872d
+2026-06-27 11:50:16,269 - dy.actions.base_action - INFO - <== 动作执行完成: [GetCurrentVideoLinkAction]
+2026-06-27 11:50:17,202 - dy.task_runner - INFO - 功能后状态[提取视频信息/分享链接]: video_page
+2026-06-27 11:50:17,735 - dy.task_runner - INFO - 状态检查[提取视频信息/分享链接-执行后] 第 1/6 次: video_page
+2026-06-27 11:50:17,735 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260627
+2026-06-27 11:50:17,737 - dy.task_runner - INFO - 🎬 开始对新视频执行互动...
+2026-06-27 11:50:17,737 - dy.task_runner - INFO - 📝 当前视频标题: #老款手机 #推荐耐用手机 #经典手机推荐 #原机手感
+2026-06-27 11:50:17,738 - dy.task_runner - INFO - 已关闭功能: 点赞，跳过
+2026-06-27 11:50:18,319 - dy.task_runner - INFO - 功能前状态[评论区AI截流/楼中楼回复]: video_page
+2026-06-27 11:50:18,863 - dy.task_runner - INFO - 状态检查[评论区AI截流/楼中楼回复-执行前] 第 1/6 次: video_page
+2026-06-27 11:50:18,863 - dy.main_controller - INFO - 调度器开始装载动作: OpenCommentSectionAction
+2026-06-27 11:50:18,863 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-27 11:50:18,864 - dy.actions.base_action - INFO - ==> 准备执行动作: [OpenCommentSectionAction]
+2026-06-27 11:50:19,267 - dy.actions.commenting - INFO - 正在通过 content-desc 规律寻找主评论区按钮...
+2026-06-27 11:50:19,726 - dy.actions.commenting - INFO - 成功锁定评论区入口，当前评论数标识: 评论12，按钮
+2026-06-27 11:50:22,812 - dy.actions.base_action - INFO - <== 动作执行完成: [OpenCommentSectionAction]
+2026-06-27 11:50:23,779 - dy.task_runner - INFO - 功能中状态[打开评论区后]: home_or_search
+2026-06-27 11:50:23,779 - dy.task_runner - WARNING - 评论区未可靠打开，当前状态: home_or_search
+2026-06-27 11:50:24,327 - dy.task_runner - INFO - 状态检查[评论区AI截流/楼中楼回复-打开失败后] 第 1/6 次: home_or_search
+2026-06-27 11:50:24,327 - dy.task_runner - INFO - 尝试关闭/返回当前状态[home_or_search] -> 视频页
+2026-06-27 11:50:25,844 - dy.task_runner - INFO - 状态检查[评论区AI截流/楼中楼回复-打开失败后] 第 2/6 次: video_page
+2026-06-27 11:50:26,389 - dy.task_runner - INFO - 功能前状态[作者主页/关注/私信]: video_page
+2026-06-27 11:50:26,973 - dy.task_runner - INFO - 状态检查[作者主页/关注/私信-执行前] 第 1/6 次: video_page
+2026-06-27 11:50:26,973 - dy.main_controller - INFO - 调度器开始装载动作: FollowAuthorAction
+2026-06-27 11:50:26,973 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-27 11:50:26,974 - dy.actions.base_action - INFO - ==> 准备执行动作: [FollowAuthorAction]
+2026-06-27 11:52:20,302 - dy.actions.interaction - INFO - 作者粉丝数: 未知
+2026-06-27 11:52:20,303 - dy.actions.interaction - INFO - 本次任务配置为仅私信不关注，跳过关注步骤
+2026-06-27 11:52:20,303 - dy.actions.interaction - INFO - 作者粉丝数(None)未达到私信阈值(0.01)，跳过私信
+2026-06-27 11:52:20,702 - dy.actions.interaction - INFO - 尝试返回视频页... (1/2)
+2026-06-27 11:52:24,514 - dy.actions.interaction - INFO - 确认已经回到视频页
+2026-06-27 11:52:24,514 - dy.actions.base_action - INFO - <== 动作执行完成: [FollowAuthorAction]
+2026-06-27 11:52:25,270 - dy.task_runner - INFO - 功能后状态[作者主页/关注/私信]: video_page
+2026-06-27 11:52:25,762 - dy.task_runner - INFO - 状态检查[作者主页/关注/私信-执行后] 第 1/6 次: video_page
+2026-06-27 11:52:26,767 - dy.task_runner - WARNING - 当前视频处理超过 90s，跳过当前视频
+2026-06-27 11:52:26,768 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260627
+2026-06-27 11:52:26,768 - dy.task_runner - INFO - 📊 实时数据 -> 视频:2 | 赞:0 | 评:0 | 关:0
+2026-06-27 11:52:34,190 - dy.task_runner - INFO - 状态检查[滑动下一个视频前] 第 1/5 次: unknown
+2026-06-27 11:52:34,190 - dy.task_runner - INFO - 尝试关闭/返回当前状态[unknown] -> 视频页
+2026-06-27 11:52:34,911 - dy.task_runner - WARNING - 执行返回键失败[滑动下一个视频前]: Remote end closed connection without response
+2026-06-27 11:52:34,911 - dy.task_runner - WARNING - 尝试重置并重进视频流: 滑动前恢复失败
+2026-06-27 11:52:34,912 - dy.main_controller - INFO - 调度器开始装载动作: ResetToSearchAction
+2026-06-27 11:52:34,912 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-27 11:52:34,912 - dy.actions.base_action - INFO - ==> 准备执行动作: [ResetToSearchAction]
+2026-06-27 11:52:34,936 - retry.api - WARNING - AdbError: device 'V4DUT20422013309' not found in adbutils.shell.ShellExtension.app_current, retrying in 0.5 seconds...
+2026-06-27 11:52:35,473 - retry.api - WARNING - AdbError: device 'V4DUT20422013309' not found in adbutils.shell.ShellExtension.app_current, retrying in 0.6 seconds...
+2026-06-27 11:52:36,105 - dy.actions.base_action - ERROR - 执行动作 [ResetToSearchAction] 时发生未捕获异常: device 'V4DUT20422013309' not found
+Traceback (most recent call last):
+  File "D:\CodingTest\111test\111\dy\actions\base_action.py", line 91, in perform
+    if not self.check_preconditions():
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\CodingTest\111test\111\dy\actions\base_action.py", line 77, in check_preconditions
+    if self.app and not self.app.is_foreground():
+                        ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\CodingTest\111test\111\dy\core\app_mgr.py", line 38, in is_foreground
+    current_app = self.d.app_current()
+                  ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\abc\AppData\Local\Programs\Python\Python312\Lib\site-packages\uiautomator2\__init__.py", line 522, in app_current
+    info = self.adb_device.app_current()
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\abc\AppData\Local\Programs\Python\Python312\Lib\site-packages\decorator\__init__.py", line 247, in fun
+    return caller(func, *(extras + args), **kw)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\abc\AppData\Local\Programs\Python\Python312\Lib\site-packages\retry\api.py", line 90, in retry_decorator
+    return __retry_internal(partial(f, *args, **kwargs), exceptions, tries, delay, max_delay, backoff, jitter,
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\abc\AppData\Local\Programs\Python\Python312\Lib\site-packages\retry\api.py", line 35, in __retry_internal
+    return f()
+           ^^^
+  File "C:\Users\abc\AppData\Local\Programs\Python\Python312\Lib\site-packages\adbutils\shell.py", line 436, in app_current
+    m = _focusedRE.search(self.shell(["dumpsys", "window", "windows"]))
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\abc\AppData\Local\Programs\Python\Python312\Lib\site-packages\adbutils\_device_base.py", line 252, in shell
+    c = self.open_shell(cmdargs)
+        ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\abc\AppData\Local\Programs\Python\Python312\Lib\site-packages\adbutils\_device_base.py", line 175, in open_shell
+    c = self.open_transport()
+        ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\abc\AppData\Local\Programs\Python\Python312\Lib\site-packages\adbutils\_device_base.py", line 92, in open_transport
+    c.check_okay()
+  File "C:\Users\abc\AppData\Local\Programs\Python\Python312\Lib\site-packages\adbutils\_adb.py", line 192, in check_okay
+    raise AdbError(self.read_string_block())
+adbutils.errors.AdbError: device 'V4DUT20422013309' not found
+2026-06-27 11:52:37,179 - dy.main_controller - INFO - 调度器开始装载动作: EnterSearchAction
+2026-06-27 11:52:37,179 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-27 11:52:37,180 - dy.actions.base_action - INFO - ==> 准备执行动作: [EnterSearchAction]
+2026-06-27 11:52:37,231 - retry.api - WARNING - AdbError: device 'V4DUT20422013309' not found in adbutils.shell.ShellExtension.app_current, retrying in 0.5 seconds...
+2026-06-27 11:52:37,772 - retry.api - WARNING - AdbError: device 'V4DUT20422013309' not found in adbutils.shell.ShellExtension.app_current, retrying in 0.6 seconds...
+2026-06-27 11:52:38,420 - dy.actions.base_action - ERROR - 执行动作 [EnterSearchAction] 时发生未捕获异常: device 'V4DUT20422013309' not found
+Traceback (most recent call last):
+  File "D:\CodingTest\111test\111\dy\actions\base_action.py", line 91, in perform
+    if not self.check_preconditions():
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\CodingTest\111test\111\dy\actions\base_action.py", line 77, in check_preconditions
+    if self.app and not self.app.is_foreground():
+                        ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\CodingTest\111test\111\dy\core\app_mgr.py", line 38, in is_foreground
+    current_app = self.d.app_current()
+                  ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\abc\AppData\Local\Programs\Python\Python312\Lib\site-packages\uiautomator2\__init__.py", line 522, in app_current
+    info = self.adb_device.app_current()
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\abc\AppData\Local\Programs\Python\Python312\Lib\site-packages\decorator\__init__.py", line 247, in fun
+    return caller(func, *(extras + args), **kw)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\abc\AppData\Local\Programs\Python\Python312\Lib\site-packages\retry\api.py", line 90, in retry_decorator
+    return __retry_internal(partial(f, *args, **kwargs), exceptions, tries, delay, max_delay, backoff, jitter,
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\abc\AppData\Local\Programs\Python\Python312\Lib\site-packages\retry\api.py", line 35, in __retry_internal
+    return f()
+           ^^^
+  File "C:\Users\abc\AppData\Local\Programs\Python\Python312\Lib\site-packages\adbutils\shell.py", line 436, in app_current
+    m = _focusedRE.search(self.shell(["dumpsys", "window", "windows"]))
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\abc\AppData\Local\Programs\Python\Python312\Lib\site-packages\adbutils\_device_base.py", line 252, in shell
+    c = self.open_shell(cmdargs)
+        ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\abc\AppData\Local\Programs\Python\Python312\Lib\site-packages\adbutils\_device_base.py", line 175, in open_shell
+    c = self.open_transport()
+        ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\abc\AppData\Local\Programs\Python\Python312\Lib\site-packages\adbutils\_device_base.py", line 92, in open_transport
+    c.check_okay()
+  File "C:\Users\abc\AppData\Local\Programs\Python\Python312\Lib\site-packages\adbutils\_adb.py", line 192, in check_okay
+    raise AdbError(self.read_string_block())
+adbutils.errors.AdbError: device 'V4DUT20422013309' not found
+2026-06-27 11:52:38,422 - dy.task_runner - WARNING - 滑动前连续恢复失败，停止当前关键词的视频循环
+2026-06-27 11:52:38,422 - dy.main_controller - INFO - 调度器开始装载动作: ResetToSearchAction
+2026-06-27 11:52:38,422 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-27 11:52:38,422 - dy.actions.base_action - INFO - ==> 准备执行动作: [ResetToSearchAction]
+2026-06-27 11:52:38,466 - retry.api - WARNING - AdbError: device 'V4DUT20422013309' not found in adbutils.shell.ShellExtension.app_current, retrying in 0.5 seconds...
+2026-06-27 11:52:38,995 - retry.api - WARNING - AdbError: device 'V4DUT20422013309' not found in adbutils.shell.ShellExtension.app_current, retrying in 0.6 seconds...
+2026-06-27 11:52:39,647 - dy.actions.base_action - ERROR - 执行动作 [ResetToSearchAction] 时发生未捕获异常: device 'V4DUT20422013309' not found
+Traceback (most recent call last):
+  File "D:\CodingTest\111test\111\dy\actions\base_action.py", line 91, in perform
+    if not self.check_preconditions():
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\CodingTest\111test\111\dy\actions\base_action.py", line 77, in check_preconditions
+    if self.app and not self.app.is_foreground():
+                        ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\CodingTest\111test\111\dy\core\app_mgr.py", line 38, in is_foreground
+    current_app = self.d.app_current()
+                  ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\abc\AppData\Local\Programs\Python\Python312\Lib\site-packages\uiautomator2\__init__.py", line 522, in app_current
+    info = self.adb_device.app_current()
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\abc\AppData\Local\Programs\Python\Python312\Lib\site-packages\decorator\__init__.py", line 247, in fun
+    return caller(func, *(extras + args), **kw)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\abc\AppData\Local\Programs\Python\Python312\Lib\site-packages\retry\api.py", line 90, in retry_decorator
+    return __retry_internal(partial(f, *args, **kwargs), exceptions, tries, delay, max_delay, backoff, jitter,
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\abc\AppData\Local\Programs\Python\Python312\Lib\site-packages\retry\api.py", line 35, in __retry_internal
+    return f()
+           ^^^
+  File "C:\Users\abc\AppData\Local\Programs\Python\Python312\Lib\site-packages\adbutils\shell.py", line 436, in app_current
+    m = _focusedRE.search(self.shell(["dumpsys", "window", "windows"]))
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\abc\AppData\Local\Programs\Python\Python312\Lib\site-packages\adbutils\_device_base.py", line 252, in shell
+    c = self.open_shell(cmdargs)
+        ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\abc\AppData\Local\Programs\Python\Python312\Lib\site-packages\adbutils\_device_base.py", line 175, in open_shell
+    c = self.open_transport()
+        ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\abc\AppData\Local\Programs\Python\Python312\Lib\site-packages\adbutils\_device_base.py", line 92, in open_transport
+    c.check_okay()
+  File "C:\Users\abc\AppData\Local\Programs\Python\Python312\Lib\site-packages\adbutils\_adb.py", line 192, in check_okay
+    raise AdbError(self.read_string_block())
+adbutils.errors.AdbError: device 'V4DUT20422013309' not found
+2026-06-27 11:52:39,649 - dy.task_runner - INFO - 
+>>> 开始处理关键词: 苹果 <<<
+2026-06-27 11:52:39,649 - dy.main_controller - INFO - 调度器开始装载动作: EnterSearchAction
+2026-06-27 11:52:39,649 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-27 11:52:39,650 - dy.actions.base_action - INFO - ==> 准备执行动作: [EnterSearchAction]
+2026-06-27 11:52:39,693 - retry.api - WARNING - AdbError: device 'V4DUT20422013309' not found in adbutils.shell.ShellExtension.app_current, retrying in 0.5 seconds...
+2026-06-27 11:52:40,229 - retry.api - WARNING - AdbError: device 'V4DUT20422013309' not found in adbutils.shell.ShellExtension.app_current, retrying in 0.6 seconds...
+2026-06-27 11:52:40,877 - dy.actions.base_action - ERROR - 执行动作 [EnterSearchAction] 时发生未捕获异常: device 'V4DUT20422013309' not found
+Traceback (most recent call last):
+  File "D:\CodingTest\111test\111\dy\actions\base_action.py", line 91, in perform
+    if not self.check_preconditions():
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\CodingTest\111test\111\dy\actions\base_action.py", line 77, in check_preconditions
+    if self.app and not self.app.is_foreground():
+                        ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\CodingTest\111test\111\dy\core\app_mgr.py", line 38, in is_foreground
+    current_app = self.d.app_current()
+                  ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\abc\AppData\Local\Programs\Python\Python312\Lib\site-packages\uiautomator2\__init__.py", line 522, in app_current
+    info = self.adb_device.app_current()
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\abc\AppData\Local\Programs\Python\Python312\Lib\site-packages\decorator\__init__.py", line 247, in fun
+    return caller(func, *(extras + args), **kw)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\abc\AppData\Local\Programs\Python\Python312\Lib\site-packages\retry\api.py", line 90, in retry_decorator
+    return __retry_internal(partial(f, *args, **kwargs), exceptions, tries, delay, max_delay, backoff, jitter,
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\abc\AppData\Local\Programs\Python\Python312\Lib\site-packages\retry\api.py", line 35, in __retry_internal
+    return f()
+           ^^^
+  File "C:\Users\abc\AppData\Local\Programs\Python\Python312\Lib\site-packages\adbutils\shell.py", line 436, in app_current
+    m = _focusedRE.search(self.shell(["dumpsys", "window", "windows"]))
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\abc\AppData\Local\Programs\Python\Python312\Lib\site-packages\adbutils\_device_base.py", line 252, in shell
+    c = self.open_shell(cmdargs)
+        ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\abc\AppData\Local\Programs\Python\Python312\Lib\site-packages\adbutils\_device_base.py", line 175, in open_shell
+    c = self.open_transport()
+        ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\abc\AppData\Local\Programs\Python\Python312\Lib\site-packages\adbutils\_device_base.py", line 92, in open_transport
+    c.check_okay()
+  File "C:\Users\abc\AppData\Local\Programs\Python\Python312\Lib\site-packages\adbutils\_adb.py", line 192, in check_okay
+    raise AdbError(self.read_string_block())
+adbutils.errors.AdbError: device 'V4DUT20422013309' not found
+2026-06-27 11:52:40,879 - dy.task_runner - WARNING - 关键词 '苹果' 搜索失败，跳过当前关键词
+2026-06-27 11:52:40,879 - dy.main_controller - INFO - 调度器开始装载动作: ResetToSearchAction
+2026-06-27 11:52:40,879 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-27 11:52:40,880 - dy.actions.base_action - INFO - ==> 准备执行动作: [ResetToSearchAction]
+2026-06-27 11:52:40,908 - retry.api - WARNING - AdbError: device 'V4DUT20422013309' not found in adbutils.shell.ShellExtension.app_current, retrying in 0.5 seconds...
+2026-06-27 11:52:41,453 - retry.api - WARNING - AdbError: device 'V4DUT20422013309' not found in adbutils.shell.ShellExtension.app_current, retrying in 0.6 seconds...
+2026-06-27 11:52:42,103 - dy.actions.base_action - ERROR - 执行动作 [ResetToSearchAction] 时发生未捕获异常: device 'V4DUT20422013309' not found
+Traceback (most recent call last):
+  File "D:\CodingTest\111test\111\dy\actions\base_action.py", line 91, in perform
+    if not self.check_preconditions():
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\CodingTest\111test\111\dy\actions\base_action.py", line 77, in check_preconditions
+    if self.app and not self.app.is_foreground():
+                        ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\CodingTest\111test\111\dy\core\app_mgr.py", line 38, in is_foreground
+    current_app = self.d.app_current()
+                  ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\abc\AppData\Local\Programs\Python\Python312\Lib\site-packages\uiautomator2\__init__.py", line 522, in app_current
+    info = self.adb_device.app_current()
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\abc\AppData\Local\Programs\Python\Python312\Lib\site-packages\decorator\__init__.py", line 247, in fun
+    return caller(func, *(extras + args), **kw)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\abc\AppData\Local\Programs\Python\Python312\Lib\site-packages\retry\api.py", line 90, in retry_decorator
+    return __retry_internal(partial(f, *args, **kwargs), exceptions, tries, delay, max_delay, backoff, jitter,
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\abc\AppData\Local\Programs\Python\Python312\Lib\site-packages\retry\api.py", line 35, in __retry_internal
+    return f()
+           ^^^
+  File "C:\Users\abc\AppData\Local\Programs\Python\Python312\Lib\site-packages\adbutils\shell.py", line 436, in app_current
+    m = _focusedRE.search(self.shell(["dumpsys", "window", "windows"]))
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\abc\AppData\Local\Programs\Python\Python312\Lib\site-packages\adbutils\_device_base.py", line 252, in shell
+    c = self.open_shell(cmdargs)
+        ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\abc\AppData\Local\Programs\Python\Python312\Lib\site-packages\adbutils\_device_base.py", line 175, in open_shell
+    c = self.open_transport()
+        ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\abc\AppData\Local\Programs\Python\Python312\Lib\site-packages\adbutils\_device_base.py", line 92, in open_transport
+    c.check_okay()
+  File "C:\Users\abc\AppData\Local\Programs\Python\Python312\Lib\site-packages\adbutils\_adb.py", line 192, in check_okay
+    raise AdbError(self.read_string_block())
+adbutils.errors.AdbError: device 'V4DUT20422013309' not found
+2026-06-27 11:52:42,105 - dy.task_runner - INFO - 
+>>> 开始处理关键词: 显示屏 <<<
+2026-06-27 11:52:42,105 - dy.main_controller - INFO - 调度器开始装载动作: EnterSearchAction
+2026-06-27 11:52:42,105 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-27 11:52:42,105 - dy.actions.base_action - INFO - ==> 准备执行动作: [EnterSearchAction]
+2026-06-27 11:52:42,150 - retry.api - WARNING - AdbError: device 'V4DUT20422013309' not found in adbutils.shell.ShellExtension.app_current, retrying in 0.5 seconds...
+2026-06-27 11:52:42,676 - retry.api - WARNING - AdbError: device 'V4DUT20422013309' not found in adbutils.shell.ShellExtension.app_current, retrying in 0.6 seconds...
+2026-06-27 11:52:43,328 - dy.actions.base_action - ERROR - 执行动作 [EnterSearchAction] 时发生未捕获异常: device 'V4DUT20422013309' not found
+Traceback (most recent call last):
+  File "D:\CodingTest\111test\111\dy\actions\base_action.py", line 91, in perform
+    if not self.check_preconditions():
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\CodingTest\111test\111\dy\actions\base_action.py", line 77, in check_preconditions
+    if self.app and not self.app.is_foreground():
+                        ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\CodingTest\111test\111\dy\core\app_mgr.py", line 38, in is_foreground
+    current_app = self.d.app_current()
+                  ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\abc\AppData\Local\Programs\Python\Python312\Lib\site-packages\uiautomator2\__init__.py", line 522, in app_current
+    info = self.adb_device.app_current()
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\abc\AppData\Local\Programs\Python\Python312\Lib\site-packages\decorator\__init__.py", line 247, in fun
+    return caller(func, *(extras + args), **kw)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\abc\AppData\Local\Programs\Python\Python312\Lib\site-packages\retry\api.py", line 90, in retry_decorator
+    return __retry_internal(partial(f, *args, **kwargs), exceptions, tries, delay, max_delay, backoff, jitter,
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\abc\AppData\Local\Programs\Python\Python312\Lib\site-packages\retry\api.py", line 35, in __retry_internal
+    return f()
+           ^^^
+  File "C:\Users\abc\AppData\Local\Programs\Python\Python312\Lib\site-packages\adbutils\shell.py", line 436, in app_current
+    m = _focusedRE.search(self.shell(["dumpsys", "window", "windows"]))
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\abc\AppData\Local\Programs\Python\Python312\Lib\site-packages\adbutils\_device_base.py", line 252, in shell
+    c = self.open_shell(cmdargs)
+        ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\abc\AppData\Local\Programs\Python\Python312\Lib\site-packages\adbutils\_device_base.py", line 175, in open_shell
+    c = self.open_transport()
+        ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\abc\AppData\Local\Programs\Python\Python312\Lib\site-packages\adbutils\_device_base.py", line 92, in open_transport
+    c.check_okay()
+  File "C:\Users\abc\AppData\Local\Programs\Python\Python312\Lib\site-packages\adbutils\_adb.py", line 192, in check_okay
+    raise AdbError(self.read_string_block())
+adbutils.errors.AdbError: device 'V4DUT20422013309' not found
+2026-06-27 11:52:43,329 - dy.task_runner - WARNING - 关键词 '显示屏' 搜索失败，跳过当前关键词
+2026-06-27 11:52:43,330 - dy.main_controller - INFO - 调度器开始装载动作: ResetToSearchAction
+2026-06-27 11:52:43,330 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-27 11:52:43,330 - dy.actions.base_action - INFO - ==> 准备执行动作: [ResetToSearchAction]
+2026-06-27 11:52:43,374 - retry.api - WARNING - AdbError: device 'V4DUT20422013309' not found in adbutils.shell.ShellExtension.app_current, retrying in 0.5 seconds...
+2026-06-27 11:52:43,916 - retry.api - WARNING - AdbError: device 'V4DUT20422013309' not found in adbutils.shell.ShellExtension.app_current, retrying in 0.6 seconds...
+2026-06-27 11:52:44,553 - dy.actions.base_action - ERROR - 执行动作 [ResetToSearchAction] 时发生未捕获异常: device 'V4DUT20422013309' not found
+Traceback (most recent call last):
+  File "D:\CodingTest\111test\111\dy\actions\base_action.py", line 91, in perform
+    if not self.check_preconditions():
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\CodingTest\111test\111\dy\actions\base_action.py", line 77, in check_preconditions
+    if self.app and not self.app.is_foreground():
+                        ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\CodingTest\111test\111\dy\core\app_mgr.py", line 38, in is_foreground
+    current_app = self.d.app_current()
+                  ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\abc\AppData\Local\Programs\Python\Python312\Lib\site-packages\uiautomator2\__init__.py", line 522, in app_current
+    info = self.adb_device.app_current()
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\abc\AppData\Local\Programs\Python\Python312\Lib\site-packages\decorator\__init__.py", line 247, in fun
+    return caller(func, *(extras + args), **kw)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\abc\AppData\Local\Programs\Python\Python312\Lib\site-packages\retry\api.py", line 90, in retry_decorator
+    return __retry_internal(partial(f, *args, **kwargs), exceptions, tries, delay, max_delay, backoff, jitter,
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\abc\AppData\Local\Programs\Python\Python312\Lib\site-packages\retry\api.py", line 35, in __retry_internal
+    return f()
+           ^^^
+  File "C:\Users\abc\AppData\Local\Programs\Python\Python312\Lib\site-packages\adbutils\shell.py", line 436, in app_current
+    m = _focusedRE.search(self.shell(["dumpsys", "window", "windows"]))
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\abc\AppData\Local\Programs\Python\Python312\Lib\site-packages\adbutils\_device_base.py", line 252, in shell
+    c = self.open_shell(cmdargs)
+        ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\abc\AppData\Local\Programs\Python\Python312\Lib\site-packages\adbutils\_device_base.py", line 175, in open_shell
+    c = self.open_transport()
+        ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\abc\AppData\Local\Programs\Python\Python312\Lib\site-packages\adbutils\_device_base.py", line 92, in open_transport
+    c.check_okay()
+  File "C:\Users\abc\AppData\Local\Programs\Python\Python312\Lib\site-packages\adbutils\_adb.py", line 192, in check_okay
+    raise AdbError(self.read_string_block())
+adbutils.errors.AdbError: device 'V4DUT20422013309' not found
+2026-06-27 11:52:44,555 - dy.task_runner - INFO - 所有关键词任务处理完毕！
+2026-06-27 11:52:44,555 - dy.main_controller - INFO - 任务执行完毕，清理资源...
+2026-06-27 11:52:44,555 - dy.main_controller - INFO - 资源清理完毕，安全退出。
+2026-06-27 11:52:44,556 - root - INFO - <== API: 设备 V4DUT20422013309 任务执行完毕
+2026-06-27 12:03:50,461 - root - INFO - 接收到关闭信号，正在停止所有后台设备任务...
+2026-06-27 12:03:50,462 - root - INFO - 线程池已关闭。

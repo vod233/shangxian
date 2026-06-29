@@ -1,0 +1,127 @@
+2026-06-27 21:17:41,597 - root - INFO - 已初始化日志系统，当前日志文件: D:\CodingTest\111test\111\logs\2026-06-27_21-17-41.log
+2026-06-27 21:17:41,599 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260627
+2026-06-27 21:18:01,200 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260627
+2026-06-27 21:18:21,077 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260627
+2026-06-27 21:18:47,625 - root - INFO - 授权码验证通过，客户: test-customer，剩余积分: 165.87600000000043
+2026-06-27 21:18:47,625 - root - INFO - ==> API: 开始初始化设备 V4DUT20422013309 的douyin平台任务
+2026-06-27 21:18:47,626 - dy.main_controller - INFO - 初始化任务调度中心...
+2026-06-27 21:18:47,644 - root - INFO - 当前 ADB 连接设备列表: ['V4DUT20422013309']
+2026-06-27 21:18:47,644 - root - INFO - 使用传入的序列号: V4DUT20422013309
+2026-06-27 21:18:47,646 - root - INFO - 正在向设备 V4DUT20422013309 挂载 UIAutomator2 引擎...
+2026-06-27 21:18:48,527 - root - INFO - 设备 V4DUT20422013309 uiautomator2 引擎挂载成功。
+2026-06-27 21:18:48,650 - root - INFO - 心跳检查 - 设备 V4DUT20422013309 屏幕状态: 亮起
+2026-06-27 21:18:48,650 - dy.main_controller - INFO - 设备通讯正常，引擎挂载完毕。
+2026-06-27 21:18:48,651 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260627
+2026-06-27 21:18:48,652 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-27 21:18:48,652 - root - INFO - ==> API: 设备 V4DUT20422013309 已进入运行状态
+2026-06-27 21:18:48,652 - dy.task_runner - INFO - === 任务流开始 ===
+2026-06-27 21:18:48,653 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260627
+2026-06-27 21:18:48,653 - dy.task_runner - INFO - 📊 今日已处理视频: 61 个 | 点赞: 49 次 | 评论: 10 次 | 关注: 0 人
+2026-06-27 21:18:48,654 - dy.main_controller - INFO - 调度中心正在拉起抖音 APP...
+2026-06-27 21:18:48,654 - dy.core.app_mgr - INFO - 正在启动应用: com.ss.android.ugc.aweme
+2026-06-27 21:18:49,074 - dy.core.app_mgr - INFO - 等待抖音进入前台，超时时间: 8秒
+2026-06-27 21:18:49,518 - dy.core.app_mgr - INFO - 等待抖音进入前台，超时时间: 10秒
+2026-06-27 21:18:50,050 - dy.main_controller - INFO - 调度器开始装载动作: EnsureHomeAction
+2026-06-27 21:18:50,050 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-27 21:18:50,050 - dy.actions.base_action - INFO - ==> 准备执行动作: [EnsureHomeAction]
+2026-06-27 21:18:57,713 - dy.actions.navigation - INFO - ✅ 抖音首页加载成功
+2026-06-27 21:18:59,114 - dy.actions.base_action - INFO - <== 动作执行完成: [EnsureHomeAction]
+2026-06-27 21:18:59,114 - dy.main_controller - INFO - 抖音启动完成，准备就绪。
+2026-06-27 21:18:59,547 - dy.anti_detection - INFO - 📱 设备指纹: {'android_id': '8750be44adec00a2', 'model': 'CDY-TN90', 'brand': 'HONOR', 'sdk': '29'}
+2026-06-27 21:18:59,547 - dy.task_runner - INFO - 🧹 已清理设备自动化痕迹
+2026-06-27 21:18:59,631 - dy.task_runner - INFO - 
+>>> 开始处理关键词: 装修 <<<
+2026-06-27 21:18:59,631 - dy.main_controller - INFO - 调度器开始装载动作: EnterSearchAction
+2026-06-27 21:18:59,631 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-27 21:18:59,632 - dy.actions.base_action - INFO - ==> 准备执行动作: [EnterSearchAction]
+2026-06-27 21:19:00,038 - dy.actions.navigation - INFO - 正在搜索关键词: 装修
+2026-06-27 21:19:01,407 - dy.actions.navigation - INFO - 通过 XPath 成功点击搜索按钮
+2026-06-27 21:19:11,255 - dy.actions.navigation - INFO - 成功切换到'视频'页签
+2026-06-27 21:19:12,657 - dy.actions.base_action - INFO - <== 动作执行完成: [EnterSearchAction]
+2026-06-27 21:19:12,657 - dy.main_controller - INFO - 调度器开始装载动作: ApplyFiltersAction
+2026-06-27 21:19:12,657 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-27 21:19:12,658 - dy.actions.base_action - INFO - ==> 准备执行动作: [ApplyFiltersAction]
+2026-06-27 21:19:13,037 - dy.actions.navigation - INFO - >>> 自动化配对成功：模式[latest] -> 点击按钮[最新发布] <<<
+2026-06-27 21:19:16,382 - dy.actions.navigation - INFO - 已成功选择排序方式: 最新发布
+2026-06-27 21:19:17,910 - dy.actions.navigation - INFO - 已点击选择: 还未看过
+2026-06-27 21:19:22,591 - dy.actions.navigation - INFO - 已点击'视频'页签辅助收起面板
+2026-06-27 21:19:24,199 - dy.actions.navigation - INFO - --- 工作流切换完全执行：最新发布 ---
+2026-06-27 21:19:24,201 - dy.actions.base_action - INFO - <== 动作执行完成: [ApplyFiltersAction]
+2026-06-27 21:19:24,201 - dy.main_controller - INFO - 调度器开始装载动作: EnterFirstVideoAction
+2026-06-27 21:19:24,201 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-27 21:19:24,201 - dy.actions.base_action - INFO - ==> 准备执行动作: [EnterFirstVideoAction]
+2026-06-27 21:19:24,601 - dy.actions.navigation - INFO - 正在定位第一个视频...
+2026-06-27 21:19:24,890 - dy.actions.navigation - INFO - 识别到视频文案: 低预算怎么装意式极简风 普通人怎么花十几...
+2026-06-27 21:19:27,331 - dy.actions.base_action - INFO - <== 动作执行完成: [EnterFirstVideoAction]
+2026-06-27 21:19:30,335 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260627
+2026-06-27 21:19:30,335 - dy.task_runner - INFO - 
+--- 正在处理第 1/5 个视频 ---
+2026-06-27 21:19:31,620 - dy.task_runner - INFO - 状态检查[提取视频信息前] 第 1/4 次: video_page
+2026-06-27 21:19:32,120 - dy.task_runner - INFO - 功能前状态[提取视频信息/分享链接]: video_page
+2026-06-27 21:19:32,940 - dy.task_runner - INFO - 状态检查[提取视频信息/分享链接-执行前] 第 1/6 次: video_page
+2026-06-27 21:19:32,940 - dy.main_controller - INFO - 调度器开始装载动作: GetCurrentVideoLinkAction
+2026-06-27 21:19:32,940 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-27 21:19:32,941 - dy.actions.base_action - INFO - ==> 准备执行动作: [GetCurrentVideoLinkAction]
+2026-06-27 21:19:34,019 - dy.actions.interaction - INFO - 当前视频可见文案兜底: 低预算怎么装意式极简风 普通人怎么花十几万装出几十万的意式风... 展开
+2026-06-27 21:19:34,019 - dy.actions.interaction - WARNING - 稳定模式未打开分享面板提取链接，使用当前页面文案生成兜底视频标识: dy_visible_8e34352ffe059634
+2026-06-27 21:19:34,019 - dy.actions.base_action - INFO - <== 动作执行完成: [GetCurrentVideoLinkAction]
+2026-06-27 21:19:35,065 - dy.task_runner - INFO - 功能后状态[提取视频信息/分享链接]: video_page
+2026-06-27 21:19:35,844 - dy.task_runner - INFO - 状态检查[提取视频信息/分享链接-执行后] 第 1/6 次: video_page
+2026-06-27 21:19:35,845 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260627
+2026-06-27 21:19:35,849 - dy.task_runner - INFO - 🎬 开始对新视频执行互动...
+2026-06-27 21:19:35,849 - dy.task_runner - INFO - 📝 当前视频标题: 低预算怎么装意式极简风 普通人怎么花十几万装出几十万的意式风... 展开
+2026-06-27 21:19:36,268 - dy.task_runner - INFO - 功能前状态[点赞]: video_page
+2026-06-27 21:19:37,366 - dy.task_runner - INFO - 状态检查[点赞-执行前] 第 1/6 次: video_page
+2026-06-27 21:19:37,366 - dy.main_controller - INFO - 调度器开始装载动作: DoubleClickLikeAction
+2026-06-27 21:19:37,366 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-27 21:19:37,366 - dy.actions.base_action - INFO - ==> 准备执行动作: [DoubleClickLikeAction]
+2026-06-27 21:19:38,875 - dy.actions.interaction - INFO - 已短按右侧喜欢按钮: (989, 1256)
+2026-06-27 21:19:38,876 - dy.actions.base_action - INFO - <== 动作执行完成: [DoubleClickLikeAction]
+2026-06-27 21:19:39,756 - dy.task_runner - INFO - 功能后状态[点赞]: video_page
+2026-06-27 21:19:40,447 - dy.task_runner - INFO - 状态检查[点赞-执行后] 第 1/6 次: video_page
+2026-06-27 21:19:40,455 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260627
+2026-06-27 21:19:42,520 - dy.task_runner - INFO - 功能前状态[作者主页/关注/私信]: video_page
+2026-06-27 21:19:43,122 - dy.task_runner - INFO - 状态检查[作者主页/关注/私信-执行前] 第 1/6 次: video_page
+2026-06-27 21:19:43,122 - dy.main_controller - INFO - 调度器开始装载动作: FollowAuthorAction
+2026-06-27 21:19:43,122 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-27 21:19:43,122 - dy.actions.base_action - INFO - ==> 准备执行动作: [FollowAuthorAction]
+2026-06-27 21:20:14,674 - dy.actions.interaction - INFO - 作者粉丝数: 未知
+2026-06-27 21:20:16,752 - dy.actions.interaction - INFO - 未找到'关注'按钮，可能已经关注过了
+2026-06-27 21:20:16,753 - dy.actions.interaction - INFO - 作者粉丝数(None)未达到私信阈值(1.0)，跳过私信
+2026-06-27 21:20:17,779 - dy.actions.interaction - INFO - 确认已经回到视频页
+2026-06-27 21:20:17,779 - dy.actions.base_action - INFO - <== 动作执行完成: [FollowAuthorAction]
+2026-06-27 21:20:19,323 - dy.task_runner - INFO - 功能后状态[作者主页/关注/私信]: video_page
+2026-06-27 21:20:20,214 - dy.task_runner - INFO - 状态检查[作者主页/关注/私信-执行后] 第 1/6 次: video_page
+2026-06-27 21:20:25,803 - dy.task_runner - INFO - 🤖 AI 生成回复: 学到了，低成本也能出效果。
+2026-06-27 21:20:25,805 - dy.db_manager - INFO - 已连接数据库并校验当日数据表: records_20260627
+2026-06-27 21:20:26,473 - dy.task_runner - INFO - 功能前状态[AI视频评论]: video_page
+2026-06-27 21:20:27,380 - dy.task_runner - INFO - 状态检查[AI视频评论-执行前] 第 1/6 次: video_page
+2026-06-27 21:20:27,380 - dy.main_controller - INFO - 调度器开始装载动作: PostCommentAction
+2026-06-27 21:20:27,380 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-27 21:20:27,380 - dy.actions.base_action - INFO - ==> 准备执行动作: [PostCommentAction]
+2026-06-27 21:20:27,748 - dy.actions.commenting - INFO - 准备发布视频评论: 学到了，低成本也能出效果。
+2026-06-27 21:20:34,881 - dy.actions.commenting - INFO - 视频评论: 发送按钮未就绪，重试 1/3
+2026-06-27 21:20:39,392 - dy.actions.commenting - INFO - 视频评论: 发送按钮未就绪，重试 2/3
+2026-06-27 21:20:44,184 - dy.actions.commenting - INFO - 视频评论: 发送按钮未就绪，重试 3/3
+2026-06-27 21:20:45,036 - dy.actions.commenting - INFO - 视频评论: 发送按钮多次重试失败，尝试回车键发送
+2026-06-27 21:20:50,872 - dy.actions.commenting - WARNING - 视频评论: ❌ 评论发送失败 — 输入框未被清空，文本未被发布
+2026-06-27 21:20:51,393 - dy.actions.commenting - INFO - 检测到评论输入框仍处于打开状态，执行返回关闭
+2026-06-27 21:20:52,954 - dy.actions.base_action - INFO - <== 动作执行完成: [PostCommentAction]
+2026-06-27 21:20:54,009 - dy.task_runner - INFO - 功能后状态[AI视频评论]: video_page
+2026-06-27 21:20:55,140 - dy.task_runner - INFO - 状态检查[AI视频评论-执行后] 第 1/6 次: video_page
+2026-06-27 21:20:55,876 - dy.task_runner - INFO - 功能前状态[评论区AI截流/楼中楼回复]: video_page
+2026-06-27 21:20:56,763 - dy.task_runner - INFO - 状态检查[评论区AI截流/楼中楼回复-执行前] 第 1/6 次: video_page
+2026-06-27 21:20:56,763 - dy.main_controller - INFO - 调度器开始装载动作: OpenCommentSectionAction
+2026-06-27 21:20:56,764 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-27 21:20:56,764 - dy.actions.base_action - INFO - ==> 准备执行动作: [OpenCommentSectionAction]
+2026-06-27 21:20:57,171 - dy.actions.commenting - INFO - 正在通过 content-desc 规律寻找主评论区按钮...
+2026-06-27 21:20:57,716 - dy.actions.commenting - INFO - 成功锁定评论区入口，当前评论数标识: 评论3，按钮
+2026-06-27 21:21:00,488 - dy.actions.base_action - INFO - <== 动作执行完成: [OpenCommentSectionAction]
+2026-06-27 21:21:01,251 - dy.task_runner - INFO - 功能中状态[打开评论区后]: comment_panel
+2026-06-27 21:21:01,251 - dy.main_controller - INFO - 调度器开始装载动作: ProcessCommentSectionAction
+2026-06-27 21:21:01,251 - dy.anti_detection - INFO - 🛡️ 防风控引擎已初始化
+2026-06-27 21:21:01,251 - dy.actions.base_action - INFO - ==> 准备执行动作: [ProcessCommentSectionAction]
+2026-06-27 21:21:01,679 - dy.actions.commenting - INFO - 开始处理评论区内容...
+2026-06-27 21:21:01,679 - dy.actions.commenting - INFO - 正在解析当前屏幕可见评论...
+2026-06-27 21:21:25,747 - dy.task_runner - INFO - 收到结束指令，准备退出任务流...
+2026-06-27 21:21:29,815 - dy.task_runner - INFO - 收到暂停指令，任务挂起...
