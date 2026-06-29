@@ -17,9 +17,9 @@ interaction:
   max_ai_comment_reviews: 20
   intent_keywords: []
   keyword_override_ai: true
-  enable_like: true
+  enable_like: false
   enable_author_follow: true
-  enable_video_comment: true
+  enable_video_comment: false
   enable_comment_lead: true
   enable_comment_lead_pm: true
   min_followers_threshold: 0.01
