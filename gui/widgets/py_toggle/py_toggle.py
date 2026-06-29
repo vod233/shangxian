@@ -66,7 +66,7 @@ class PyToggle(QCheckBox):
     def paintEvent(self, e):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
-        p.setFont(QFont("Segoe UI", 9))
+        p.setFont(QFont())
 
         # SET PEN
         p.setPen(Qt.NoPen)

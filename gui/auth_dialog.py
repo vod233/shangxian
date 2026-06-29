@@ -14,7 +14,8 @@ from PySide6.QtWidgets import (
 )
 
 # 后端 API 地址（与 launcher 一致，由环境变量覆盖）
-API_BASE_URL = os.environ.get("APP_API_URL", "http://127.0.0.1:8300/api")
+# 问题4修复：默认端口由 8300 改为 8000，与 common.py 和 backend/main.py 实际监听端口一致
+API_BASE_URL = os.environ.get("APP_API_URL", "http://127.0.0.1:8000/api")
 
 
 # ======================== 异步网络请求线程 ========================
@@ -68,6 +69,13 @@ class LoginDialog(QDialog):
         "input_border": "#30363D",
     }
 
+    @staticmethod
+    def _title_font():
+        """获取标题字体：Microsoft YaHei UI（Windows 系统自带，合法商用）。"""
+        f = QFont("Microsoft YaHei UI", 18)
+        f.setBold(True)
+        return f
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self._worker = None  # 防止被 GC
@@ -102,7 +110,7 @@ class LoginDialog(QDialog):
         # 标题
         title = QLabel("抖音AI群控")
         title.setAlignment(Qt.AlignCenter)
-        title.setFont(QFont("Microsoft YaHei UI", 18, QFont.Bold))
+        title.setFont(self._title_font())
         title.setStyleSheet(f"color: {self.THEME['text']}; border: none; background: transparent;")
         layout.addWidget(title)
 
@@ -327,6 +335,13 @@ def require_login(parent=None) -> tuple[bool, str]:
     # QDialog.exec() 必须依赖已存在的 QApplication，否则会 segfault 静默退出
     import sys as _sys
     app = QApplication.instance() or QApplication(_sys.argv)
+
+    # 设置全局默认字体
+    try:
+        from gui.pages.common import font
+        app.setFont(font(9))
+    except Exception:
+        pass
 
     if check_logged_in():
         # 取一下邮箱用于显示

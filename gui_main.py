@@ -78,15 +78,11 @@ class MainWindow(QMainWindow):
     def btn_clicked(self):
         btn = SetupMainWindow.setup_btns(self)
 
-        # 非设置类按钮：取消左栏选中态
-        if btn.objectName() != "btn_settings":
-            self.ui.left_menu.deselect_all_tab()
-
         # 取消标题栏设置按钮 active
         top_settings = MainFunctions.get_title_bar_btn(self, "btn_top_settings")
         top_settings.set_active(False)
 
-        # 11 个业务页路由映射：btn_id → page_N
+        # 12 个业务页路由映射：btn_id → page_N
         page_map = {
             "btn_home": self.ui.load_pages.page_1,
             "btn_devices": self.ui.load_pages.page_2,
@@ -99,6 +95,7 @@ class MainWindow(QMainWindow):
             "btn_monitor": self.ui.load_pages.page_9,
             "btn_dashboard": self.ui.load_pages.page_10,
             "btn_video": self.ui.load_pages.page_11,
+            "btn_settings": self.ui.load_pages.page_12,
         }
 
         if btn.objectName() in page_map:
@@ -109,25 +106,6 @@ class MainWindow(QMainWindow):
             print(f"切换到页面：{btn.objectName()}")
             return
 
-        # 设置按钮（左栏切换）
-        if btn.objectName() == "btn_settings" or btn.objectName() == "btn_close_left_column":
-            if not MainFunctions.left_column_is_visible(self):
-                MainFunctions.toggle_left_column(self)
-                self.ui.left_menu.select_only_one_tab(btn.objectName())
-            else:
-                if btn.objectName() == "btn_close_left_column":
-                    self.ui.left_menu.deselect_all_tab()
-                    MainFunctions.toggle_left_column(self)
-                self.ui.left_menu.select_only_one_tab(btn.objectName())
-
-            if btn.objectName() != "btn_close_left_column":
-                MainFunctions.set_left_column_menu(
-                    self,
-                    menu=self.ui.left_column.menus.menu_1,
-                    title="设置",
-                    icon_path=Functions.set_svg_icon("icon_settings.svg")
-                )
-
         # 标题栏顶部设置按钮（右栏切换）
         if btn.objectName() == "btn_top_settings":
             if not MainFunctions.right_column_is_visible(self):
@@ -136,9 +114,6 @@ class MainWindow(QMainWindow):
             else:
                 btn.set_active(False)
                 MainFunctions.toggle_right_column(self)
-
-            top_settings = MainFunctions.get_left_menu_btn(self, "btn_settings")
-            top_settings.set_active_tab(False)
 
     # LEFT MENU BTN IS RELEASED
     # Run function when btn is released
@@ -173,6 +148,13 @@ def run_main_window(account_email: str = ""):
     app = QApplication.instance() or QApplication(sys.argv)
     if os.path.exists("icon.ico"):
         app.setWindowIcon(QIcon("icon.ico"))
+
+    # 设置全局默认字体（QSS 未覆盖的控件会继承此字体）
+    try:
+        from gui.pages.common import font
+        app.setFont(font(9))
+    except Exception:
+        pass
 
     window = MainWindow()
     window.account_email = account_email  # 供侧边栏显示

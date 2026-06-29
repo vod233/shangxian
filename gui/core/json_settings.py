@@ -56,15 +56,3 @@ class Settings(object):
         with open(self.settings_path, "r", encoding='utf-8') as reader:
             settings = json.loads(reader.read())
             self.items = settings
-
-        # 注入自定义字体族名（覆盖 settings.json 中的 font.family）
-        # QSS 优先级高于 QFont，必须同步覆盖 QSS 中的字体名才能生效
-        # 注意：QSS 不支持 setFamilies 回退列表，只能用单一字体族名
-        # 此处用主字体族名（如 Fira Code）；中文回退由 QFont.setFamilies 在 common.font() 中处理
-        try:
-            from gui.pages.common import _load_custom_font
-            family, _ = _load_custom_font()
-            if "font" in self.items:
-                self.items["font"]["family"] = family
-        except Exception:
-            pass

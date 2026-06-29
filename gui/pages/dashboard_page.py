@@ -1,8 +1,9 @@
 """数据看板页：今日自动化执行结果汇总 + 详细操作记录表格。"""
+from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QTableWidgetItem
 
 from .common import (
-    BasePage, api_get,
+    BasePage, MultiApiWorker,
     make_card_frame, make_metric_card, make_secondary_btn, make_table,
     c, font,
 )
@@ -19,9 +20,13 @@ class DashboardPage(BasePage):
         )
         # 4 个汇总指标卡的 value_label 引用（顺序：videos/likes/follows/comments）
         self.metric_cards = []
-        self._worker = None  # 防 GC（保留字段以与统一模式一致）
+        self._worker = None  # 防 GC
         self._build_ui()
         self._load()
+        # 问题2修复：增加自动刷新定时器（每 5 秒），与"实时查看"副标题一致
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self._load)
+        self.timer.start(5000)
 
     def _build_ui(self):
         # ====== 卡片1：今日汇总（1x4 网格） ======
@@ -64,9 +69,29 @@ class DashboardPage(BasePage):
         self.content_layout.addLayout(btn_row)
 
     def _load(self):
-        """同步加载：stats + stats/details?limit=100。"""
+        """异步加载：stats + stats/details?limit=100（不阻塞 UI）。
+        问题2/3修复：原同步串行 2 个请求会阻塞 UI，改用 MultiApiWorker 后台并发。
+        Review修复2：重入保护，上一个 worker 仍在运行时跳过本次，避免乱序回调。
+        """
+        # Review修复2：重入保护，避免旧请求结果覆盖新请求
+        if self._worker is not None and self._worker.is_running():
+            return
+        worker = MultiApiWorker([
+            ("/stats", None),
+            ("/stats/details", {"limit": 100}),
+        ])
+        worker.finished.connect(self._on_load_done)
+        worker.start()
+        self._worker = worker  # 防 GC
+
+    def _on_load_done(self, results: list):
+        """异步加载完成回调：results = [stats_resp, detail_resp]。"""
+        # Review修复1补充：回调开头清理 worker 引用，避免下次定时器访问已 deleteLater 的对象
+        self._worker = None
+        stats_resp = results[0] if len(results) > 0 else {}
+        detail_resp = results[1] if len(results) > 1 else {}
+
         # 今日汇总
-        stats_resp = api_get("/stats")
         stats = {}
         if stats_resp.get("success"):
             stats = stats_resp.get("data", {}) or {}
@@ -79,7 +104,6 @@ class DashboardPage(BasePage):
         self._apply_stats(stats)
 
         # 详细记录
-        detail_resp = api_get("/stats/details", params={"limit": 100})
         rows = []
         if detail_resp.get("success"):
             rdata = detail_resp.get("data", []) or []
@@ -91,6 +115,11 @@ class DashboardPage(BasePage):
                 f"详细记录加载失败：{detail_resp.get('message', '')}", "danger"
             )
         self._apply_details(rows)
+
+        # Review修复3：异步加载完成后恢复刷新按钮状态（替代原 1500ms 硬编码定时器）
+        if hasattr(self, "refresh_btn"):
+            self.refresh_btn.setEnabled(True)
+            self.clear_status()
 
     def _apply_stats(self, stats: dict):
         """刷新 4 个汇总指标卡的 value_label。"""
@@ -134,11 +163,18 @@ class DashboardPage(BasePage):
                 self.detail_table.setItem(i, col, QTableWidgetItem(text))
 
     def _on_refresh(self):
-        """刷新按钮回调：重新加载汇总与详细记录。"""
+        """刷新按钮回调：触发异步重新加载汇总与详细记录。
+        Review修复3：按钮禁用后由 _on_load_done 在异步完成时恢复，
+        不再用 1500ms 硬编码定时器，保证状态与实际加载同步。
+        手动刷新绕过 _load() 的重入保护，强制创建新 worker。
+        """
         self.set_status("刷新中...", "info")
         self.refresh_btn.setEnabled(False)
-        try:
-            self._load()
-            self.clear_status()
-        finally:
-            self.refresh_btn.setEnabled(True)
+        # 手动刷新强制触发，不受重入保护限制
+        worker = MultiApiWorker([
+            ("/stats", None),
+            ("/stats/details", {"limit": 100}),
+        ])
+        worker.finished.connect(self._on_load_done)
+        worker.start()
+        self._worker = worker  # 防 GC

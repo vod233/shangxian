@@ -18,6 +18,7 @@ class MessagePage(BasePage):
             parent=parent,
         )
         self._config = {}
+        self._worker = None  # 防 GC
         self._build_ui()
         self._load_config()
 

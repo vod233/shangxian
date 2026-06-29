@@ -101,7 +101,8 @@ class StrategyPage(BasePage):
         # 验证授权按钮
         btn_row2 = QHBoxLayout()
         btn_row2.addStretch(1)
-        self.verify_btn = make_secondary_btn("🔎 验证授权")
+        # 问题1修复：文案由"验证授权"改为"验证并保存授权"，明确告知用户该操作会持久化保存授权码
+        self.verify_btn = make_secondary_btn("🔎 验证并保存授权")
         self.verify_btn.clicked.connect(self._on_verify_license)
         btn_row2.addWidget(self.verify_btn)
         l2.addLayout(btn_row2)
@@ -201,11 +202,23 @@ class StrategyPage(BasePage):
             self.set_status(f"保存失败：{data.get('message', '')}", "danger")
 
     def _on_verify_license(self):
-        """验证授权：POST /license/save?platform=douyin"""
+        """验证并保存授权：POST /license/save?platform=douyin
+        问题1修复：仅传授权相关字段，与后端 LicenseVerifyRequest 模型契约对齐，
+        不再误传全量配置（避免数据契约不严谨）。
+        """
+        license_key = self.license_key_edit.text().strip()
+        if not license_key:
+            self.set_status("请先输入授权码", "warning")
+            return
         self.verify_btn.setEnabled(False)
-        self.set_status("正在验证授权...", "info")
+        self.set_status("正在验证并保存授权...", "info")
+        # 仅传授权相关字段，匹配后端 LicenseVerifyRequest 模型
+        license_payload = {
+            "license_key": license_key,
+            "license_server_url": self.license_server_url_edit.text().strip(),
+        }
         worker = ApiWorker("POST", "/license/save",
-                          json_body=self._collect_payload(),
+                          json_body=license_payload,
                           params={"platform": "douyin"})
         worker.finished.connect(self._on_verify_done)
         worker.start()

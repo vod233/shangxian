@@ -3,6 +3,8 @@ import re
 import random
 import logging
 import datetime
+import os
+import yaml
 
 from .main_controller import ScoutTaskRunner
 from .actions.navigation import (
@@ -35,6 +37,8 @@ class TikTokTaskFlow:
     def __init__(self, serial=None, config_path=None, status_reporter=None):
         self.runner = ScoutTaskRunner(serial=serial, config_path=config_path)
         self.config = self.runner.config
+        # 保存配置文件路径，供 start() 时重新读取最新配置（解决前端保存后任务仍用旧关键词的问题）
+        self.config_path = config_path
         self.db = DBManager()
         self.reply_agent = DYReplyAgent(self.config)
 
@@ -472,12 +476,9 @@ class TikTokTaskFlow:
                 logger.warning(f"清理设备痕迹失败: {e}")
 
         # 2. 读取关键词列表
-        keywords = self.config.get('search', {}).get('keywords', [])
-        if not keywords:
-            # 兼容旧配置格式
-            old_keyword = self.config.get('search', {}).get('keyword')
-            if old_keyword:
-                keywords = [old_keyword]
+        # 修复：每次任务启动时重新从配置文件读取最新关键词，
+        # 而非使用初始化时缓存到内存的旧配置，确保前端保存的关键词能立即生效。
+        keywords = self._reload_search_keywords()
 
         if not keywords:
             logger.error("未在配置中找到 search.keywords，任务无法执行")
@@ -499,6 +500,37 @@ class TikTokTaskFlow:
             self._report(current_action="触发自适应风控隔离，系统正在智能重试...")
         finally:
             self.runner.shutdown()
+
+    def _reload_search_keywords(self):
+        """从配置文件重新读取最新的搜索关键词列表。
+        解决前端保存关键词后，任务实例仍使用初始化时缓存的旧关键词的问题。
+        同时同步更新 self.config，使后续 B.1-B.4 等环节也能用到最新配置。
+        """
+        keywords = []
+        config_path = self.config_path
+        if config_path and os.path.isfile(config_path):
+            try:
+                with open(config_path, "r", encoding="utf-8") as f:
+                    fresh_config = yaml.safe_load(f) or {}
+                search_cfg = fresh_config.get('search', {}) or {}
+                keywords = search_cfg.get('keywords', []) or []
+                # 兼容旧配置格式
+                if not keywords and search_cfg.get('keyword'):
+                    keywords = [search_cfg['keyword']]
+                # 同步更新内存配置，使后续环节也能用到最新配置
+                if keywords:
+                    self.config['search'] = search_cfg
+                    logger.info(f"已从配置文件重新加载关键词: {keywords}")
+            except Exception as exc:
+                logger.warning(f"重新读取配置文件失败，使用内存中的旧配置: {exc}")
+        # 兜底：使用内存中的旧配置
+        if not keywords:
+            keywords = self.config.get('search', {}).get('keywords', [])
+            if not keywords:
+                old_keyword = self.config.get('search', {}).get('keyword')
+                if old_keyword:
+                    keywords = [old_keyword]
+        return keywords
 
     def _process_single_keyword(self, keyword):
         """处理单个关键词的完整流程"""

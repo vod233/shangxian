@@ -1,6 +1,6 @@
 """任务监控页：实时查看AI员工执行状态与终端日志输出。
 
-每 2 秒自动刷新一次（同步 HTTP）。
+每 2 秒自动刷新一次（异步 HTTP，不阻塞 UI）。
 """
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import (
@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (
 )
 
 from .common import (
-    BasePage, api_get,
+    BasePage, MultiApiWorker,
     make_card_frame, make_metric_card, make_table,
     c, font,
 )
@@ -79,7 +79,7 @@ class MonitorPage(BasePage):
             f"  background-color: #000000; color: {c('green')};"
             f"  border: 1px solid {c('dark_four')}; border-radius: 6px;"
             f"  padding: 10px; font-size: 13px;"
-            f"  font-family: 'Fira Code', 'Consolas', 'Courier New', monospace;"
+            f"  font-family: 'Microsoft YaHei UI', 'Consolas', 'Courier New', monospace;"
             f"}}"
         )
         self.log_edit.setFont(font(13))
@@ -88,15 +88,34 @@ class MonitorPage(BasePage):
         self.content_layout.addWidget(log_card)
 
     def _load(self):
-        """同步加载：tasks/status + logs。"""
-        # 任务状态：后端返回 dict {serial: {status: "running", ...}}
+        """异步加载：tasks/status + logs（不阻塞 UI）。
+        问题3修复：原同步串行 2 个请求会阻塞 UI，改用 MultiApiWorker 后台并发。
+        Review修复2：重入保护，上一个 worker 仍在运行时跳过本次，避免乱序回调。
+        """
+        # Review修复2：重入保护，避免旧请求结果覆盖新请求
+        if self._worker is not None and self._worker.is_running():
+            return
+        worker = MultiApiWorker([
+            ("/tasks/status", None),
+            ("/logs", None),
+        ])
+        worker.finished.connect(self._on_load_done)
+        worker.start()
+        self._worker = worker  # 防 GC
+
+    def _on_load_done(self, results: list):
+        """异步加载完成回调：results = [task_resp, log_resp]。"""
+        # Review修复1补充：回调开头清理 worker 引用，避免下次定时器访问已 deleteLater 的对象
+        self._worker = None
+        task_resp = results[0] if len(results) > 0 else {}
+        log_resp = results[1] if len(results) > 1 else {}
+
+        # 任务状态
         status_dict = {}
-        task_resp = api_get("/tasks/status")
         if task_resp.get("success"):
             tdata = task_resp.get("status", {}) or {}
             if isinstance(tdata, dict):
                 status_dict = tdata
-        # 总体状态：取第一台设备的状态作为代表（用于顶部指标卡）
         overall_status = ""
         if status_dict:
             first_serial = next(iter(status_dict), None)
@@ -109,11 +128,9 @@ class MonitorPage(BasePage):
                 else:
                     overall_status = str(entry)
         self._apply_task_status(overall_status)
-        # 多设备状态表：遍历 status_dict，每台设备一行
         self._apply_device_status(status_dict)
 
-        # 日志：后端返回 {"success": True, "logs": [str, ...]}
-        log_resp = api_get("/logs")
+        # 日志
         if log_resp.get("success"):
             ldata = log_resp.get("logs", [])
             self._apply_logs(ldata)

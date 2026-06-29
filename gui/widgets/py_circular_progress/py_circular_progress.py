@@ -27,7 +27,7 @@ class PyCircularProgress(QWidget):
         max_value = 100,
         progress_color = "#ff79c6",
         enable_text = True,
-        font_family = "Segoe UI",
+        font_family = "Microsoft YaHei UI",
         font_size = 12,
         suffix = "%",
         text_color = "#ff79c6",

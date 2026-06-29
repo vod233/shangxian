@@ -11,7 +11,7 @@ import sys
 import json
 import requests
 from PySide6.QtCore import Qt, QThread, Signal, QSize
-from PySide6.QtGui import QFont, QIcon, QFontDatabase
+from PySide6.QtGui import QFont, QIcon
 from PySide6.QtWidgets import (
     QWidget, QScrollArea, QVBoxLayout, QHBoxLayout, QFormLayout,
     QLabel, QLineEdit, QPushButton, QSpinBox, QDoubleSpinBox, QSlider,
@@ -111,87 +111,44 @@ def app_state() -> AppState:
 
 
 # ======================== 字体工厂 ========================
-_FONT_FAMILY = None       # 缓存主字体族名
-_FONT_FAMILIES = None     # 缓存字体族名优先级列表（用于 setFamilies 回退）
+_FONT_FAMILY = "Microsoft YaHei UI"
+_FONT_BASE_PT = 9  # settings.json 中 text_size 的默认值（pt）
 
 
-def _resolve_font_path(*parts) -> str:
-    """兼容开发模式与 PyInstaller 打包模式的字体路径解析。"""
-    base = getattr(sys, "_MEIPASS", None) or os.path.abspath(".")
-    return os.path.join(base, *parts)
+def _load_font_config() -> tuple:
+    """从 settings.json 加载字体配置（每次调用都重新读取以支持实时调整）。
 
-
-def _load_custom_font() -> tuple:
-    """加载自定义免费商用字体（仅加载一次，含多级兜底）。
-
-    返回 (主字体族名, 优先级列表)。
-
-    策略：英文用 Fira Code（OFL 编程字体，VSCode 风格），中文回退系统字体。
-    用户可手动放入更纱黑体/思源黑体等中文字体到 gui/fonts/，会自动优先使用。
-
-    候选字体（按优先级）：
-      1. SarasaUIsc-Regular.ttf     更纱黑体 UI SC（中英文，OFL，VSCode 风格）—— 需手动下载
-      2. FiraCode-Regular.ttf       Fira Code（英文，OFL，编程字体）—— 已下载
-      3. 系统已安装中文字体（Microsoft YaHei UI 等）
+    返回 (family, text_size_pt)。
     """
-    global _FONT_FAMILY, _FONT_FAMILIES
-    if _FONT_FAMILY is not None:
-        return _FONT_FAMILY, _FONT_FAMILIES
-
-    # 中英文全包含的字体（优先）：更纱黑体/思源黑体
-    full_cjk_candidates = [
-        "SarasaUIsc-Regular.ttf",
-        "NotoSansSC-Regular.ttf",
-        "HarmonyOS_Sans_SC_Regular.ttf",
-        "AlibabaPuHuiTi-3-55-Regular.ttf",
-    ]
-    # 仅英文的编程字体（需配合中文回退）
-    en_only_candidates = [
-        "FiraCode-Regular.ttf",
-        "CascadiaCode-Regular.ttf",
-        "JetBrainsMono-Regular.ttf",
-    ]
-
-    # 1. 优先尝试中英文全包含字体
-    for name in full_cjk_candidates:
-        font_path = _resolve_font_path("gui", "fonts", name)
-        if os.path.exists(font_path):
-            font_id = QFontDatabase.addApplicationFont(font_path)
-            if font_id != -1:
-                families = QFontDatabase.applicationFontFamilies(font_id)
-                if families:
-                    _FONT_FAMILY = families[0]
-                    _FONT_FAMILIES = [families[0]]
-                    return _FONT_FAMILY, _FONT_FAMILIES
-
-    # 2. 尝试英文编程字体（中文回退系统字体）
-    for name in en_only_candidates:
-        font_path = _resolve_font_path("gui", "fonts", name)
-        if os.path.exists(font_path):
-            font_id = QFontDatabase.addApplicationFont(font_path)
-            if font_id != -1:
-                families = QFontDatabase.applicationFontFamilies(font_id)
-                if families:
-                    _FONT_FAMILY = families[0]
-                    # 英文字体 + 系统中文字体回退
-                    _FONT_FAMILIES = [families[0], "Microsoft YaHei UI", "Microsoft YaHei"]
-                    return _FONT_FAMILY, _FONT_FAMILIES
-
-    # 3. 全部失败 → 系统字体兜底
-    _FONT_FAMILY = "Microsoft YaHei UI"
-    _FONT_FAMILIES = ["Microsoft YaHei UI", "Microsoft YaHei"]
-    return _FONT_FAMILY, _FONT_FAMILIES
+    family = _FONT_FAMILY
+    text_size_pt = _FONT_BASE_PT
+    try:
+        import json
+        import os
+        settings_path = os.path.normpath(
+            os.path.join(os.path.abspath(os.getcwd()), "settings.json")
+        )
+        if os.path.isfile(settings_path):
+            with open(settings_path, "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+            font_cfg = cfg.get("font", {})
+            family = font_cfg.get("family", _FONT_FAMILY)
+            text_size_pt = font_cfg.get("text_size", _FONT_BASE_PT)
+    except Exception:
+        pass
+    return family, text_size_pt
 
 
 def font(size: int = 13, bold: bool = False) -> QFont:
-    """统一字体工厂：英文用 Fira Code（OFL），中文回退系统字体。
+    """统一字体工厂：Microsoft YaHei UI（Windows 系统自带，合法商用）。
 
-    使用 setFamilies 实现字符级回退：英文/数字用编程字体，中文用系统字体。
+    size: 字体大小（pt，磅值）。实际大小会根据 settings 中的基准大小按比例缩放。
+    例如：基准 9pt 时 font(13) = 13pt；基准调整为 12pt 时 font(13) ≈ 17.3pt。
     """
-    _, families = _load_custom_font()
-    f = QFont()
-    f.setFamilies(families)
-    f.setPointSize(size)
+    family, base_pt = _load_font_config()
+    scale = base_pt / _FONT_BASE_PT
+    actual_size = max(6, int(round(size * scale)))
+    f = QFont(family, actual_size)
     f.setBold(bold)
     return f
 
@@ -235,6 +192,58 @@ class ApiWorker(QThread):
         except requests.RequestException as exc:
             data = {"success": False, "message": f"网络错误：{exc}", "_status_code": 0}
         self.finished.emit(data)
+
+
+class MultiApiWorker(QThread):
+    """批量异步 GET 请求 worker，避免阻塞 UI。
+
+    问题3修复：home_page / monitor_page / dashboard_page 的定时器原先用同步
+    api_get 串行请求多个 API，导致 UI 卡顿。改用本类在后台线程并发请求，
+    全部完成后一次性回传结果列表。
+
+    Review修复：
+    - run() 结束后自动调用 deleteLater()，避免 QThread 对象累积泄漏
+    - 提供is_running()方法供调用方做重入保护，避免旧请求结果覆盖新请求
+
+    用法：
+        worker = MultiApiWorker([("/stats", None), ("/tasks/status", None)])
+        worker.finished.connect(self._on_done)  # _on_done(results: list[dict])
+        worker.start()
+    """
+    finished = Signal(list)
+
+    def __init__(self, requests_list: list, timeout: int = 10):
+        """requests_list: [(path, params), ...]，params 可为 None。"""
+        super().__init__()
+        self.requests_list = requests_list
+        self.timeout = timeout
+        # Review修复1：finished 信号触发后自动清理 QThread，避免对象累积
+        self.finished.connect(self._on_finished_cleanup)
+
+    def _on_finished_cleanup(self):
+        """run() 完成后在事件循环中安全删除自身，防止 QThread 累积泄漏。"""
+        self.deleteLater()
+
+    def is_running(self) -> bool:
+        """Review修复2：返回线程是否仍在运行，供调用方做重入保护。
+        若 C++ 对象已被 deleteLater 删除，返回 False（视作未运行）。
+        """
+        try:
+            return self.isRunning()
+        except RuntimeError:
+            # C++ 对象已被 deleteLater 删除
+            return False
+
+    def run(self):
+        results = []
+        for path, params in self.requests_list:
+            url = f"{API_BASE_URL.rstrip('/')}{path}"
+            try:
+                resp = requests.get(url, params=params, timeout=self.timeout)
+                results.append(resp.json())
+            except Exception as exc:
+                results.append({"success": False, "message": str(exc)})
+        self.finished.emit(results)
 
 
 # ======================== 同步 HTTP 辅助（启动时加载配置用） ========================

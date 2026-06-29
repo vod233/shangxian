@@ -27,7 +27,7 @@ from gui.widgets import *
 from gui.pages import (
     HomePage, DevicesPage, SearchPage, FunctionsPage, IntentPage,
     MessagePage, ProcessPage, StrategyPage, MonitorPage,
-    DashboardPage, VideoPage,
+    DashboardPage, VideoPage, SettingsPage,
 )
 
 # LOAD UI MAIN
@@ -130,6 +130,14 @@ class SetupMainWindow:
             "btn_text": "视频处理设置",
             "btn_tooltip": "处理数量与停留时长",
             "show_top": True,
+            "is_active": False
+        },
+        {
+            "btn_icon": "icon_settings.svg",
+            "btn_id": "btn_settings",
+            "btn_text": "系统设置",
+            "btn_tooltip": "字体、窗口、界面外观设置",
+            "show_top": False,
             "is_active": False
         },
     ]
@@ -277,6 +285,9 @@ class SetupMainWindow:
 
         self.page_video = VideoPage()
         self.ui.load_pages.page_11_layout.addWidget(self.page_video)
+
+        self.page_settings = SettingsPage()
+        self.ui.load_pages.page_12_layout.addWidget(self.page_settings)
 
         # 右栏按钮（保留示例）
         self.right_btn_1 = PyPushButton(

@@ -68,7 +68,7 @@ class PyTitleBar(QWidget):
         context_color = "#6c99f4",
         text_foreground = "#8a95aa",
         radius = 8,
-        font_family = "Segoe UI",
+        font_family = "Microsoft YaHei UI",
         title_size = 10,
         is_custom_title_bar = True,
     ):
@@ -271,9 +271,16 @@ class PyTitleBar(QWidget):
         self.top_logo = QLabel()
         self.top_logo_layout = QVBoxLayout(self.top_logo)
         self.top_logo_layout.setContentsMargins(0,0,0,0)
-        self.logo_svg = QSvgWidget()
-        self.logo_svg.load(Functions.set_svg_image(self._logo_image))
-        self.top_logo_layout.addWidget(self.logo_svg, Qt.AlignCenter, Qt.AlignCenter)
+        if self._logo_image.lower().endswith(".svg"):
+            self.logo_widget = QSvgWidget()
+            self.logo_widget.load(Functions.set_svg_image(self._logo_image))
+        else:
+            self.logo_widget = QLabel()
+            pixmap = QPixmap(Functions.set_image(self._logo_image))
+            if not pixmap.isNull():
+                self.logo_widget.setPixmap(pixmap)
+                self.logo_widget.setScaledContents(True)
+        self.top_logo_layout.addWidget(self.logo_widget, Qt.AlignCenter, Qt.AlignCenter)
 
         # TITLE LABEL
         self.title_label = QLabel()

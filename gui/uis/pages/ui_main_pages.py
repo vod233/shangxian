@@ -10,7 +10,7 @@ from qt_core import *
 
 
 class Ui_MainPages(object):
-    """11 个业务页的 QStackedWidget 容器。
+    """12 个业务页的 QStackedWidget 容器。
 
     每个页是一个空的 QWidget，业务 widget 在 setup_main_window.py
     中通过 self.ui.load_pages.page_X_layout.addWidget(...) 注入。
@@ -29,7 +29,7 @@ class Ui_MainPages(object):
         self.pages = QStackedWidget(MainPages)
         self.pages.setObjectName(u"pages")
 
-        # 11 个页面容器：page_1 ~ page_11
+        # 12 个页面容器：page_1 ~ page_12
         # 每个页面提供一个 QVBoxLayout 供业务 widget 注入
         self.page_names = [
             "page_home",        # 1. 首页
@@ -43,9 +43,10 @@ class Ui_MainPages(object):
             "page_monitor",     # 9. AI员工工作动向
             "page_dashboard",   # 10. AI获客面板员工走向
             "page_video",       # 11. 视频处理设置
+            "page_settings",    # 12. 系统设置
         ]
 
-        # 为每个页面创建 QWidget + QVBoxLayout，存为属性 page_1..page_11
+        # 为每个页面创建 QWidget + QVBoxLayout，存为属性 page_1..page_12
         for idx, name in enumerate(self.page_names, start=1):
             page = QWidget()
             page.setObjectName(name)

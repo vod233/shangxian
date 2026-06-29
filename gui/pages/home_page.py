@@ -1,6 +1,6 @@
 """首页：AI运营员工群控台，展示今日自动化运营数据总览。
 
-每 3 秒自动刷新一次（同步 HTTP，避免阻塞 UI 太久）。
+每 3 秒自动刷新一次（异步 HTTP，不阻塞 UI）。
 """
 import random
 
@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
 )
 
 from .common import (
-    BasePage, api_get,
+    BasePage, MultiApiWorker,
     make_card_frame, make_metric_card, make_table,
     make_section_label, c, font,
 )
@@ -27,6 +27,7 @@ class HomePage(BasePage):
         )
         # 8 个指标卡的 value_label 引用，刷新时只更新 label.setText
         self.metric_values = []
+        self._worker = None  # 防 GC
         self._build_ui()
         self._load()
         # 定时刷新（每 3 秒）
@@ -83,9 +84,31 @@ class HomePage(BasePage):
         self.content_layout.addWidget(dev_card)
 
     def _load(self):
-        """同步加载：stats / devices / tasks/status。"""
+        """异步加载：stats / tasks/status / devices（不阻塞 UI）。
+        问题3修复：原同步串行 3 个请求会阻塞 UI，改用 MultiApiWorker 后台并发。
+        Review修复2：重入保护，上一个 worker 仍在运行时跳过本次，避免乱序回调。
+        """
+        # Review修复2：重入保护，避免旧请求结果覆盖新请求
+        if self._worker is not None and self._worker.is_running():
+            return
+        worker = MultiApiWorker([
+            ("/stats", None),
+            ("/tasks/status", None),
+            ("/devices", None),
+        ])
+        worker.finished.connect(self._on_load_done)
+        worker.start()
+        self._worker = worker  # 防 GC
+
+    def _on_load_done(self, results: list):
+        """异步加载完成回调：results = [stats_resp, task_resp, dev_resp]。"""
+        # Review修复1补充：回调开头清理 worker 引用，避免下次定时器访问已 deleteLater 的对象
+        self._worker = None
+        stats_resp = results[0] if len(results) > 0 else {}
+        task_resp = results[1] if len(results) > 1 else {}
+        dev_resp = results[2] if len(results) > 2 else {}
+
         # 指标 + 综合指数
-        stats_resp = api_get("/stats")
         stats = {}
         if stats_resp.get("success"):
             stats = stats_resp.get("data", {}) or {}
@@ -93,16 +116,14 @@ class HomePage(BasePage):
                 stats = stats.get("data", {}) or {}
         self._apply_stats(stats)
 
-        # 任务状态：后端返回 dict {serial: {status: "running", ...}}
+        # 任务状态
         status_dict = {}
-        task_resp = api_get("/tasks/status")
         if task_resp.get("success"):
             tdata = task_resp.get("status", {}) or {}
             if isinstance(tdata, dict):
                 status_dict = tdata
 
-        # 设备列表：后端返回 {"success": True, "devices": [...]}
-        dev_resp = api_get("/devices")
+        # 设备列表
         devices = []
         if dev_resp.get("success"):
             rows = dev_resp.get("devices", []) or []

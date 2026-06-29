@@ -1,4 +1,4 @@
-"""业务页包：11 个 PySide6 业务页。
+"""业务页包：12 个 PySide6 业务页。
 
 每个页面继承 BasePage，统一深色科技风骨架。
 """
@@ -13,9 +13,10 @@ from .strategy_page import StrategyPage
 from .monitor_page import MonitorPage
 from .dashboard_page import DashboardPage
 from .video_page import VideoPage
+from .settings_page import SettingsPage
 
 __all__ = [
     "HomePage", "DevicesPage", "SearchPage", "FunctionsPage", "IntentPage",
     "MessagePage", "ProcessPage", "StrategyPage", "MonitorPage",
-    "DashboardPage", "VideoPage",
+    "DashboardPage", "VideoPage", "SettingsPage",
 ]
