@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import re
@@ -291,33 +292,69 @@ class DYReplyAgent:
         # 使用信号量限制并发，避免 API 速率限制
         with _ai_api_semaphore:
             try:
-                llm = self._create_llm(base_url, api_key, model, temperature=0.1, max_tokens=8)
+                # max_tokens 提升至 80 以容纳 JSON 结构化输出
+                llm = self._create_llm(base_url, api_key, model, temperature=0.1, max_tokens=80)
                 messages = [
                     SystemMessage(content=(
-                        "你是抖音评论区线索筛选器。"
-                        "判断【评论者是否向视频作者（博主）】表达了明确需求、咨询意愿、"
-                        "购买/体验兴趣、想了解更多、求推荐、求教程、求链接、求价格、求方案。"
-                        "判定规则："
-                        "1. 如果评论明显是消费者之间互相解答（含'我发你了''去我主页''私我''已发'等），输出 NO；"
-                        "2. 对于反讽、玩梗、攻击性调侃（含'智商税''两块钱包邮''能让我死心''真的假的'等），即使包含'多少钱/哪里买'也输出 NO；"
-                        "3. 普通夸赞、调侃、无意义表情、单纯路过、泛泛赞同，输出 NO；"
-                        "4. 其他情况按是否表达对博主的需求判断。"
-                        "只输出 YES 或 NO。"
+                        "# Role\n"
+                        "You are a High-Throughput Lead Classification Engine for Douyin comments. "
+                        "Minimize tokens and latency. Maximum False-Positive tolerance; Zero False-Negative tolerance.\n"
+                        "# Logic: Slightly Interested = YES\n"
+                        "Any trace of pain, desire, curiosity, agreement, or peer attribute = YES. "
+                        "ONLY total noise, gibberish, pure emojis, or generic greetings = NO.\n"
+                        "# Intent Triggers (Output YES if any match)\n"
+                        "1. Direct: Price, link, buy, join, guide, contact info, how-to "
+                        "(\"多少钱/求带/怎么买/求链接/求教程\").\n"
+                        "2. Passive: Save for later, bookmarks, agreement "
+                        "(\"先收藏/确实/有道理/蹲一个/等更新\").\n"
+                        "3. Pain: Venting loss, failure, high costs, frustration "
+                        "(\"亏惨了/太难做/割韭菜/踩坑\").\n"
+                        "4. Peer/Tech: Critique, alternative parameter, corrections "
+                        "(\"步骤不对/核心是XX/参数有问题\").\n"
+                        "5. Emotion: Awe, jealousy, doubt on revenue "
+                        "(\"一天1k真的假的/羡慕/这也行\").\n"
+                        "# Exclusion Rules (Output NO ONLY if 100% matched)\n"
+                        "- Pure abstract internet memes, spam text, repetitive pure emojis "
+                        "(\"哈哈哈哈/泰裤辣/[泣不成声]\").\n"
+                        "- Meaningless greetings or bot-like text (\"早安/打卡/路过\").\n"
+                        "- Unrelated insults or political noise.\n"
+                        "# Strict Output Format\n"
+                        "Return RAW JSON only. No markdown fences (DO NOT wrap in ```json). No prose.\n"
+                        "# Response Schema\n"
+                        "{\"intent\":\"YES\"|\"NO\",\"quad\":1|2|3|4|5|0,"
+                        "\"score\":0.00-1.00,\"pain\":\"<Short pain point in Chinese>\"}"
                     )),
                     HumanMessage(content=(
                         f"视频标题：{video_title or '未提供'}\n"
                         f"搜索关键词：{keyword or '未提供'}\n"
                         f"评论：{comment_text}\n"
-                        "这条评论是否有潜在客户意愿？"
+                        "判定此评论意向并按 Schema 输出 JSON。"
                     )),
                 ]
                 response = llm.invoke(messages)
-                text = (self._extract_response_text(response) or "").strip().upper()
-                if text.startswith("YES"):
-                    return True
-                if text.startswith("NO"):
-                    return False
-                return None
+                text = (self._extract_response_text(response) or "").strip()
+                # 兼容 LLM 偶发包裹 ```json 的情况
+                cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", text, flags=re.IGNORECASE).strip()
+                try:
+                    data = json.loads(cleaned)
+                    intent_val = str(data.get("intent", "")).strip().upper()
+                    logger.debug(
+                        "[intent_ai] intent=%s quad=%s score=%s pain=%s",
+                        intent_val, data.get("quad"), data.get("score"), data.get("pain"),
+                    )
+                    if intent_val.startswith("YES"):
+                        return True
+                    if intent_val.startswith("NO"):
+                        return False
+                    return None
+                except (json.JSONDecodeError, ValueError, AttributeError):
+                    # JSON 解析失败时回退到纯文本 YES/NO 匹配，保证链路不中断
+                    upper = text.upper()
+                    if upper.startswith("YES"):
+                        return True
+                    if upper.startswith("NO"):
+                        return False
+                    return None
             except Exception as exc:
                 logger.error(f"AI 判断评论意向失败: {exc}")
                 return None

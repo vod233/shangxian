@@ -177,9 +177,26 @@ def _close_comment_input_if_open(d, text=""):
     if text and current_text and text not in current_text:
         return True
 
-    logger.info("检测到评论输入框仍处于打开状态，执行返回关闭")
-    d.press("back")
-    HumanSleep.sleep(custom_range=(0.5, 1.0))
+    # FIX-09: 评论区面板打开时 press back 会误关评论区，改为点击顶部空白区域收起键盘。
+    comment_panel_open = False
+    try:
+        if d(resourceId=L.COMMENT_LIST_CONTAINER).exists(timeout=0.2):
+            comment_panel_open = True
+    except Exception:
+        pass
+
+    if comment_panel_open:
+        logger.info("评论区面板已打开，点击顶部空白区域收起键盘（避免 press back 误关评论区）")
+        try:
+            w, h = d.window_size()
+            d.click(int(w * 0.5), int(h * 0.12))
+            HumanSleep.sleep(custom_range=(0.4, 0.8))
+        except Exception:
+            pass
+    else:
+        logger.info("检测到评论输入框仍处于打开状态，执行返回关闭")
+        d.press("back")
+        HumanSleep.sleep(custom_range=(0.5, 1.0))
     return _find_bottom_edit_text(d, timeout=0.5) is None
 
 
@@ -250,6 +267,16 @@ class PostCommentAction(BaseAction):
 class OpenCommentSectionAction(BaseAction):
     """打开评论区（根据规律寻找主评论区按钮）"""
     def execute(self):
+        # FIX-10: 打开评论区前强制关闭可能残留的键盘/输入框，
+        # 否则第一次点击评论区按钮可能仅关闭键盘而非打开评论区。
+        try:
+            if _find_bottom_edit_text(self.d, timeout=0.5):
+                logger.info("检测到残留输入框，先关闭键盘再打开评论区")
+                self.d.press("back")
+                self.human_sleep('fast', custom_range=(0.5, 1.0))
+        except Exception:
+            pass
+
         logger.info("正在通过 content-desc 规律寻找主评论区按钮...")
         all_nodes = self.d.xpath(L.COMMENT_BTN_DYNAMIC).all()
 
@@ -598,9 +625,22 @@ class CommentLeadPmAction(BaseAction):
     def _find_avatar_from_comment_node(self, comment_node):
         """从意向评论 content 节点反查同卡片内的头像节点。
         dump 实测：comment_node（content）与 avatar 同属 k4x ViewGroup，是兄弟节点。
+        FIX-05: 优先用 lead_comment_text 重新定位节点，避免 B.4 回复后 UI 刷新导致旧节点引用失效。
         """
+        # FIX-05: 先尝试用评论文本重新定位节点（UI 刷新后旧引用 bounds 可能已失效）
+        lead_comment_text = getattr(self, 'lead_comment_text', '') or ''
+        fresh_node = comment_node
+        if lead_comment_text:
+            try:
+                refound = self.d.xpath(f'//*[@text="{lead_comment_text}"]')
+                if refound.exists(timeout=0.8):
+                    fresh_node = refound
+                    logger.info(f"B.5 通过文本重新定位到意向评论节点: {lead_comment_text[:20]}")
+            except Exception as exc:
+                logger.debug(f"B.5 文本反查节点失败，使用原节点: {exc}")
+
         try:
-            parent = comment_node.parent
+            parent = fresh_node.parent
             attempts = 0
             while parent is not None and attempts < 3:
                 parent_info = parent.info or {}

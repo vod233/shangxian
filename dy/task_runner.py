@@ -227,6 +227,10 @@ class TikTokTaskFlow:
 
                 if re.search(r'class="android\.widget\.EditText"[^>]*focused="true"', ui_xml):
                     return "input_or_chat"
+                # FIX-03: 键盘已弹出但 EditText 失焦时，focused=true 检测会漏判。
+                # 增加可见 EditText 兜底检测，避免误判为 video_page 导致键盘残留。
+                if re.search(r'class="android\.widget\.EditText"[^>]*visible="true"', ui_xml):
+                    return "input_or_chat"
 
                 if any(marker in ui_xml for marker in ("分享名片", "发私信", "设置备注", "特别关注", "取消关注", "不让他(她)看")):
                     return "profile_sheet"
@@ -344,6 +348,7 @@ class TikTokTaskFlow:
         lead_pm_sent = False
         lead_pm_reason = "skipped"
         comment_section_open = False  # 跟踪评论区是否仍打开（B.5 需要在此状态下执行）
+        pm_executed = False  # FIX-02: 标记 B.5 是否执行过，决定关闭评论区的方式
         action_instance = None
         try:
             opened = self.runner.run_action(OpenCommentSectionAction)
@@ -370,6 +375,8 @@ class TikTokTaskFlow:
             # 读取意向评论节点信息
             lead_comment_node = getattr(action_instance, 'lead_comment_node', None)
             lead_reply_sent = bool(getattr(action_instance, 'lead_reply_sent', False))
+            # FIX-05: 同时读取意向评论文本，供 B.5 重新定位节点
+            lead_comment_text = getattr(action_instance, 'lead_comment_text', '') or ''
 
             if enable_lead_pm and lead_comment_node is not None:
                 comment_section_open = True  # keep_open_after_lead=True 时评论区仍打开
@@ -384,7 +391,9 @@ class TikTokTaskFlow:
                     app_manager=self.runner.app_mgr,
                     config=self.config,
                     lead_comment_node=lead_comment_node,
+                    lead_comment_text=lead_comment_text,  # FIX-05: 传文本以便重新定位节点
                 )
+                pm_executed = True  # FIX-02: 标记 B.5 已执行
                 try:
                     pm_result = pm_action.perform()
                 except Exception as exc:
@@ -401,15 +410,21 @@ class TikTokTaskFlow:
         except Exception as exc:
             logger.error(f"功能[{feature_name}]执行异常: {exc}")
 
-        # 如果评论区仍打开（B.5 启用场景），关闭评论区
+        # FIX-02: B.5 执行后页面在评论者私信聊天页，调用 _close_comment_section 路径不匹配，
+        # 改为直接用 _recover_to_video_page 由状态机统一处理 chat→profile→comment_panel→video 多层返回。
+        # 仅当未执行 B.5 且评论区仍打开时，才用 _close_comment_section 关闭评论区。
         if comment_section_open:
-            try:
-                if action_instance is not None:
-                    action_instance._close_comment_section()
-                else:
-                    self._recover_to_video_page(f"{feature_name}-关闭评论区")
-            except Exception as exc:
-                logger.warning(f"关闭评论区异常: {exc}")
+            if pm_executed:
+                logger.info("B.5 已执行，页面可能在聊天页，用状态机恢复到视频页")
+                self._recover_to_video_page(f"{feature_name}-B.5私信后恢复", max_back=6)
+            else:
+                try:
+                    if action_instance is not None:
+                        action_instance._close_comment_section()
+                    else:
+                        self._recover_to_video_page(f"{feature_name}-关闭评论区")
+                except Exception as exc:
+                    logger.warning(f"关闭评论区异常: {exc}")
 
         after_state = self._detect_page_state()
         logger.info(f"功能后状态[{feature_name}]: {after_state}")
@@ -666,9 +681,14 @@ class TikTokTaskFlow:
                                 self.db.update_interaction(video_id, "like")
                                 self._report(executed_action="点赞")
                                 self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.1", "msg": "点赞成功"})
+                            # FIX-11: 仅"页面不稳定"(stable=False) 才级联跳过后续功能；
+                            # "功能执行失败"(liked=False) 但页面稳定时不阻断 B.2/B.3/B.4。
                             if not stable:
                                 skip_remaining_features = True
                                 self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.1", "msg": "点赞失败(页面不稳定)"})
+                            elif not liked:
+                                logger.info("点赞未成功但页面稳定，继续执行后续功能")
+                                self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.1", "msg": "点赞未成功(页面稳定,不阻断)"})
                         else:
                             logger.info("限额/概率决策: 跳过点赞")
                             self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.1", "msg": "跳过点赞(限额/概率)"})
@@ -776,6 +796,10 @@ class TikTokTaskFlow:
                         logger.info("已关闭功能: AI 视频评论，跳过")
                         self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.3", "msg": "功能关闭:视频评论"})
 
+                    # FIX-08: V→C 之间增加间隔延迟，让 UI 充分 settle，避免 B.4 打开评论区时键盘残留或 UI 未就绪。
+                    # 与 B.1 后的 0.8~2.0s、B.2 后的 1.0~2.5s 保持一致。
+                    self._interruptible_sleep(random.uniform(0.8, 2.0))
+
                     # B.4 处理评论区 + B.5 楼中楼私信评论者（B.5 合并到 _run_comment_lead_safely 内部执行）
                     lead_result = None
                     if self._video_processing_timed_out(video_started_at):
@@ -785,7 +809,9 @@ class TikTokTaskFlow:
                         self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.4", "msg": "跳过(页面恢复失败)"})
                     elif self._interaction_enabled("enable_comment_lead"):
                         self._check_stop()
-                        if self._probability_allows('comment_lead'):
+                        # FIX-04 + FIX-13: B.4 与 B.3 共享 comment 配额，B.4 前必须检查配额，
+                        # 避免配额耗尽后 B.4 仍执行楼中楼回复导致超限。
+                        if self.anti.can_do('comment') and self._probability_allows('comment_lead'):
                             self._report(current_action="正在对评论区意向线索进行精准拦截")
                             # B.5 是否启用（影响 B.4 是否关闭评论区）
                             enable_lead_pm = self._interaction_enabled("enable_comment_lead_pm")
@@ -820,8 +846,8 @@ class TikTokTaskFlow:
                                 logger.warning(f"B.5 楼中楼私信失败: {reason}")
                                 self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.5", "msg": f"私信失败({reason})"})
                         else:
-                            logger.info("概率决策: 跳过评论区截流")
-                            self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.4", "msg": "跳过截流(概率)"})
+                            logger.info("限额/概率决策: 跳过评论区截流")
+                            self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.4", "msg": "跳过截流(comment限额/概率)"})
                     else:
                         logger.info("已关闭功能: 评论区 AI 截流/楼中楼回复，跳过")
                         self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.4", "msg": "功能关闭:评论区截流"})

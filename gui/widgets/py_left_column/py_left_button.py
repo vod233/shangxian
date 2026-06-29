@@ -236,7 +236,7 @@ class _ToolTip(QLabel):
         border-radius: 17px;
         border: 0px solid transparent;
         border-right: 3px solid {_context_color};
-        font: 800 9pt "Segoe UI";
+        font: 800 9pt "Fira Code", "Microsoft YaHei UI", sans-serif;
     }}
     """
     def __init__(

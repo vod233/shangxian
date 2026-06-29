@@ -7,10 +7,11 @@
 - 文字：#FFFFFF（主） / #D1D5DB（次） / #6B7280（弱）
 """
 import os
+import sys
 import json
 import requests
 from PySide6.QtCore import Qt, QThread, Signal, QSize
-from PySide6.QtGui import QFont, QIcon
+from PySide6.QtGui import QFont, QIcon, QFontDatabase
 from PySide6.QtWidgets import (
     QWidget, QScrollArea, QVBoxLayout, QHBoxLayout, QFormLayout,
     QLabel, QLineEdit, QPushButton, QSpinBox, QDoubleSpinBox, QSlider,
@@ -110,9 +111,87 @@ def app_state() -> AppState:
 
 
 # ======================== 字体工厂 ========================
+_FONT_FAMILY = None       # 缓存主字体族名
+_FONT_FAMILIES = None     # 缓存字体族名优先级列表（用于 setFamilies 回退）
+
+
+def _resolve_font_path(*parts) -> str:
+    """兼容开发模式与 PyInstaller 打包模式的字体路径解析。"""
+    base = getattr(sys, "_MEIPASS", None) or os.path.abspath(".")
+    return os.path.join(base, *parts)
+
+
+def _load_custom_font() -> tuple:
+    """加载自定义免费商用字体（仅加载一次，含多级兜底）。
+
+    返回 (主字体族名, 优先级列表)。
+
+    策略：英文用 Fira Code（OFL 编程字体，VSCode 风格），中文回退系统字体。
+    用户可手动放入更纱黑体/思源黑体等中文字体到 gui/fonts/，会自动优先使用。
+
+    候选字体（按优先级）：
+      1. SarasaUIsc-Regular.ttf     更纱黑体 UI SC（中英文，OFL，VSCode 风格）—— 需手动下载
+      2. FiraCode-Regular.ttf       Fira Code（英文，OFL，编程字体）—— 已下载
+      3. 系统已安装中文字体（Microsoft YaHei UI 等）
+    """
+    global _FONT_FAMILY, _FONT_FAMILIES
+    if _FONT_FAMILY is not None:
+        return _FONT_FAMILY, _FONT_FAMILIES
+
+    # 中英文全包含的字体（优先）：更纱黑体/思源黑体
+    full_cjk_candidates = [
+        "SarasaUIsc-Regular.ttf",
+        "NotoSansSC-Regular.ttf",
+        "HarmonyOS_Sans_SC_Regular.ttf",
+        "AlibabaPuHuiTi-3-55-Regular.ttf",
+    ]
+    # 仅英文的编程字体（需配合中文回退）
+    en_only_candidates = [
+        "FiraCode-Regular.ttf",
+        "CascadiaCode-Regular.ttf",
+        "JetBrainsMono-Regular.ttf",
+    ]
+
+    # 1. 优先尝试中英文全包含字体
+    for name in full_cjk_candidates:
+        font_path = _resolve_font_path("gui", "fonts", name)
+        if os.path.exists(font_path):
+            font_id = QFontDatabase.addApplicationFont(font_path)
+            if font_id != -1:
+                families = QFontDatabase.applicationFontFamilies(font_id)
+                if families:
+                    _FONT_FAMILY = families[0]
+                    _FONT_FAMILIES = [families[0]]
+                    return _FONT_FAMILY, _FONT_FAMILIES
+
+    # 2. 尝试英文编程字体（中文回退系统字体）
+    for name in en_only_candidates:
+        font_path = _resolve_font_path("gui", "fonts", name)
+        if os.path.exists(font_path):
+            font_id = QFontDatabase.addApplicationFont(font_path)
+            if font_id != -1:
+                families = QFontDatabase.applicationFontFamilies(font_id)
+                if families:
+                    _FONT_FAMILY = families[0]
+                    # 英文字体 + 系统中文字体回退
+                    _FONT_FAMILIES = [families[0], "Microsoft YaHei UI", "Microsoft YaHei"]
+                    return _FONT_FAMILY, _FONT_FAMILIES
+
+    # 3. 全部失败 → 系统字体兜底
+    _FONT_FAMILY = "Microsoft YaHei UI"
+    _FONT_FAMILIES = ["Microsoft YaHei UI", "Microsoft YaHei"]
+    return _FONT_FAMILY, _FONT_FAMILIES
+
+
 def font(size: int = 13, bold: bool = False) -> QFont:
-    """统一字体工厂：Microsoft YaHei UI。"""
-    f = QFont("Microsoft YaHei UI", size)
+    """统一字体工厂：英文用 Fira Code（OFL），中文回退系统字体。
+
+    使用 setFamilies 实现字符级回退：英文/数字用编程字体，中文用系统字体。
+    """
+    _, families = _load_custom_font()
+    f = QFont()
+    f.setFamilies(families)
+    f.setPointSize(size)
     f.setBold(bold)
     return f
 

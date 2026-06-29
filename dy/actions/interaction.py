@@ -121,8 +121,9 @@ class FollowAuthorAction(BaseAction):
         followed = False
         if min_followers > 0:
             if follower_count is None:
-                logger.info(f"作者粉丝数未知，已设置关注阈值({min_followers})，跳过关注")
-                should_follow = False
+                # FIX-06: 粉丝数提取失败时降级处理，不再静默跳过关注。
+                # 仅记录 warning，按"未知粉丝数"继续关注，避免 B.2 频繁静默失效。
+                logger.warning(f"作者粉丝数提取失败（已设阈值 {min_followers}），降级策略：继续关注")
             elif follower_count < min_followers:
                 logger.info(f"作者粉丝数({follower_count})低于关注阈值({min_followers})，跳过关注")
                 should_follow = False
@@ -613,17 +614,34 @@ class FollowAuthorAction(BaseAction):
         return None
 
     def _is_video_page_ready(self):
-        comment_nodes = self.d.xpath(L.COMMENT_BTN_DYNAMIC).all()
-        share_nodes = self.d.xpath(L.SHARE_BTN_DYNAMIC).all()
-        return len(comment_nodes) > 0 and len(share_nodes) > 0
+        """确认当前是抖音全屏视频页（4 特征评分 ≥3，避免在作者主页误判）。
+        特征：分享按钮 + 评论按钮 + 底部导航栏(首页/消息/我) + 视频容器。
+        作者主页不含底部导航栏，因此可有效区分视频页与作者主页。
+        """
+        try:
+            share_nodes = self.d.xpath(L.SHARE_BTN_DYNAMIC).all()
+            comment_nodes = self.d.xpath(L.COMMENT_BTN_DYNAMIC).all()
+            has_share = len(share_nodes) > 0
+            has_comment = len(comment_nodes) > 0
+            has_bottom_nav = any(
+                self.d(descriptionContains=label).exists(timeout=0.2)
+                for label in ("首页", "朋友", "消息", "我")
+            )
+            has_video_container = self.d(description="视频").exists(timeout=0.2)
+            score = sum(1 for present in (has_share, has_comment, has_bottom_nav, has_video_container) if present)
+            return score >= 3
+        except Exception as exc:
+            logger.debug(f"识别视频页失败: {exc}")
+            return False
 
     def _return_to_video_page(self):
         """从作者主页/私信页稳定返回视频页。"""
-        for attempt in range(2):
+        # FIX-07: 增加 back 重试次数（2→4），覆盖 PM 后 chat→profile→video 的多层返回。
+        for attempt in range(4):
             if self._is_video_page_ready():
                 logger.info("确认已经回到视频页")
                 return True
-            logger.info(f"尝试返回视频页... ({attempt + 1}/2)")
+            logger.info(f"尝试返回视频页... ({attempt + 1}/4)")
             self.d.press("back")
             self.human_sleep('normal')
 

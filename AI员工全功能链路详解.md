@@ -224,6 +224,11 @@ db.record_video(video_id, keyword, url, note_title=video_title):
 ### 5.0 `PipelineExecutor.run()` — 管道引擎
 **文件**: `dy/pipeline.py:63`
 
+> ⚠️ FIX-12 更正：`dy/pipeline.py` 实际不存在，文档原描述与代码不符。
+> 4 个步骤的管道执行逻辑实际内联在 `dy/task_runner.py` 的 `_video_loop()` 中
+> （B.1 见 task_runner.py:671，B.2 见 task_runner.py:695，B.3 见 task_runner.py:745，B.4 见 task_runner.py:798）。
+> 下文保留管道逻辑的概念性说明，便于理解步骤间的状态转移与阻断策略。
+
 ```
 pipeline.run(PIPELINE_STEPS, context)
 

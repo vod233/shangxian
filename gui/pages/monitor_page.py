@@ -79,7 +79,7 @@ class MonitorPage(BasePage):
             f"  background-color: #000000; color: {c('green')};"
             f"  border: 1px solid {c('dark_four')}; border-radius: 6px;"
             f"  padding: 10px; font-size: 13px;"
-            f"  font-family: 'Consolas', 'Courier New', monospace;"
+            f"  font-family: 'Fira Code', 'Consolas', 'Courier New', monospace;"
             f"}}"
         )
         self.log_edit.setFont(font(13))
