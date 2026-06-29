@@ -188,9 +188,12 @@ class TikTokTaskFlow:
             if ui_xml is None:
                 ui_xml = self._dump_ui()
             if ui_xml:
+                # FIX-B: 原代码用 "分享" in ui_xml and "按钮" in ui_xml 字符串子串搜索，
+                # 任意位置的"分享"和"按钮"字符都会命中（假阳性）。
+                # 改为对 content-desc 属性做正则匹配，要求同一属性同时包含目标关键词。
                 features = {
-                    "share": "分享" in ui_xml and "按钮" in ui_xml,
-                    "comment": "评论" in ui_xml and "按钮" in ui_xml,
+                    "share": bool(re.search(r'content-desc="[^"]*分享[^"]*按钮[^"]*"', ui_xml)),
+                    "comment": bool(re.search(r'content-desc="[^"]*评论[^"]*按钮[^"]*"', ui_xml)),
                     "bottom_nav": all(label in ui_xml for label in ("首页", "消息", "我")),
                     "video_container": "视频" in ui_xml,
                 }

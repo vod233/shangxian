@@ -244,12 +244,12 @@ class SQLiteDBManager:
             return False
 
     def get_daily_stats(self):
-        """获取当天的汇总统计数据"""
+        """获取当天的汇总统计数据（含4大功能模块指标）"""
         table_name = self._ensure_table()
         try:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
-                # 兼容旧表：lead_pm_sent 字段可能不存在，使用 try/except 兜底
+                # 兼容旧表：lead_sent/lead_pm_sent/pm_sent/intent_comment 字段可能不存在
                 try:
                     cursor.execute(f'''
                         SELECT
@@ -257,35 +257,69 @@ class SQLiteDBManager:
                             SUM(liked) as total_likes,
                             SUM(commented) as total_comments,
                             SUM(followed) as total_follows,
-                            SUM(private_messaged) as total_private_messages,
-                            SUM(lead_pm_sent) as total_lead_pms
+                            SUM(lead_sent) as total_lead_replies,
+                            SUM(pm_sent) as total_pm_sent,
+                            SUM(lead_pm_sent) as total_lead_pm_sent,
+                            SUM(CASE WHEN intent_comment IS NOT NULL AND intent_comment != '' THEN 1 ELSE 0 END) as total_leads
                         FROM {table_name}
                     ''')
                     row = cursor.fetchone()
-                    lead_pms = row[5] or 0
+                    lead_replies = row[4] or 0
+                    pm_sent = row[5] or 0
+                    lead_pm_sent = row[6] or 0
+                    leads = row[7] or 0
                 except Exception:
-                    cursor.execute(f'''
-                        SELECT
-                            COUNT(*) as total_videos,
-                            SUM(liked) as total_likes,
-                            SUM(commented) as total_comments,
-                            SUM(followed) as total_follows,
-                            SUM(private_messaged) as total_private_messages
-                        FROM {table_name}
-                    ''')
-                    row = cursor.fetchone()
-                    lead_pms = 0
+                    try:
+                        cursor.execute(f'''
+                            SELECT
+                                COUNT(*) as total_videos,
+                                SUM(liked) as total_likes,
+                                SUM(commented) as total_comments,
+                                SUM(followed) as total_follows,
+                                SUM(private_messaged) as total_private_messages,
+                                SUM(lead_pm_sent) as total_lead_pms
+                            FROM {table_name}
+                        ''')
+                        row = cursor.fetchone()
+                        lead_replies = 0
+                        pm_sent = row[4] or 0
+                        lead_pm_sent = row[5] or 0
+                        leads = 0
+                    except Exception:
+                        cursor.execute(f'''
+                            SELECT
+                                COUNT(*) as total_videos,
+                                SUM(liked) as total_likes,
+                                SUM(commented) as total_comments,
+                                SUM(followed) as total_follows,
+                                SUM(private_messaged) as total_private_messages
+                            FROM {table_name}
+                        ''')
+                        row = cursor.fetchone()
+                        lead_replies = 0
+                        pm_sent = row[4] or 0
+                        lead_pm_sent = 0
+                        leads = 0
                 return {
                     "videos": row[0] or 0,
                     "likes": row[1] or 0,
                     "comments": row[2] or 0,
                     "follows": row[3] or 0,
-                    "private_messages": row[4] or 0,
-                    "lead_pms": lead_pms
+                    "lead_replies": lead_replies,
+                    "pm_sent": pm_sent,
+                    "lead_pm_sent": lead_pm_sent,
+                    "leads": leads,
+                    # 保留旧字段兼容
+                    "private_messages": pm_sent,
+                    "lead_pms": lead_pm_sent,
                 }
         except Exception as e:
             logger.error(f"获取当天统计数据失败: {e}")
-            return {"videos": 0, "likes": 0, "comments": 0, "follows": 0, "private_messages": 0, "lead_pms": 0}
+            return {
+                "videos": 0, "likes": 0, "comments": 0, "follows": 0,
+                "lead_replies": 0, "pm_sent": 0, "lead_pm_sent": 0, "leads": 0,
+                "private_messages": 0, "lead_pms": 0,
+            }
 
     def get_daily_records(self, limit=100):
         """获取当天的详细操作记录，按时间倒序排列（含执行过程字段）"""

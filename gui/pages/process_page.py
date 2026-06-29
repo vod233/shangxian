@@ -3,6 +3,7 @@
 P1修复：_load() 改为异步（ApiWorker），消除 GUI 线程同步阻塞。
 P2修复：_on_action_done 回调中置 None 释放旧 worker 引用。
 """
+import sys
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QHBoxLayout, QLabel
 
@@ -79,7 +80,7 @@ class ProcessPage(BasePage):
             except RuntimeError:
                 pass
         worker = ApiWorker("GET", "/tasks/status")
-        worker.finished.connect(self._on_status_loaded)
+        worker.result_ready.connect(self._on_status_loaded)
         worker.start()
         self._status_worker = worker  # 防 GC
 
@@ -165,7 +166,7 @@ class ProcessPage(BasePage):
         self.set_status(f"正在执行 {action} ...", "info")
         payload = {"devices": selected, "platform": "douyin"}
         worker = ApiWorker("POST", path, json_body=payload)
-        worker.finished.connect(self._on_action_done)
+        worker.result_ready.connect(self._on_action_done)
         worker.start()
         self._action_worker = worker  # 防 GC
 

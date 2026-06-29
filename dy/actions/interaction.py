@@ -26,8 +26,15 @@ def _bounds_center(bounds):
 
 
 def _is_visible_enabled(node):
+    """严格判断节点是否真正可见且可用。
+
+    FIX-C: uiautomator2 的 info 字典键名是 `visibleToUser`（驼峰），不是 `visible`。
+    可见性缺失时默认 False（安全失败），避免误判。
+    """
     info = node.info
-    return info.get('visible', True) and info.get('enabled', True)
+    visible = info.get('visibleToUser', info.get('visible', False))
+    enabled = info.get('enabled', False)
+    return bool(visible) and bool(enabled)
 
 
 def _set_text_to_input(d, input_node, text):

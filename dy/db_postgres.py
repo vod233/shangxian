@@ -26,7 +26,7 @@ def _get_pool():
         from psycopg2 import pool as pg_pool_mod
         _pg_pool = pg_pool_mod.ThreadedConnectionPool(
             minconn=2,
-            maxconn=15,
+            maxconn=60,
             host=os.environ.get("PG_HOST", "127.0.0.1"),
             port=int(os.environ.get("PG_PORT", "5432")),
             dbname=os.environ.get("PG_DB", "scout"),
@@ -284,7 +284,7 @@ class PostgresDBManager:
             return False
 
     def get_daily_stats(self):
-        """获取当天的汇总统计数据"""
+        """获取当天的汇总统计数据（含4大功能模块指标）"""
         table_name = self._ensure_table()
         try:
             with self._get_cursor() as cur:
@@ -294,22 +294,35 @@ class PostgresDBManager:
                         COALESCE(SUM(liked), 0) AS total_likes,
                         COALESCE(SUM(commented), 0) AS total_comments,
                         COALESCE(SUM(followed), 0) AS total_follows,
-                        COALESCE(SUM(private_messaged), 0) AS total_private_messages,
-                        COALESCE(SUM(lead_pm_sent), 0) AS total_lead_pms
+                        COALESCE(SUM(lead_sent), 0) AS total_lead_replies,
+                        COALESCE(SUM(pm_sent), 0) AS total_pm_sent,
+                        COALESCE(SUM(lead_pm_sent), 0) AS total_lead_pm_sent,
+                        COALESCE(SUM(CASE WHEN intent_comment IS NOT NULL AND intent_comment != '' THEN 1 ELSE 0 END), 0) AS total_leads
                     FROM {table_name}
                 ''')
                 row = cur.fetchone()
+                pm_sent = row[5] or 0
+                lead_pm_sent = row[6] or 0
                 return {
                     "videos": row[0] or 0,
                     "likes": row[1] or 0,
                     "comments": row[2] or 0,
                     "follows": row[3] or 0,
-                    "private_messages": row[4] or 0,
-                    "lead_pms": row[5] or 0,
+                    "lead_replies": row[4] or 0,
+                    "pm_sent": pm_sent,
+                    "lead_pm_sent": lead_pm_sent,
+                    "leads": row[7] or 0,
+                    # 保留旧字段兼容
+                    "private_messages": pm_sent,
+                    "lead_pms": lead_pm_sent,
                 }
         except Exception as e:
             logger.error(f"获取当天统计数据失败: {e}")
-            return {"videos": 0, "likes": 0, "comments": 0, "follows": 0, "private_messages": 0, "lead_pms": 0}
+            return {
+                "videos": 0, "likes": 0, "comments": 0, "follows": 0,
+                "lead_replies": 0, "pm_sent": 0, "lead_pm_sent": 0, "leads": 0,
+                "private_messages": 0, "lead_pms": 0,
+            }
 
     def get_daily_records(self, limit=100):
         """获取当天的详细操作记录，按时间倒序排列（含执行过程字段）"""

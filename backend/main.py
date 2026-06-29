@@ -43,7 +43,7 @@ _task_status = {}
 _running_tasks = {}
 _stop_requested = set()
 # 全局线程池，限制最大并发设备数
-MAX_CONCURRENT_DEVICES = 10
+MAX_CONCURRENT_DEVICES = 50
 _task_executor = concurrent.futures.ThreadPoolExecutor(
     max_workers=MAX_CONCURRENT_DEVICES,
     thread_name_prefix="device_task"
@@ -882,11 +882,11 @@ def api_start_tasks(req: TaskStartRequest):
         clear_task_stop_request(serial)
         set_task_queued(serial, req.platform)
         # 使用全局线程池调度任务，支持最大 MAX_CONCURRENT_DEVICES 并发
-        _task_executor.submit(run_task_on_device, serial, req.platform, min(index * 0.5, 3.0))
+        _task_executor.submit(run_task_on_device, serial, req.platform, min(index * 0.5, 25.0))
         started_devices.append(serial)
 
     if started_devices:
-        message = f"成功提交 {len(started_devices)} 台设备任务（最大并发 {MAX_CONCURRENT_DEVICES} 台）"
+        message = f"成功提交 {len(started_devices)} 台设备任务（最大并发 10 台）"
         if skipped_devices:
             message += f"，已跳过 {len(skipped_devices)} 台启动中/运行中的设备"
         return {"success": True, "message": message, "data": {"devices": started_devices, "skipped": skipped_devices}}
@@ -978,6 +978,25 @@ def api_get_stats():
 def api_get_stats_details(limit: int = 100):
     records = db_manager.get_daily_records(limit=limit)
     return {"success": True, "data": records}
+
+
+@app.delete("/api/stats", summary="清空今日所有操作记录")
+def api_clear_today_stats():
+    """清空当日 records_YYYYMMDD 表的全部行（保留表结构）。
+
+    用于客户在 GUI 上手动重置今日数据。注意：
+    - 仅清空当日表，不影响历史日期表
+    - 不影响已配置的关键词、设备等设置
+    """
+    try:
+        if db_manager.reset_daily_progress():
+            logging.info("GUI 触发清空今日操作记录成功")
+            return {"success": True, "message": "今日操作记录已清空"}
+        logging.warning("GUI 触发清空今日操作记录失败")
+        return {"success": False, "message": "清空今日操作记录失败"}
+    except Exception as e:
+        logging.error(f"清空今日操作记录异常: {e}")
+        return {"success": False, "message": f"清空失败：{e}"}
 
 
 if __name__ == "__main__":

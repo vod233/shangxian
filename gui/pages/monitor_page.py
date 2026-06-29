@@ -99,7 +99,7 @@ class MonitorPage(BasePage):
             ("/tasks/status", None),
             ("/logs", None),
         ])
-        worker.finished.connect(self._on_load_done)
+        worker.result_ready.connect(self._on_load_done)
         worker.start()
         self._worker = worker  # 防 GC
 
@@ -142,21 +142,18 @@ class MonitorPage(BasePage):
     def _apply_task_status(self, raw_status: str):
         """根据状态更新指标卡文本与颜色。
 
-        make_metric_card 颜色 baked 进 QSS，无法直接换色，
-        故重建卡片并在原位置插入。
+        P8修复：原实现每2秒重建整个 make_metric_card widget（setParent(None) + 新建），
+        任务启动后状态频繁变化，旧 widget 被 GC 回收时 C++ 子对象被销毁，
+        但引用仍存在 → segfault。改为直接更新 QLabel 文本和样式，不重建 widget。
         """
         status_key = (raw_status or "").strip().lower()
         text = self.STATUS_TEXT.get(status_key, raw_status or "未知")
         color_key = self.STATUS_COLOR.get(status_key, "text_title")
-        new_card = make_metric_card(text, "当前任务状态", color=c(color_key))
-        # 替换原卡到原位置
-        parent_layout = self.status_metric.parent().layout()
-        idx = parent_layout.indexOf(self.status_metric)
-        parent_layout.removeWidget(self.status_metric)
-        self.status_metric.setParent(None)
-        parent_layout.insertWidget(idx, new_card)
-        self.status_metric = new_card
-        self.status_value_lb = new_card.findChildren(QLabel)[0]
+        # 直接更新现有 label 的文本和颜色，不重建 widget
+        self.status_value_lb.setText(text)
+        self.status_value_lb.setStyleSheet(
+            f"color: {c(color_key)}; background: transparent;"
+        )
 
     def _apply_device_status(self, status_dict: dict):
         """遍历 status_dict，为每台设备显示一行状态。

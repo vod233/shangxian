@@ -65,7 +65,7 @@ class SearchPage(BasePage):
         self.set_status("保存中...", "info")
         worker = ApiWorker("POST", "/config", json_body=payload,
                            params={"platform": "douyin"})
-        worker.finished.connect(self._on_save_done)
+        worker.result_ready.connect(self._on_save_done)
         worker.start()
         self._worker = worker  # 防 GC
 

@@ -158,14 +158,22 @@ class ApiWorker(QThread):
     """通用异步 HTTP 请求 worker，避免阻塞 UI。
 
     P2修复：与 MultiApiWorker 对齐，添加 deleteLater 自动清理和 is_running 重入保护。
+    P7修复：类级别引用池 _alive_workers，防止 worker 在 run() 未结束时
+           被调用方覆盖引用导致 Python GC 过早回收 C++ QThread 对象。
+           "QThread: Destroyed while thread is still running" 警告即由此引起。
+    P9修复（根因）：原代码用 `finished = Signal(dict)` 覆盖了 QThread 内置的
+           finished 信号，破坏 Qt 内部线程管理，导致 run() 返回时
+           STATUS_STACK_BUFFER_OVERRUN (0xC0000409) 崩溃。
+           改用自定义信号 result_ready 传递结果，保留内置 finished 用于清理。
 
     用法：
         worker = ApiWorker("GET", "/stats")
-        worker.finished.connect(self._on_done)
+        worker.result_ready.connect(self._on_done)
         worker.start()
-        self._worker = worker  # 防 GC
     """
-    finished = Signal(dict)
+    result_ready = Signal(dict)
+    # 类级别引用池：持有所有未完成 worker 的强引用，防止 GC 过早回收
+    _alive_workers = set()
 
     def __init__(self, method: str, path: str, json_body: dict = None,
                  params: dict = None, timeout: int = 15):
@@ -175,11 +183,14 @@ class ApiWorker(QThread):
         self.json_body = json_body
         self.params = params
         self.timeout = timeout
-        # P2修复：finished 信号触发后自动清理 QThread，避免对象累积泄漏
+        # 连接到 QThread 内置 finished 信号（run() 返回后自动发射），用于清理
         self.finished.connect(self._on_finished_cleanup)
+        # 注册到引用池，防止调用方覆盖引用后 GC 回收
+        self._alive_workers.add(self)
 
-    def _on_finished_cleanup(self):
-        """run() 完成后在事件循环中安全删除自身，防止 QThread 累积泄漏。"""
+    def _on_finished_cleanup(self, *_):
+        """run() 完成后从引用池移除并安全删除自身。"""
+        self._alive_workers.discard(self)
         self.deleteLater()
 
     def is_running(self) -> bool:
@@ -207,7 +218,7 @@ class ApiWorker(QThread):
             data["_status_code"] = resp.status_code
         except requests.RequestException as exc:
             data = {"success": False, "message": f"网络错误：{exc}", "_status_code": 0}
-        self.finished.emit(data)
+        self.result_ready.emit(data)
 
 
 class MultiApiWorker(QThread):
@@ -221,33 +232,42 @@ class MultiApiWorker(QThread):
     - run() 结束后自动调用 deleteLater()，避免 QThread 对象累积泄漏
     - 提供is_running()方法供调用方做重入保护，避免旧请求结果覆盖新请求
 
+    P7修复：类级别引用池，防止 worker 在 run() 未结束时被 GC 过早回收。
+    P9修复（根因）：原代码用 `finished = Signal(list)` 覆盖了 QThread 内置的
+           finished 信号，破坏 Qt 内部线程管理，导致 run() 返回时
+           STATUS_STACK_BUFFER_OVERRUN (0xC0000409) 崩溃。
+           改用自定义信号 result_ready 传递结果，保留内置 finished 用于清理。
+
     用法：
         worker = MultiApiWorker([("/stats", None), ("/tasks/status", None)])
-        worker.finished.connect(self._on_done)  # _on_done(results: list[dict])
+        worker.result_ready.connect(self._on_done)  # _on_done(results: list[dict])
         worker.start()
     """
-    finished = Signal(list)
+    result_ready = Signal(list)
+    # 类级别引用池：持有所有未完成 worker 的强引用，防止 GC 过早回收
+    _alive_workers = set()
 
     def __init__(self, requests_list: list, timeout: int = 10):
         """requests_list: [(path, params), ...]，params 可为 None。"""
         super().__init__()
         self.requests_list = requests_list
         self.timeout = timeout
-        # Review修复1：finished 信号触发后自动清理 QThread，避免对象累积
+        # 连接到 QThread 内置 finished 信号（run() 返回后自动发射），用于清理
         self.finished.connect(self._on_finished_cleanup)
+        self._alive_workers.add(self)
 
-    def _on_finished_cleanup(self):
-        """run() 完成后在事件循环中安全删除自身，防止 QThread 累积泄漏。"""
+    def _on_finished_cleanup(self, *_):
+        """run() 完成后从引用池移除并安全删除自身。"""
+        self._alive_workers.discard(self)
         self.deleteLater()
 
     def is_running(self) -> bool:
-        """Review修复2：返回线程是否仍在运行，供调用方做重入保护。
+        """返回线程是否仍在运行，供调用方做重入保护。
         若 C++ 对象已被 deleteLater 删除，返回 False（视作未运行）。
         """
         try:
             return self.isRunning()
         except RuntimeError:
-            # C++ 对象已被 deleteLater 删除
             return False
 
     def run(self):
@@ -259,7 +279,7 @@ class MultiApiWorker(QThread):
                 results.append(resp.json())
             except Exception as exc:
                 results.append({"success": False, "message": str(exc)})
-        self.finished.emit(results)
+        self.result_ready.emit(results)
 
 
 # ======================== 同步 HTTP 辅助（启动时加载配置用） ========================

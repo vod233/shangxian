@@ -96,7 +96,7 @@ class HomePage(BasePage):
             ("/tasks/status", None),
             ("/devices", None),
         ])
-        worker.finished.connect(self._on_load_done)
+        worker.result_ready.connect(self._on_load_done)
         worker.start()
         self._worker = worker  # 防 GC
 

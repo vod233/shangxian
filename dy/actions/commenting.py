@@ -25,8 +25,34 @@ def _click_node_center(d, node):
 
 
 def _is_visible_enabled(node):
+    """严格判断节点是否真正可见且可用。
+
+    FIX-C: uiautomator2 的 info 字典键名是 `visibleToUser`（驼峰），不是 `visible`。
+    原代码 `info.get("visible", True)` 总是命中默认值 True，导致隐藏的 EditText
+    被误判为可见，进而触发 FIX-10 的 press back 误关闭评论区。
+    可见性缺失时默认 False（安全失败），避免误判。
+    """
     info = node.info
-    return info.get("visible", True) and info.get("enabled", True)
+    # 优先 visibleToUser；老版本兼容 visible；缺失时默认 False
+    visible = info.get("visibleToUser", info.get("visible", False))
+    enabled = info.get("enabled", False)
+    return bool(visible) and bool(enabled)
+
+
+def _is_in_bottom_half(d, node, min_top_ratio=0.3):
+    """判断节点顶部是否在屏幕中下部以下（过滤掉位于顶部的搜索框等）。
+
+    FIX-C': 评论输入框通常在屏幕底部，搜索框在屏幕顶部。
+    min_top_ratio=0.3 表示节点 top 坐标需 >= 屏幕高度的 30%，
+    这样可过滤掉位于顶部的搜索框（top 通常 < 10% 屏高）。
+    """
+    try:
+        bounds = node.info.get("bounds", {}) or {}
+        top = bounds.get("top", 0)
+        _, screen_h = d.window_size()
+        return top >= int(screen_h * min_top_ratio)
+    except Exception:
+        return True  # 无法判断时不阻断，但 _is_visible_enabled 已严格化
 
 
 def _xpath_exists(d, xpath, timeout=0.1):
@@ -42,11 +68,19 @@ def _xpath_exists(d, xpath, timeout=0.1):
 
 
 def _find_bottom_edit_text(d, timeout=3):
-    """Find the visible, enabled edit box closest to the bottom of the screen."""
+    """Find the visible, enabled edit box closest to the bottom of the screen.
+
+    FIX-C': 在原 COMMENT_EDIT_TEXT_XPATH 基础上增加可见性 + 屏幕底部范围双重过滤，
+    避免搜索框、广告位等位于屏幕顶部的隐藏 EditText 被误判为评论输入框残留，
+    进而在 OpenCommentSectionAction 中误触发 press back 关闭评论区。
+    """
     deadline = time.time() + timeout
     while time.time() < deadline:
         edit_nodes = d.xpath(L.COMMENT_EDIT_TEXT_XPATH).all()
-        candidates = [node for node in edit_nodes if _is_visible_enabled(node)]
+        candidates = [
+            node for node in edit_nodes
+            if _is_visible_enabled(node) and _is_in_bottom_half(d, node)
+        ]
         if candidates:
             return sorted(candidates, key=_bounds_bottom)[-1]
         HumanSleep.sleep(custom_range=(0.3, 0.3))
@@ -58,7 +92,7 @@ def _find_clickable_send_button(d):
     send_nodes = d.xpath(L.COMMENT_SEND_BTN_XPATH).all()
     candidates = [
         node for node in send_nodes
-        if node.info.get("clickable", False) and node.info.get("visible", True) and node.info.get("enabled", True)
+        if node.info.get("clickable", False) and _is_visible_enabled(node)
     ]
     if candidates:
         return sorted(candidates, key=_bounds_bottom)[-1]
@@ -67,15 +101,11 @@ def _find_clickable_send_button(d):
     for resource_id in L.COMMENT_SEND_BTN_IDS:
         btn = d(resourceId=resource_id)
         if btn.exists(timeout=0.3):
-            info = btn.info
-            if info.get("clickable", False) and info.get("visible", True) and info.get("enabled", True):
+            if btn.info.get("clickable", False) and _is_visible_enabled(btn):
                 return btn
 
     # 策略3：楼中楼专用 — 放宽 clickable 限制（抖音楼中楼发送按钮可能 clickable=false 但可点）
-    loose_candidates = [
-        node for node in send_nodes
-        if node.info.get("visible", True) and node.info.get("enabled", True)
-    ]
+    loose_candidates = [node for node in send_nodes if _is_visible_enabled(node)]
     if loose_candidates:
         logger.info("[CS4]使用宽松策略定位楼中楼发送按钮")
         return sorted(loose_candidates, key=_bounds_bottom)[-1]
@@ -267,11 +297,12 @@ class PostCommentAction(BaseAction):
 class OpenCommentSectionAction(BaseAction):
     """打开评论区（根据规律寻找主评论区按钮）"""
     def execute(self):
-        # FIX-10: 打开评论区前强制关闭可能残留的键盘/输入框，
-        # 否则第一次点击评论区按钮可能仅关闭键盘而非打开评论区。
+        # FIX-10 + FIX-C: 打开评论区前关闭可能残留的评论输入框。
+        # 注意：_find_bottom_edit_text 已严格化（visibleToUser + 屏幕底部范围），
+        # 不会再误判隐藏的搜索框/广告位 EditText，避免在纯净视频页误触发 press back。
         try:
             if _find_bottom_edit_text(self.d, timeout=0.5):
-                logger.info("检测到残留输入框，先关闭键盘再打开评论区")
+                logger.info("检测到残留评论输入框，先关闭键盘再打开评论区")
                 self.d.press("back")
                 self.human_sleep('fast', custom_range=(0.5, 1.0))
         except Exception:
@@ -286,32 +317,64 @@ class OpenCommentSectionAction(BaseAction):
             if desc and re.match(r'^评论(评论|[\d万wWkK.]+.*)，按钮$', desc):
                 candidates.append(node)
 
-        if len(candidates) < 2:
-            logger.warning(f"未找到足够的评论按钮候选目标 (找到 {len(candidates)} 个)。尝试兜底定位...")
-            fallback_btn = self.d.xpath(L.COMMENT_BTN_FALLBACK)
-            if fallback_btn.wait(timeout=2):
+        if len(candidates) >= 2:
+            candidates.sort(key=lambda x: x.info['bounds']['top'])
+            target_node = candidates[1]
+            target_desc = target_node.info.get('contentDescription', '') or target_node.info.get('content-desc', '')
+
+            if "评论评论" in target_desc:
+                logger.info("当前视频可能为 0 评论")
+            else:
+                logger.info(f"成功锁定评论区入口，当前评论数标识: {target_desc}")
+
+            target_node.click()
+            self.human_sleep('normal', custom_range=(1.5, 3.0))
+            return True
+
+        # FIX-D: 候选不足时的安全兜底链路（不再 return True 造假）
+        logger.warning(f"未找到足够的评论按钮候选目标 (找到 {len(candidates)} 个)。尝试兜底定位...")
+        fallback_btn = self.d.xpath(L.COMMENT_BTN_FALLBACK)
+        if fallback_btn.wait(timeout=2):
+            try:
                 fallback_btn.click()
                 self.human_sleep('normal')
-                return True
-            else:
-                w, h = self.d.window_size()
-                logger.warning("兜底定位失败，尝试点击评论按钮常见区域坐标")
-                self.human_click(int(w * 0.92), int(h * 0.63))
-                self.human_sleep('normal')
-                return True
+                # 验证评论区是否真的打开
+                if self._comment_panel_opened():
+                    logger.info("兜底 XPath 点击后评论区已打开")
+                    return True
+                logger.warning("兜底 XPath 点击后评论区未打开")
+                return False
+            except Exception as exc:
+                logger.warning(f"兜底 XPath 点击异常: {exc}")
+                return False
 
-        candidates.sort(key=lambda x: x.info['bounds']['top'])
-        target_node = candidates[1]
-        target_desc = target_node.info.get('contentDescription', '') or target_node.info.get('content-desc', '')
+        # 最后坐标兜底：必须验证状态，失败返回 False，让上层 _run_comment_lead_safely 走 open_failed 分支
+        w, h = self.d.window_size()
+        logger.warning("XPath 兜底失败，尝试点击评论按钮常见区域坐标（安全模式）")
+        self.human_click(int(w * 0.92), int(h * 0.63))
+        self.human_sleep('normal', custom_range=(1.0, 2.0))
+        if self._comment_panel_opened():
+            logger.info("坐标兜底点击后评论区已打开")
+            return True
+        logger.warning("坐标兜底点击后评论区仍未打开，返回 False（不再造假）")
+        return False
 
-        if "评论评论" in target_desc:
-            logger.info("当前视频可能为 0 评论")
-        else:
-            logger.info(f"成功锁定评论区入口，当前评论数标识: {target_desc}")
-
-        target_node.click()
-        self.human_sleep('normal', custom_range=(1.5, 3.0))
-        return True
+    def _comment_panel_opened(self, timeout=2.0):
+        """验证评论区面板是否真的打开，避免误判。"""
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            try:
+                if self.d(resourceId=L.COMMENT_LIST_CONTAINER).exists(timeout=0.3):
+                    return True
+                if _xpath_exists(self.d, L.COMMENT_NO_MORE_TEXT, timeout=0.3):
+                    return True
+                # 评论区输入框出现也算打开
+                if _find_bottom_edit_text(self.d, timeout=0.3):
+                    return True
+            except Exception:
+                pass
+            HumanSleep.sleep(custom_range=(0.2, 0.2))
+        return False
 
 class ProcessCommentSectionAction(BaseAction):
     """处理评论区内容逻辑 (滑动并解析评论)"""

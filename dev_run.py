@@ -27,8 +27,24 @@ import threading
 import traceback
 import faulthandler
 
-# 启用 faulthandler：segfault 时打印 Python 堆栈跟踪
-faulthandler.enable()
+# 启用 faulthandler：segfault 时打印 Python 堆栈跟踪到文件和 stderr
+_fault_log = open(os.path.join(os.path.dirname(__file__), "crash_trace.log"), "w")
+faulthandler.enable(file=_fault_log, all_threads=True)
+
+# M2修复：安装全局 sys.excepthook，捕获 Python 层未捕获异常（如槽函数中的 TypeError），
+# faulthandler 只能捕获 C 级 segfault，无法捕获 Python 异常。
+# PySide6 槽函数异常会被静默吞掉，excepthook 能在 crash_trace.log 留下痕迹。
+_orig_excepthook = sys.excepthook
+def _excepthook(exctype, value, tb):
+    import traceback as _tb
+    _fault_log.write("=" * 60 + "\n")
+    _fault_log.write(f"未捕获异常 ({exctype.__name__}): {value}\n")
+    _tb.print_exception(exctype, value, tb, file=_fault_log)
+    _fault_log.write("=" * 60 + "\n")
+    _fault_log.flush()
+    # 同时输出到 stderr 便于控制台查看
+    _orig_excepthook(exctype, value, tb)
+sys.excepthook = _excepthook
 
 # 确保项目根目录在 sys.path
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))

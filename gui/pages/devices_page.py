@@ -171,7 +171,7 @@ class DevicesPage(BasePage):
         self.connect_btn.setEnabled(False)
         self.set_status("正在连接...", "info")
         worker = ApiWorker("POST", "/devices/connect", json_body={"ip_port": ip_port})
-        worker.finished.connect(self._on_action_done)
+        worker.result_ready.connect(self._on_action_done)
         worker.start()
         self._worker = worker  # 防 GC
 
@@ -186,7 +186,7 @@ class DevicesPage(BasePage):
         self.set_status("正在配对...", "info")
         worker = ApiWorker("POST", "/devices/pair",
                           json_body={"ip_port": pair_ip, "code": pair_code})
-        worker.finished.connect(self._on_action_done)
+        worker.result_ready.connect(self._on_action_done)
         worker.start()
         self._worker = worker  # 防 GC
 
@@ -195,7 +195,7 @@ class DevicesPage(BasePage):
         self.usb_btn.setEnabled(False)
         self.set_status("正在检测 USB 设备...", "info")
         worker = ApiWorker("POST", "/devices/usb/detect")
-        worker.finished.connect(self._on_action_done)
+        worker.result_ready.connect(self._on_action_done)
         worker.start()
         self._worker = worker  # 防 GC
 
@@ -204,7 +204,7 @@ class DevicesPage(BasePage):
         self.set_status(f"正在断开 {serial} ...", "info")
         worker = ApiWorker("POST", "/devices/disconnect",
                           json_body={"ip_port": serial})
-        worker.finished.connect(self._on_action_done)
+        worker.result_ready.connect(self._on_action_done)
         worker.start()
         self._worker = worker  # 防 GC
 

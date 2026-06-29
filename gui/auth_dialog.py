@@ -20,8 +20,16 @@ API_BASE_URL = os.environ.get("APP_API_URL", "http://127.0.0.1:8000/api")
 
 # ======================== 异步网络请求线程 ========================
 class _AuthWorker(QThread):
-    """在后台线程发起 HTTP 请求，避免阻塞 UI。"""
-    finished = Signal(dict)
+    """在后台线程发起 HTTP 请求，避免阻塞 UI。
+
+    P7修复：类级别引用池，防止 worker 在 run() 未结束时被 GC 过早回收。
+    P9修复（根因）：原代码用 `finished = Signal(dict)` 覆盖了 QThread 内置的
+           finished 信号，破坏 Qt 内部线程管理，导致 run() 返回时
+           STATUS_STACK_BUFFER_OVERRUN (0xC0000409) 崩溃。
+           改用自定义信号 result_ready 传递结果，保留内置 finished 用于清理。
+    """
+    result_ready = Signal(dict)
+    _alive_workers = set()
 
     def __init__(self, method: str, path: str, json_body: dict = None, token: str = ""):
         super().__init__()
@@ -29,6 +37,13 @@ class _AuthWorker(QThread):
         self.path = path
         self.json_body = json_body or {}
         self.token = token
+        # 连接到 QThread 内置 finished 信号（run() 返回后自动发射），用于清理
+        self.finished.connect(self._on_finished_cleanup)
+        self._alive_workers.add(self)
+
+    def _on_finished_cleanup(self, *_):
+        self._alive_workers.discard(self)
+        self.deleteLater()
 
     def run(self):
         url = f"{API_BASE_URL.rstrip('/')}{self.path}"
@@ -47,7 +62,7 @@ class _AuthWorker(QThread):
             data["_status_code"] = resp.status_code
         except requests.RequestException as exc:
             data = {"success": False, "message": f"网络错误：{exc}", "_status_code": 0}
-        self.finished.emit(data)
+        self.result_ready.emit(data)
 
 
 # ======================== 登录对话框 ========================
@@ -274,7 +289,7 @@ class LoginDialog(QDialog):
             return
         self._set_loading(True)
         self._worker = _AuthWorker("POST", "/auth/login", {"email": email, "password": password})
-        self._worker.finished.connect(self._on_login_done)
+        self._worker.result_ready.connect(self._on_login_done)
         self._worker.start()
 
     def _on_login_done(self, data: dict):
@@ -300,7 +315,7 @@ class LoginDialog(QDialog):
             return
         self._set_loading(True)
         self._worker = _AuthWorker("POST", "/auth/register", {"email": email, "password": password})
-        self._worker.finished.connect(self._on_register_done)
+        self._worker.result_ready.connect(self._on_register_done)
         self._worker.start()
 
     def _on_register_done(self, data: dict):

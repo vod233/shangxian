@@ -190,7 +190,7 @@ class StrategyPage(BasePage):
         worker = ApiWorker("POST", "/config",
                            json_body=self._collect_payload(),
                            params={"platform": "douyin"})
-        worker.finished.connect(self._on_save_done)
+        worker.result_ready.connect(self._on_save_done)
         worker.start()
         self._worker = worker  # 防 GC
 
@@ -220,7 +220,7 @@ class StrategyPage(BasePage):
         worker = ApiWorker("POST", "/license/save",
                           json_body=license_payload,
                           params={"platform": "douyin"})
-        worker.finished.connect(self._on_verify_done)
+        worker.result_ready.connect(self._on_verify_done)
         worker.start()
         self._worker = worker  # 防 GC
 

@@ -51,7 +51,7 @@ def _get_pg_pool():
         from psycopg2 import pool as pg_pool_mod
         _pg_pool = pg_pool_mod.ThreadedConnectionPool(
             minconn=2,
-            maxconn=10,
+            maxconn=20,
             host=os.environ.get("PG_HOST", "127.0.0.1"),
             port=int(os.environ.get("PG_PORT", "5432")),
             dbname=os.environ.get("PG_DB", "scout"),
