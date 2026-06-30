@@ -4,7 +4,7 @@ search:
   - macbook
   sort_by: latest
 crawler:
-  max_daily_videos: 10000
+  max_daily_videos: 9999
   max_videos_per_keyword: 50
   min_video_stay: 1
   max_video_stay: 2
@@ -13,8 +13,8 @@ target:
   keywords: []
   reply_texts: []
 interaction:
-  max_comment_swipes: 2
-  max_ai_comment_reviews: 20
+  max_comment_swipes: 3
+  max_ai_comment_reviews: 30
   intent_keywords:
   - 多少，价格，出
   keyword_override_ai: true

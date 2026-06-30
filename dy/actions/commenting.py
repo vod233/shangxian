@@ -456,6 +456,7 @@ class ProcessCommentSectionAction(BaseAction):
         # 保存意向评论信息（供 B.5 楼中楼私信评论者复用）
         self.lead_comment_node = None
         self.lead_comment_text = ""
+        self.lead_reply_text = ""  # 保存 AI 生成的回复文本，供 DB 记录
         self.lead_reply_sent = False
         # keep_open_after_lead=True 时，发现意向评论后不关闭评论区（供 B.5 在评论区打开状态下操作）
         keep_open_after_lead = bool(getattr(self, 'keep_open_after_lead', False))
@@ -515,18 +516,17 @@ class ProcessCommentSectionAction(BaseAction):
             logger.info("keep_open_after_lead=True，保留评论区打开状态供 B.5 使用")
             return True
 
-        # === 无意向客户兜底策略：回复并私信前 N 条评论 ===
-        # 规则：评论区非空但没有命中意向关键词时，取前 5 条有效评论逐一回复+私信，
-        # 确保私信功能被客户感知。"宁愿错杀也不放过"。
+        # === 无意向客户兜底（错杀保底，核心铁律 2）===
+        # 评论区非空但没命中任何意向评论时立即激活：取前 N 位【真实一级路人评论者】
+        # 逐人"回复 + 私信"，宁愿错杀，不能放过；可见不足 N 个时滑动加载，仍不足则有多少处理多少。
         if self.lead_comment_node is None:
+            fallback_top_n = int(self.config.get('interaction', {}).get('fallback_top_comment_count', 5) or 5)
             fallback_count = self._fallback_reply_and_dm_top_comments(
-                processed_comments, ai_agent, video_title, keyword, max_count=5,
-                do_dm=keep_open_after_lead,  # 复用 task_runner 已做好的配额/概率检查
+                ai_agent, video_title, keyword, max_count=fallback_top_n,
+                do_dm=keep_open_after_lead,  # 复用 task_runner 已做好的 enable_lead_pm + 配额 + 概率检查
             )
             if fallback_count > 0:
-                # 兜底已处理（含私信导航），评论区可能已关闭；交给上层恢复
-                logger.info(f"兜底策略完成：已回复+私信 {fallback_count} 条评论")
-                # 标记供 B.4/B.5 统计：lead_reply_sent=True + lead_pm_sent_count 已在方法内设置
+                logger.info(f"兜底策略完成：已处理 {fallback_count} 位路人评论者")
                 self.lead_reply_sent = True
                 self.lead_comment_text = "fallback"  # 非空标记，区分"真无意向兜底"与"有意向但失败"
                 return True
@@ -620,6 +620,11 @@ class ProcessCommentSectionAction(BaseAction):
             return False
         sent = self._send_comment_workflow(comment_node, comment_to_send)
         _close_comment_input_if_open(self.d, comment_to_send)
+        # 回复后评论区自动下滚会遮盖评论者头像，轻滑上移复位
+        self._scroll_to_reveal_top()
+        # 保存回复文本供 DB 记录
+        if sent:
+            self.lead_reply_text = comment_to_send
         self.human_sleep('normal')
         return sent
 
@@ -771,6 +776,29 @@ class ProcessCommentSectionAction(BaseAction):
             logger.error(f"滑动异常: {e}")
             return False
 
+    def _scroll_to_reveal_top(self, distance_px=250):
+        """轻量下滑复位：楼中楼回复后评论区因内容插入自动上滚，评论者头像被推到屏幕顶端。
+        在评论区区域内往下轻滑一段，把顶部内容拉回来让头像重新可见。
+        Android 自然滚动：手指从上部滑向下部（DOWN swipe）→ 内容下移 → 顶部内容可见。
+        """
+        try:
+            w, h = self.d.window_size()
+            # 评论区上部区域往下滑：手指从 45% 滑到 45%+distance
+            sy = int(h * 0.45)
+            ey = int(h * 0.45) + distance_px
+            if ey > h:
+                ey = h - 10
+            self.human_swipe_curve(
+                w // 2 + random.randint(-20, 20), sy,
+                w // 2 + random.randint(-20, 20), ey,
+                duration=random.uniform(0.08, 0.14)
+            )
+            self.human_sleep('fast', custom_range=(0.3, 0.6))
+            return True
+        except Exception as e:
+            logger.debug(f"下滑复位异常: {e}")
+            return False
+
     def _comment_panel_open(self):
         try:
             if self.d(resourceId=L.COMMENT_LIST_CONTAINER).exists(timeout=0.2):
@@ -798,104 +826,214 @@ class ProcessCommentSectionAction(BaseAction):
             nodes = self.d.xpath(L.COMMENT_TEXT_XPATH).all()
         return nodes
 
-    def _fallback_reply_and_dm_top_comments(self, processed_comments, ai_agent, video_title, keyword, max_count=5, do_dm=False):
-        """无意向客户兜底：取前 N 条有效评论，先全部回复，再逐个私信。
-        先回复后私信的顺序是因为私信会导航离开评论区导致节点引用失效。
-        do_dm 由上层 _run_comment_lead_safely 传入，已包含 enable_comment_lead_pm + lead_pm 配额 + 概率检查。
-        返回实际处理条数。
+    # ---------- 兜底（错杀保底）相关：一级路人评论的提取 / 过滤 / 强发 ----------
+
+    @staticmethod
+    def _card_field(card_elem, suffix):
+        """在卡片 lxml 子树内取 resource-id 以 suffix 结尾的第一个节点（如 '/content'、'/title'）。"""
+        try:
+            for sub in card_elem.iter():
+                if sub.attrib.get('resource-id', '').endswith(suffix):
+                    return sub
+        except Exception:
+            pass
+        return None
+
+    @staticmethod
+    def _card_has_clickable_avatar(card_elem):
+        """卡片内是否含 clickable 头像。这是【一级真实路人评论】的可靠标志：
+        楼中楼二级回复/作者回复在该卡片内没有独立可点击头像，自然被排除，
+        同时保证了'头像与主页入口强绑定'——能取到头像才会被纳入兜底。"""
+        try:
+            for sub in card_elem.iter():
+                if (sub.attrib.get('resource-id', '').endswith('/avatar')
+                        and sub.attrib.get('clickable') == 'true'):
+                    return True
+        except Exception:
+            pass
+        return False
+
+    @staticmethod
+    def _card_is_pinned_or_author(card_elem):
+        """卡片是否为'置顶'或'作者'评论（需排除）。"""
+        try:
+            for sub in card_elem.iter():
+                t = str(sub.attrib.get('text', '') or '').strip()
+                d = str(sub.attrib.get('content-desc', '') or '')
+                if t in ('置顶', '作者') or '置顶' in d:
+                    return True
+        except Exception:
+            pass
+        return False
+
+    def _collect_top_level_targets(self, max_count=5, max_load_swipes=1):
+        """收集前 N 位【一级真实路人评论者】(核心铁律 2)。
+
+        过滤规则：① 必须含 clickable 头像（排除楼中楼二级回复——它们无头像）；
+                  ② 排除'置顶'/'作者'评论；③ 排除当前账号自己的评论（按 self_nickname，未配则跳过该项）；
+                  ④ content 文本非空。
+        数量不足且未到底时【向下滑动加载更多】，最多 max_load_swipes 次；
+        仍不足则返回已收集到的（有多少处理多少），绝不因数量不足报错。
+        返回 [{'text':..., 'author':...}, ...]（长度 ≤ max_count，可能为 0）。
         """
-        if not do_dm:
-            logger.info("兜底策略：私信未启用或配额/概率限制，仅回复不私信")
+        self_nick = str(self.config.get('interaction', {}).get('self_nickname', '') or '').strip()
+        seen = set()
+        targets = []
+        swipes = 0
+        while True:
+            try:
+                cards = self.d.xpath(f'//*[@resource-id="{L.COMMENT_CARD_CONTAINER_ID}"]').all()
+            except Exception:
+                cards = []
+            for card in cards:
+                elem = getattr(card, 'elem', None)
+                if elem is None:
+                    continue
+                if not self._card_has_clickable_avatar(elem):
+                    continue  # 非一级路人评论（无头像 => 无法进主页私信）
+                if self._card_is_pinned_or_author(elem):
+                    continue
+                content_sub = self._card_field(elem, '/content')
+                text = str(content_sub.attrib.get('text', '') or '').strip() if content_sub is not None else ''
+                if not text or len(text) < 2:
+                    continue
+                title_sub = self._card_field(elem, '/title')
+                author = str(title_sub.attrib.get('text', '') or '').strip() if title_sub is not None else ''
+                if self_nick and author and author == self_nick:
+                    continue  # 排除自己的评论
+                key = f"{author}|{text}"
+                if key in seen:
+                    continue
+                seen.add(key)
+                targets.append({'text': text, 'author': author})
+                if len(targets) >= max_count:
+                    return targets
+            # 数量不足：受控加载更多
+            if swipes >= max_load_swipes:
+                break
+            if _xpath_exists(self.d, L.COMMENT_NO_MORE_TEXT, timeout=0.3):
+                break
+            if not self._swipe_up_comments():
+                break
+            swipes += 1
+            HumanSleep.sleep(custom_range=(0.8, 1.2))
+        return targets
+
+    def _fallback_reply_and_dm_top_comments(self, ai_agent, video_title, keyword, max_count=5, do_dm=False):
+        """无意向客户兜底（错杀保底）：依次对前 N 位一级路人评论者执行"回复 + 私信"。
+
+        逐人原子处理（回复→紧接私信→返回评论区），相比"先全回复再全私信"对 UI 抖动更稳健，
+        且天然满足核心铁律 3：每处理完一个人都过一次 _guard()（停止 + 单视频墙钟超时）。
+        do_dm 由上层传入，已含 enable_comment_lead_pm + lead_pm 配额 + 概率检查。
+        返回实际处理（已回复）人数；私信成功数记于 self.lead_pm_sent_count。
+        """
+        targets = self._collect_top_level_targets(max_count=max_count, max_load_swipes=1)
+        if not targets:
+            logger.warning("兜底策略：评论区无可处理的一级路人评论，跳过兜底")
+            return 0
+
         lead_pm_messages = self.config.get('interaction', {}).get('lead_pm_message_list', [])
         if do_dm and not lead_pm_messages:
-            logger.warning("兜底私信: lead_pm_message_list 为空，仅回复不私信")
+            logger.warning("兜底私信: lead_pm_message_list 为空，降级为仅回复不私信")
+            do_dm = False
+        if not do_dm:
+            logger.info("兜底策略：私信未启用/配额/概率限制，仅回复不私信")
 
-        text_nodes = self._get_visible_comment_nodes()
-        if not text_nodes:
-            logger.warning("兜底策略：当前屏幕无可见评论节点")
-            return 0
-
-        # 阶段1: 收集前 N 条有效评论（节点+文本）
-        targets = []  # [(node, text), ...]
-        for node in text_nodes:
-            text = str(node.info.get('text', '') or '').strip()
-            if not text or text in processed_comments:
-                continue
-            if not self._is_reviewable_comment(text):
-                continue
-            if len(targets) >= max_count:
-                break
-            targets.append((node, text))
-            processed_comments.add(text)
-
-        if not targets:
-            logger.warning("兜底策略：当前屏幕无符合条件的评论")
-            return 0
-
-        # 阶段2: 在评论区仍打开状态下，先逐一回复所有目标评论
-        logger.info(f"兜底阶段1: 回复前 {len(targets)} 条评论")
-        for i, (node, text) in enumerate(targets):
-            deadline = getattr(self, 'deadline_ts', None)
-            if deadline is not None and time.time() > deadline:
-                logger.warning("兜底阶段1：超过单视频时间预算，提前结束回复")
-                targets = targets[:i]  # 只私信已回复的
-                break
-            logger.info(f"🎯 兜底回复 [{i + 1}/{len(targets)}]: {text[:30]}")
-            reply = ai_agent.generate_lead_reply(text, video_title=video_title, keyword=keyword)
-            if reply:
-                self._send_comment_workflow(node, reply)
-                _close_comment_input_if_open(self.d, reply)
-                self.human_sleep('fast')
-            else:
-                logger.warning(f"兜底回复 [{i + 1}]: 未能生成回复，仍尝试私信")
-
-        # 阶段3: 通过评论文本重新定位，逐一私信（每次私信后需回到评论区重新查找下一个）
-        if not do_dm or not lead_pm_messages:
-            return len(targets)
-
+        logger.info(f"兜底策略激活：依次处理前 {len(targets)} 位路人评论者"
+                    f"（{'回复+私信' if do_dm else '仅回复'}，有多少处理多少）")
         self.lead_pm_sent_count = 0
-        logger.info(f"兜底阶段2: 私信前 {len(targets)} 位评论者")
-        for i, (_, text) in enumerate(targets):
-            deadline = getattr(self, 'deadline_ts', None)
-            if deadline is not None and time.time() > deadline:
-                logger.warning("兜底阶段2：超过单视频时间预算，提前结束私信")
-                break
-
-            logger.info(f"📨 兜底私信 [{i + 1}/{len(targets)}]: {text[:30]}")
+        self.lead_reply_fallback_count = 0
+        for i, tgt in enumerate(targets):
+            text = tgt['text']
+            # 核心铁律 3：每处理一个人前熔断检查。停止 -> InterruptedError 上抛终止任务；
+            # 单视频超时 -> 捕获后优雅退出，不继续。
             try:
-                # 通过文本重新定位评论节点（阶段1回复后 UI 可能已刷新）
-                refound = _refind_comment_node_by_text(self.d, text)
-                if refound is None:
-                    logger.warning(f"兜底私信 [{i + 1}]: 无法通过文本重定位节点，跳过")
-                    continue
+                self._guard()
+            except TimeoutError:
+                logger.warning(f"兜底：单视频墙钟超时，提前结束（已处理 {self.lead_reply_fallback_count}/{len(targets)}）")
+                break
+            logger.info(f"🎯 兜底处理 [{i + 1}/{len(targets)}]: {text[:30]}")
+            if i == 0:
+                # 首条评论常被面板标题遮挡导致坐标点击失效，先轻滑复位
+                self._scroll_to_reveal_top(distance_px=120)
+            try:
+                if self._fallback_handle_one(text, ai_agent, video_title, keyword, do_dm, lead_pm_messages):
+                    self.lead_reply_fallback_count += 1
+            except TimeoutError:
+                logger.warning(f"兜底：处理第 {i + 1} 人时单视频超时，提前结束")
+                break
+            # InterruptedError（用户停止）不在此捕获，向上传播，立即终止整条链路
 
-                pm_action = CommentLeadPmAction(
-                    u2_device=self.d,
-                    app_manager=self.app,
-                    config=self.config,
-                    lead_comment_node=refound,
-                    lead_comment_text=text,
-                )
-                pm_result = pm_action.perform()
-                pm_sent = isinstance(pm_result, dict) and pm_result.get("pm_sent", False)
-                if pm_sent:
-                    self.lead_pm_sent_count += 1
-                logger.info(f"兜底私信 [{i + 1}]: {'成功' if pm_sent else '失败'}")
+        logger.info(f"兜底完成：已处理 {self.lead_reply_fallback_count} 位，私信成功 {self.lead_pm_sent_count} 位")
+        return self.lead_reply_fallback_count
 
-                # 从私信聊天页逐层返回：chat → profile → video(+评论区 overlay)
-                self.d.press("back")
-                self.human_sleep('normal')
-                # 验证已离开聊天页（不再有 msg_et 输入框）
-                if self.d(resourceId=L.PM_EDIT_TEXT_ID).exists(timeout=0.5):
-                    logger.warning(f"兜底私信 [{i + 1}]: back 后仍在聊天页，再按一次")
-                    self.d.press("back")
-                    self.human_sleep('fast')
-                self.d.press("back")
-                self.human_sleep('normal')
+    def _fallback_handle_one(self, text, ai_agent, video_title, keyword, do_dm, lead_pm_messages):
+        """兜底单人处理：① 楼中楼回复 ② 头像强绑定后私信。返回是否完成回复阶段。"""
+        node = _refind_comment_node_by_text(self.d, text)
+        if node is None:
+            logger.warning(f"兜底：评论已不可见（可能已滑走），跳过: {text[:20]}")
+            return False
+
+        # ① 楼中楼回复（TimeoutError 上抛，由调用方熔断；其他异常不阻断后续私信）
+        reply = ai_agent.generate_lead_reply(text, video_title=video_title, keyword=keyword)
+        if reply:
+            try:
+                self._send_comment_workflow(node, reply)
+            except (TimeoutError, InterruptedError):
+                raise  # 超时/用户停止：上抛，分别触发熔断/终止
             except Exception as exc:
-                logger.warning(f"兜底私信 [{i + 1}]: 异常: {exc}")
+                logger.warning(f"兜底回复异常（继续尝试私信）: {exc}")
+            _close_comment_input_if_open(self.d, reply)
+            self._scroll_to_reveal_top()  # 回复后评论区下滚遮盖头像，下滑复位
+            self.human_sleep('fast')
+        else:
+            logger.info("兜底：未生成回复文本，仅尝试私信")
 
-        return len(targets)
+        # ② 私信：回复后 UI 已变，重新按文本定位同一卡片 -> 卡片内头像 -> 进主页发私信
+        if do_dm and lead_pm_messages:
+            self._fallback_dm_one(text)
+        return True
+
+    def _fallback_dm_one(self, text):
+        """兜底单人私信：复用 CommentLeadPmAction（含头像卡片反查 + 主页私信全链路 + 熔断）。"""
+        node = _refind_comment_node_by_text(self.d, text)
+        if node is None:
+            logger.warning("兜底私信：回复后评论卡片不可见，跳过私信")
+            return
+        pm_action = CommentLeadPmAction(
+            u2_device=self.d,
+            app_manager=self.app,
+            config=self.config,
+            lead_comment_node=node,
+            lead_comment_text=text,
+            check_stop_callback=getattr(self, 'check_stop_callback', None),  # 铁律3：停止可即时打断
+            deadline_ts=getattr(self, 'deadline_ts', None),                 # 铁律3：纳入单视频墙钟
+        )
+        sent = False
+        try:
+            res = pm_action.perform()
+            sent = isinstance(res, dict) and res.get('pm_sent', False)
+        except InterruptedError:
+            raise  # 用户停止：向上传播
+        except Exception as exc:
+            logger.warning(f"兜底私信异常: {exc}")
+        if sent:
+            self.lead_pm_sent_count += 1
+        logger.info(f"兜底私信结果: {'成功' if sent else '失败'}")
+        # 从主页/聊天页返回评论区 overlay，供下一位继续
+        self._return_from_profile_to_comments()
+
+    def _return_from_profile_to_comments(self, max_back=3):
+        """私信后从 聊天页/个人主页 逐层 back 回到评论区 overlay；回不到也不报错。"""
+        for _ in range(max_back):
+            if self._comment_panel_open():
+                return True
+            try:
+                self.d.press("back")
+            except Exception:
+                break
+            self.human_sleep('normal', custom_range=(0.8, 1.4))
+        return self._comment_panel_open()
 
     def _close_comment_section(self):
         for attempt in range(3):
@@ -1192,15 +1330,25 @@ class CommentLeadPmAction(BaseAction):
             return False
 
         try:
-            has_fans = (
+            # 新版 Douyin 个人主页特征多样化：粉丝/获赞/作品/关注/编辑资料/私信按钮均表示已进入主页
+            has_profile_markers = (
                 self.d(text="粉丝").exists(timeout=1.0)
                 or self.d(text="获赞").exists(timeout=0.5)
                 or self.d(text="作品").exists(timeout=0.5)
+                or self.d(text="关注").exists(timeout=0.5)
+                or self.d(text="编辑资料").exists(timeout=0.5)
+                or self.d(text="私信").exists(timeout=0.5)
             )
-            if has_fans:
+            # 兜底：检查私信按钮 zbl（已进入主页的直接证据）
+            has_pm_btn = False
+            try:
+                has_pm_btn = self.d.xpath(L.COMMENTER_PM_BTN_XPATH).wait(timeout=0.5)
+            except Exception:
+                pass
+            if has_profile_markers or has_pm_btn:
                 logger.info("B.5 已进入评论者主页")
                 return True
-            logger.warning("B.5 未检测到评论者主页特征（粉丝/获赞/作品）")
+            logger.warning("B.5 未检测到评论者主页特征（粉丝/获赞/作品/关注/编辑资料/私信/zbl）")
             return False
         except Exception as exc:
             logger.warning(f"B.5 验证评论者主页异常: {exc}")

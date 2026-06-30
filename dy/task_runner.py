@@ -364,6 +364,11 @@ class TikTokTaskFlow:
         comment_section_open = False  # 跟踪评论区是否仍打开（B.5 需要在此状态下执行）
         pm_executed = False  # FIX-02: 标记 B.5 是否执行过，决定关闭评论区的方式
         action_instance = None
+        # 提前初始化，避免 try 内早抛异常后 return 处引用未定义变量（NameError）
+        lead_pm_fallback_count = 0
+        lead_reply_fallback_count = 0
+        lead_comment_text = ""
+        lead_reply_text = ""
         try:
             opened = self.runner.run_action(OpenCommentSectionAction)
             self._dismiss_video_context_menu_if_present()
@@ -398,8 +403,12 @@ class TikTokTaskFlow:
             lead_reply_sent = bool(getattr(action_instance, 'lead_reply_sent', False))
             # FIX-05: 同时读取意向评论文本，供 B.5 重新定位节点
             lead_comment_text = getattr(action_instance, 'lead_comment_text', '') or ''
+            # 读取 AI 生成的回复文本，供 DB 记录
+            lead_reply_text = getattr(action_instance, 'lead_reply_text', '') or ''
             # 兜底策略私信计数（_fallback_reply_and_dm_top_comments 内部完成的私信）
             lead_pm_fallback_count = int(getattr(action_instance, 'lead_pm_sent_count', 0) or 0)
+            # 兜底回复人数（用于准确统计楼中楼回复条数，避免用私信数反推）
+            lead_reply_fallback_count = int(getattr(action_instance, 'lead_reply_fallback_count', 0) or 0)
 
             if enable_lead_pm and lead_comment_node is not None:
                 comment_section_open = True  # keep_open_after_lead=True 时评论区仍打开
@@ -456,7 +465,7 @@ class TikTokTaskFlow:
         recovered = self._recover_to_video_page(f"{feature_name}-执行后")
         if not recovered:
             logger.warning(f"功能[{feature_name}]后恢复失败，跳过当前视频剩余功能")
-        return {"recovered": recovered, "lead_reply_sent": lead_reply_sent, "lead_pm_sent": lead_pm_sent, "lead_pm_reason": lead_pm_reason, "lead_pm_fallback_count": lead_pm_fallback_count}
+        return {"recovered": recovered, "lead_reply_sent": lead_reply_sent, "lead_pm_sent": lead_pm_sent, "lead_pm_reason": lead_pm_reason, "lead_pm_fallback_count": lead_pm_fallback_count, "lead_reply_fallback_count": lead_reply_fallback_count, "lead_comment_text": lead_comment_text, "lead_reply_text": lead_reply_text}
 
     def start(self):
         """开始执行完整的采集与互动任务"""
@@ -885,12 +894,15 @@ class TikTokTaskFlow:
                             else:
                                 self._report(executed_action="评论区AI截流")
                                 if lead_result.get("lead_reply_sent"):
-                                    # 兜底模式下 fallback_pm_count 即为回复条数（先全回复再全私信）
-                                    reply_count = max(lead_result.get("lead_pm_fallback_count", 0), 1)
+                                    # 兜底模式下用"已回复人数"准确计数；精准意向单条时为 1
+                                    reply_count = max(lead_result.get("lead_reply_fallback_count", 0), 1)
                                     for _ in range(reply_count):
                                         self.db.update_interaction(video_id, "comment")
                                     action_msg = f"楼中楼回复已发送 ×{reply_count}" if reply_count > 1 else "楼中楼回复已发送"
-                                    self.db.update_video_detail(video_id, lead_sent=1, action_event={"t": _now_str(), "phase": "B.4", "msg": action_msg})
+                                    self.db.update_video_detail(video_id, lead_sent=1,
+                                        intent_comment=lead_result.get("lead_comment_text", ""),
+                                        lead_reply=lead_result.get("lead_reply_text", ""),
+                                        action_event={"t": _now_str(), "phase": "B.4", "msg": action_msg})
                                 else:
                                     self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.4", "msg": "评论区截流完成(未发送回复)"})
                             # 记录 B.5 结果
