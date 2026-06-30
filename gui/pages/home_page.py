@@ -110,7 +110,13 @@ class HomePage(BasePage):
 
     # ----------------- UI 构建 -----------------
     def _build_ui(self):
-        # ====== 卡片1：今日运营指标（4×2 KPI 四件套） ======
+        # ====== 卡片1：AI 矩阵品牌综合指数（环形仪表盘，置顶） ======
+        index_card, index_layout = make_card_frame("AI 矩阵品牌综合指数")
+        self.ring = RingGauge()
+        index_layout.addWidget(self.ring)
+        self.content_layout.addWidget(index_card)
+
+        # ====== 卡片2：今日运营指标（4×2 KPI 四件套） ======
         metric_card, metric_layout = make_card_frame("今日运营指标")
         # 8 个指标配置：(key, 标签, 颜色 key, 单位)
         # key 用于从 stats 取值 + QSettings 昨日缓存键
@@ -140,12 +146,6 @@ class HomePage(BasePage):
                 row.addWidget(card)
             metric_layout.addLayout(row)
         self.content_layout.addWidget(metric_card)
-
-        # ====== 卡片2：AI 矩阵品牌综合指数（环形仪表盘） ======
-        index_card, index_layout = make_card_frame("AI 矩阵品牌综合指数")
-        self.ring = RingGauge()
-        index_layout.addWidget(self.ring)
-        self.content_layout.addWidget(index_card)
 
         # ====== 卡片3：设备实时动态 ======
         dev_card, dev_layout = make_card_frame("设备实时动态")

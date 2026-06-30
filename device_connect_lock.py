@@ -9,10 +9,16 @@ LOCK_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".uiautomat
 
 
 @contextmanager
-def uiautomator2_connect_lock(timeout=600):
+def uiautomator2_connect_lock(timeout=1200):
     """
     文件锁，确保同一时间只有一个进程/线程初始化 UIAutomator2 连接。
-    timeout 提高到 120 秒，避免多台设备同时初始化时排队超时。
+
+    FIX(DEV-S1):
+    旧实现 timeout=600s，在 50 并发下 u2.connect() 串行通过全局锁，
+    单台首次连接（atx-agent 推送 + APK 启动 + 端口转发 + HTTP 健康探测）常耗时 10-30s，
+    50 台串行总耗时约 500-1500s，600s 超时在慢机/老 Android 设备场景下会被触发，
+    导致后段设备直接 error。这里提高到 1200s（20 分钟），覆盖最坏情况；
+    同时修正旧注释（旧注释写"120 秒"但实际默认 600s，文档与代码不符）。
     """
     start = time.time()
     lock_file = open(LOCK_PATH, "a+b")

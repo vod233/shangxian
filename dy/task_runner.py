@@ -234,9 +234,11 @@ class TikTokTaskFlow:
 
                 if re.search(r'class="android\.widget\.EditText"[^>]*focused="true"', ui_xml):
                     return "input_or_chat"
-                # FIX-03: 键盘已弹出但 EditText 失焦时，focused=true 检测会漏判。
+                # FIX-03 / FIX(S4): 键盘已弹出但 EditText 失焦时，focused=true 检测会漏判。
                 # 增加可见 EditText 兜底检测，避免误判为 video_page 导致键盘残留。
-                if re.search(r'class="android\.widget\.EditText"[^>]*visible="true"', ui_xml):
+                # uiautomator2 hierarchy dump 的可见性属性名是 visible-to-user (kebab-case)，
+                # 旧实现误用 visible="true" 永远匹配不到，使该兜底分支形同虚设。
+                if re.search(r'class="android\.widget\.EditText"[^>]*visible-to-user="true"', ui_xml):
                     return "input_or_chat"
 
                 if any(marker in ui_xml for marker in ("分享名片", "发私信", "设置备注", "特别关注", "取消关注", "不让他(她)看")):
@@ -775,13 +777,31 @@ class TikTokTaskFlow:
             logger.error("未在配置中找到 search.keywords，任务无法执行")
             return
 
-        try:
-            for keyword in keywords:
-                self._check_stop()
-                logger.info(f"\n>>> 开始处理关键词: {keyword} <<<")
-                self._process_single_keyword(keyword)
+        # FIX(DEV-S10): 每台手机随机分配搜索关键词框里的一条
+        # 旧实现 50 台设备每台都跑完整的 keywords 列表，导致 50 台在相近时间搜索同一关键词，
+        # 抖音服务端可关联设备指纹/IP 判定为异常 => 风控。
+        # 改为：每台设备仅随机抽取【一条】关键词执行，配合 startup_delay 错峰，
+        # 使 50 台设备分散到不同关键词上（N 个关键词 => 平均每词 50/N 台设备），
+        # 大幅降低同时搜索同一关键词的设备数，规避平台风控。
+        # 同时用设备序列号做随机种子，保证同一台设备重启后仍跑同一条关键词（便于追踪），
+        # 而不同设备得到不同的伪随机结果（分布到不同关键词）。
+        device_serial = getattr(getattr(getattr(self.runner, 'controller', None), 'device_mgr', None), 'serial', '') or ''
+        if len(keywords) == 1:
+            assigned_keyword = keywords[0]
+            logger.info(f"设备 {device_serial} 关键词列表仅 1 条，直接使用: {assigned_keyword}")
+        else:
+            import random as _random
+            rng = _random.Random(device_serial) if device_serial else _random.Random()
+            assigned_keyword = rng.choice(keywords)
+            logger.info(f"设备 {device_serial} 从 {len(keywords)} 条关键词中随机分配到: 【{assigned_keyword}】")
+        self._report(current_action=f"本机分配关键词：【{assigned_keyword}】", executed_action=f"分配关键词：{assigned_keyword}")
 
-            logger.info("所有关键词任务处理完毕！")
+        try:
+            self._check_stop()
+            logger.info(f"\n>>> 设备 {device_serial} 开始处理分配到的关键词: {assigned_keyword} <<<")
+            self._process_single_keyword(assigned_keyword)
+
+            logger.info(f"设备 {device_serial} 分配的关键词任务处理完毕！")
             self._report(current_action="目标意向词网检索任务已全部达成")
         except KeyboardInterrupt:
             logger.warning("用户手动停止了任务")
@@ -906,6 +926,21 @@ class TikTokTaskFlow:
         while video_count < max_videos:
             self._check_stop()
             video_started_at = time.time()
+
+            # FIX(DEV-C1): 运行中设备心跳检查
+            # 旧实现 check_health 仅初始化时调用一次，全程无心跳；设备掉线 / atx-agent
+            # 崩溃后任务空转，dump_hierarchy 返回空 XML，_recover_to_video_page 反复按 back，
+            # DB 却基于 share_token 持续写"已处理"假数据。这里在每个视频处理前做一次
+            # 带恢复的心跳探测，彻底不可用则停止当前关键词视频循环，避免空转写假数据。
+            try:
+                if not self.runner.controller.check_status_with_recovery(max_retries=1):
+                    logger.error(f"设备心跳失败且自动重连无效，停止当前关键词视频循环")
+                    self._report(current_action="设备通讯中断，任务已安全挂起")
+                    break
+            except Exception as hb_exc:
+                logger.error(f"设备心跳检查异常: {hb_exc}，停止当前关键词视频循环")
+                self._report(current_action="设备通讯中断，任务已安全挂起")
+                break
 
             # 每次刷视频前检查一次全局今日上限
             stats = self.db.get_daily_stats()

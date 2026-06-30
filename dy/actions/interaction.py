@@ -223,18 +223,13 @@ class FollowAuthorAction(BaseAction):
                 message_btn = clickable_btns[0] if clickable_btns else message_text_nodes[0]
                 logger.info("通过文本找到私信按钮")
 
-        # 方式3: 通过常见位置坐标点击（作者主页私信按钮通常在头像附近）
+        # 方式3: 移除坐标兜底盲点
+        # FIX(S8): 旧实现 `self.human_click(int(w * 0.5), int(h * 0.35))` 是盲点坐标，
+        # 在非作者主页（如视频页、个人主页 sheet）会误触播放/关注/分享等按钮，
+        # 触发风控或跳到错误页面。改为直接返回 False，让上层记录失败而非乱点。
         if not message_btn:
-            logger.info("未找到私信按钮，尝试常见位置")
-            # 尝试点击头像下方区域（作者主页常见位置）
-            self.human_click(int(w * 0.5), int(h * 0.35))
-            self.human_sleep('normal')
-
-            # 再次查找私信输入框
-            input_nodes = self.d.xpath(f'//{L.PM_EDIT_TEXT_CLASS}').all()
-            if input_nodes:
-                message_btn = input_nodes[0]
-                logger.info("找到输入框")
+            logger.warning("未找到私信按钮（content-desc / 文本均未命中），放弃坐标盲点以避免误触")
+            return False
 
         if message_btn:
             try:
@@ -356,17 +351,45 @@ class FollowAuthorAction(BaseAction):
         return True
 
     def _click_bottom_right_send_area(self):
+        """点击私信页右下发送区域，多坐标依次尝试，每次点击后验证输入框是否清空。
+
+        FIX(S8): 旧实现 `for x, y in click_points: ... return True` 循环内第一次点击
+        后立即 return True，剩余坐标永不执行；且不验证发送是否成功，假阳性高。
+        这里改为：每次点击后检测输入框文本是否被清空（发送成功的标志），
+        未清空则尝试下一个坐标，全部失败才返回 False。
+        """
         width, height = self.d.window_size()
         click_points = (
             (int(width * 0.92), int(height * 0.91)),
             (int(width * 0.92), int(height * 0.86)),
             (int(width * 0.96), int(height * 0.91)),
         )
+        # 取发送前的输入框文本，用于点击后验证是否清空
+        pre_text = ""
+        try:
+            pre_edit = self._find_private_message_input(timeout=0.5)
+            if pre_edit:
+                pre_text = str(pre_edit.info.get('text', '') or '').strip()
+        except Exception:
+            pass
+
         for x, y in click_points:
             logger.info(f"尝试点击私信页面右下发送区域: ({x}, {y})")
             self.human_click(x, y)
             self.human_sleep('fast', custom_range=(0.5, 1.0))
-            return True
+            # 验证：输入框已清空 => 视为发送成功
+            try:
+                after_edit = self._find_private_message_input(timeout=0.5)
+                after_text = str(after_edit.info.get('text', '') or '').strip() if after_edit else ""
+                if pre_text and not after_text:
+                    logger.info(f"坐标 ({x}, {y}) 点击后输入框已清空，判定发送成功")
+                    return True
+                if not pre_text and not after_text:
+                    logger.info(f"坐标 ({x}, {y}) 点击后输入框为空，保守判定发送成功")
+                    return True
+            except Exception as exc:
+                logger.warning(f"坐标 ({x}, {y}) 点击后验证异常: {exc}")
+            logger.info(f"坐标 ({x}, {y}) 未触发发送，尝试下一个坐标")
         return False
 
     def _wait_until_private_message_sent(self, message, timeout=2.5):

@@ -146,15 +146,26 @@ def _find_clickable_send_button(d):
 
 
 def _message_visible(d, text, timeout=2):
+    """验证评论文本是否已出现在评论区底部。
+
+    FIX(发送假阳性 C3):
+    旧实现 `if text in node_text` 子串匹配，发送短评论（如"想买"）时，
+    若评论区已有"我也想买这个"等包含该子串的评论，即使实际发送失败
+    （键盘未弹出、send_btn 点歪）也会判 True，导致 commented=1 但无实际评论。
+    这里改为【等值匹配】(strip 后比较)，宁可判失败也不假成功。
+    """
     if not text:
+        return False
+    expected = text.strip()
+    if not expected:
         return False
     deadline = time.time() + timeout
     while time.time() < deadline:
         nodes = d.xpath(L.COMMENT_TEXT_XPATH).all()
         bottom_nodes = sorted(nodes, key=_bounds_bottom)[-8:]
         for node in bottom_nodes:
-            node_text = str(node.info.get("text", "") or "")
-            if text in node_text:
+            node_text = str(node.info.get("text", "") or "").strip()
+            if node_text == expected:
                 return True
         HumanSleep.sleep(custom_range=(0.3, 0.3))
     return False
@@ -406,14 +417,42 @@ class OpenCommentSectionAction(BaseAction):
             logger.warning(f"宽泛匹配异常: {exc}")
 
         # 最后坐标兜底：必须验证状态，失败返回 False，让上层 _run_comment_lead_safely 走 open_failed 分支
+        # FIX(S8): 旧实现直接盲点 (w*0.92, h*0.63)，硬编码坐标在横屏/异形屏/广告浮层下
+        # 可能落在分享/点赞/广告跳转区域上，误触后即使评论区未打开也已被触发副作用。
+        # 这里增加【坐标点元素预校验】：仅当该坐标确实落在评论相关元素上才点击，
+        # 否则放弃坐标兜底返回 False，避免误触广告/分享/点赞。
         w, h = self.d.window_size()
-        logger.warning("XPath 兜底失败，尝试点击评论按钮常见区域坐标（安全模式）")
-        self.human_click(int(w * 0.92), int(h * 0.63))
+        cand_x, cand_y = int(w * 0.92), int(h * 0.63)
+        coord_safe = False
+        try:
+            # 探测坐标周围 60px 范围内是否存在评论相关元素（content-desc/text 含"评论"）
+            probe_nodes = self.d.xpath('//*[contains(@content-desc, "评论") or contains(@text, "评论")]').all()
+            for n in probe_nodes:
+                b = n.info.get('bounds', {}) or {}
+                if (b.get('left', 0) - 60 <= cand_x <= b.get('right', 0) + 60
+                        and b.get('top', 0) - 60 <= cand_y <= b.get('bottom', 0) + 60):
+                    coord_safe = True
+                    break
+        except Exception as exc:
+            logger.warning(f"坐标兜底预校验失败: {exc}")
+
+        if not coord_safe:
+            logger.warning("坐标兜底预校验未发现评论元素，放弃坐标点击以避免误触广告/分享/点赞")
+            return False
+
+        logger.warning("XPath 兜底失败，尝试点击评论按钮常见区域坐标（已通过元素预校验）")
+        self.human_click(cand_x, cand_y)
         self.human_sleep('normal', custom_range=(1.0, 2.0))
         if self._comment_panel_opened():
             logger.info("坐标兜底点击后评论区已打开")
             return True
         logger.warning("坐标兜底点击后评论区仍未打开，返回 False（不再造假）")
+        # 回滚：若点击误触发了分享/菜单等浮层，按 back 收起，避免污染后续动作
+        try:
+            self.d.press("back")
+            self.human_sleep('fast', custom_range=(0.4, 0.8))
+        except Exception:
+            pass
         return False
 
     def _comment_panel_opened(self, timeout=2.0):
@@ -968,31 +1007,44 @@ class ProcessCommentSectionAction(BaseAction):
         return self.lead_reply_fallback_count
 
     def _fallback_handle_one(self, text, ai_agent, video_title, keyword, do_dm, lead_pm_messages):
-        """兜底单人处理：① 楼中楼回复 ② 头像强绑定后私信。返回是否完成回复阶段。"""
+        """兜底单人处理：① 楼中楼回复 ② 头像强绑定后私信。
+
+        FIX(统计错误 S1):
+        旧实现无论回复是否成功，只要未抛异常即 `return True`，导致
+        `lead_reply_fallback_count` 统计的是"尝试人数"而非"成功人数"，
+        进而 `lead_reply_sent` 被误置 True、task_runner 据此写入 commented=1。
+        这里改为返回 reply_sent（仅当楼中楼回复真实发送成功才为 True），
+        供上层准确统计成功人数。
+        """
         node = _refind_comment_node_by_text(self.d, text)
         if node is None:
             logger.warning(f"兜底：评论已不可见（可能已滑走），跳过: {text[:20]}")
             return False
 
         # ① 楼中楼回复（TimeoutError 上抛，由调用方熔断；其他异常不阻断后续私信）
+        reply_sent = False
         reply = ai_agent.generate_lead_reply(text, video_title=video_title, keyword=keyword)
         if reply:
             try:
-                self._send_comment_workflow(node, reply)
+                reply_sent = self._send_comment_workflow(node, reply)
             except (TimeoutError, InterruptedError):
                 raise  # 超时/用户停止：上抛，分别触发熔断/终止
             except Exception as exc:
                 logger.warning(f"兜底回复异常（继续尝试私信）: {exc}")
+                reply_sent = False
             _close_comment_input_if_open(self.d, reply)
             self._scroll_to_reveal_top()  # 回复后评论区下滚遮盖头像，下滑复位
             self.human_sleep('fast')
+            if reply_sent and not self.lead_reply_text:
+                # 保存回复文本供 DB 记录（仅成功时）
+                self.lead_reply_text = reply
         else:
             logger.info("兜底：未生成回复文本，仅尝试私信")
 
         # ② 私信：回复后 UI 已变，重新按文本定位同一卡片 -> 卡片内头像 -> 进主页发私信
         if do_dm and lead_pm_messages:
             self._fallback_dm_one(text)
-        return True
+        return reply_sent
 
     def _fallback_dm_one(self, text):
         """兜底单人私信：复用 CommentLeadPmAction（含头像卡片反查 + 主页私信全链路 + 熔断）。"""
@@ -1070,12 +1122,12 @@ def _escape_xpath_text(text: str) -> str:
 def _refind_comment_node_by_text(d, text: str):
     """用评论文本在评论区重新定位到【真实节点】(XMLElement)，而非 XPathSelector。
 
-    FIX(高危-节点定位错误):
-    旧实现返回 `d.xpath(xpath)`(XPathSelector)，下游 `.parent` 语义不对；
-    且 uiautomator2 3.6.0 中 DeviceXPathSelector.exists 是 property，调用
-    `.exists(timeout=0.8)` 会抛 TypeError 被 `except` 吞掉，导致此函数实际恒返回 None，
-    FIX-05"按文本重定位"形同虚设。
-    这里改用 `.all()`（方法，安全），返回真实 DeviceXMLElement 并做文本择优匹配。
+    FIX(高危-私信发错人 C1):
+    旧实现 `chosen = exact[0] if exact else nodes[0]`，当无精确匹配时取 nodes[0]，
+    若屏幕上存在另一条包含相同子串的评论（如"怎么买这个"包含"怎么买"），
+    会落到那条【不同的评论】上，导致后续从头像反查进入错误评论者主页、私信发错人。
+    这里改为【仅等值匹配】(strip 后比较)，无精确匹配则返回 None，
+    让调用方跳过该用户而非发错人。
     返回 XMLElement 或 None。
     """
     safe = _escape_xpath_text(text)
@@ -1083,6 +1135,11 @@ def _refind_comment_node_by_text(d, text: str):
         return None
 
     full = text.strip()
+    if not full:
+        return None
+
+    # 仍用 contains 做 XPath 粗筛（评论文本可能被抖音渲染截断），
+    # 但最终择优必须等值匹配，绝不取片段命中。
     xpaths = []
     if '"' not in safe:
         xpaths.append(f'//*[contains(@text, "{safe}")]')
@@ -1102,10 +1159,12 @@ def _refind_comment_node_by_text(d, text: str):
             nodes = []
         if not nodes:
             continue
-        # 优先选择文本完整包含原评论全文的节点，避免命中片段/无关节点
-        exact = [n for n in nodes if full and full in str(n.info.get('text', '') or '')]
-        chosen = exact[0] if exact else nodes[0]
-        return chosen
+        # 仅接受文本等值匹配的节点（strip 后比较），避免命中包含相同子串的其他评论
+        exact = [n for n in nodes
+                 if str(n.info.get('text', '') or '').strip() == full]
+        if exact:
+            return exact[0]
+        # 无等值匹配：不取 nodes[0]，避免私信发错人；继续尝试下一个 xpath
 
     return None
 

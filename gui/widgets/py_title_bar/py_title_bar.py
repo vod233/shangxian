@@ -106,6 +106,10 @@ class PyTitleBar(QWidget):
         # SET LOGO AND WIDTH
         self.top_logo.setMinimumWidth(logo_width)
         self.top_logo.setMaximumWidth(logo_width)
+        # 无 logo 模式：隐藏 logo 区与紧邻分隔线，标题直接靠左
+        if logo_width <= 0:
+            self.top_logo.hide()
+            self.div_1.hide()
         #self.top_logo.setPixmap(Functions.set_svg_image(logo_image))
 
         # MOVE WINDOW / MAXIMIZE / RESTORE
@@ -285,7 +289,7 @@ class PyTitleBar(QWidget):
         # TITLE LABEL
         self.title_label = QLabel()
         self.title_label.setAlignment(Qt.AlignVCenter)
-        self.title_label.setStyleSheet(f'font: {self._title_size}pt "{self._font_family}"')
+        self.title_label.setStyleSheet(f'font: 600 {self._title_size}pt "{self._font_family}"')
 
         # CUSTOM BUTTONS LAYOUT
         self.custom_buttons_layout = QHBoxLayout()

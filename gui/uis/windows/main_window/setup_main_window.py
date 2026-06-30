@@ -142,21 +142,8 @@ class SetupMainWindow:
         },
     ]
 
-    # 标题栏额外按钮
-    add_title_bar_menus = [
-        {
-            "btn_icon": "icon_search.svg",
-            "btn_id": "btn_search_top",
-            "btn_tooltip": "搜索",
-            "is_active": False
-        },
-        {
-            "btn_icon": "icon_settings.svg",
-            "btn_id": "btn_top_settings",
-            "btn_tooltip": "顶部设置",
-            "is_active": False
-        }
-    ]
+    # 标题栏额外按钮（放大镜/设置已移除，仅保留窗口控制按钮）
+    add_title_bar_menus = []
 
     # 按钮信号来源判定
     def setup_btns(self):

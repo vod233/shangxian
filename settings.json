@@ -1,13 +1,13 @@
 {
-    "app_name": "千伴AI员工",
+    "app_name": "\u5343\u4f34AI\u5458\u5de5",
     "version": "v2.0.0",
-    "copyright": "千伴AI员工 · 智能获客中控台",
+    "copyright": "\u5343\u4f34AI\u5458\u5de5 \u00b7 \u667a\u80fd\u83b7\u5ba2\u4e2d\u63a7\u53f0",
     "year": 2026,
     "theme_name": "default",
     "custom_title_bar": true,
     "startup_size": [
-        1394,
-        715
+        1395,
+        720
     ],
     "minimum_size": [
         960,
@@ -15,21 +15,21 @@
     ],
     "lef_menu_size": {
         "minimum": 50,
-        "maximum": 237
+        "maximum": 231
     },
     "left_menu_content_margins": 3,
     "left_column_size": {
         "minimum": 0,
-        "maximum": 240
+        "maximum": 245
     },
     "right_column_size": {
         "minimum": 0,
         "maximum": 240
     },
-    "time_animation": 280,
+    "time_animation": 290,
     "font": {
-        "family": "Microsoft YaHei UI",
-        "title_size": 13,
-        "text_size": 12
+        "family": "SimHei",
+        "title_size": 12,
+        "text_size": 11
     }
 }
