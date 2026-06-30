@@ -3,7 +3,7 @@
 部署位置：服务器 /www/wwwroot/CloudSever.lcjx.yun/social-account-api/
 对外地址：https://lcjx.yun/social-account-api  (Nginx 反代到本服务 127.0.0.1:8200)
 
-数据库：PostgreSQL（通过 psycopg2 连接池），兼容回退 SQLite。
+数据库：PostgreSQL（通过 psycopg2 连接池）。
 """
 import os
 import re
@@ -31,14 +31,6 @@ logger = logging.getLogger(__name__)
 # ======================== 配置 ========================
 HOST = os.environ.get("HOST", "127.0.0.1")
 PORT = int(os.environ.get("PORT", "8200"))
-MIN_PASSWORD_LEN = 6
-LOGIN_RATE_LIMIT = 5        # 同 IP 每分钟最多尝试
-LOGIN_RATE_WINDOW = 60      # 窗口 60 秒
-TOKEN_BYTES = 48            # secrets.token_urlsafe(48) ≈ 64 字符
-
-# 数据库后端选择：postgres（默认）或 sqlite
-DB_BACKEND = os.environ.get("ACCOUNT_DB_BACKEND", os.environ.get("DB_BACKEND", "postgres")).lower()
-SQLITE_DB_PATH = os.environ.get("ACCOUNT_DB_PATH", "data/accounts.db")
 
 
 # ======================== PostgreSQL 连接池 ========================
@@ -78,112 +70,64 @@ def _close_pg_pool():
 # ======================== 数据库连接（统一接口）========================
 @contextmanager
 def get_db():
-    """
-    获取数据库连接，支持 PostgreSQL 和 SQLite 两种后端。
-    PostgreSQL 使用连接池；SQLite 每次新建连接。
-    统一返回一个可执行 SQL 的连接对象。
-    """
-    if DB_BACKEND == "sqlite":
-        import sqlite3
-        db_dir = os.path.dirname(SQLITE_DB_PATH)
-        if db_dir:
-            os.makedirs(db_dir, exist_ok=True)
-        conn = sqlite3.connect(SQLITE_DB_PATH)
-        conn.row_factory = sqlite3.Row
-        try:
-            yield conn
-        finally:
-            conn.close()
-    else:
-        # PostgreSQL
-        pool = _get_pg_pool()
-        conn = pool.getconn()
-        try:
-            yield conn
-            conn.commit()
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            pool.putconn(conn)
+    """获取 PostgreSQL 数据库连接（通过连接池复用）。"""
+    pool = _get_pg_pool()
+    conn = pool.getconn()
+    try:
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        pool.putconn(conn)
 
 
 def _exec_sql(conn, sql, params=None):
-    """执行 SQL 并返回 cursor（兼容 SQLite ? 和 PostgreSQL %s 占位符）"""
+    """执行 SQL 并返回 cursor。将 ? 占位符转换为 PostgreSQL 的 %s。"""
     cur = conn.cursor()
-    if DB_BACKEND == "sqlite":
-        # SQLite 使用 ? 占位符
-        cur.execute(sql, params)
-    else:
-        # PostgreSQL 使用 %s 占位符，需要转换
-        pg_sql = sql.replace("?", "%s")
-        cur.execute(pg_sql, params)
+    pg_sql = sql.replace("?", "%s")
+    cur.execute(pg_sql, params)
     return cur
 
 
 def _fetchone_as_dict(cur):
-    """将查询结果的第一行转为字典（兼容 sqlite3.Row 和 psycopg2 的 tuple）"""
+    """将查询结果的第一行转为字典（兼容 psycopg2 的 tuple）"""
     row = cur.fetchone()
     if row is None:
         return None
     if hasattr(row, "keys"):
-        # sqlite3.Row 或 psycopg2 的 RealDictCursor
         return dict(row)
-    # 普通 tuple：从 cursor.description 获取列名
     cols = [desc[0] for desc in cur.description]
     return dict(zip(cols, row))
 
 
 def init_db() -> None:
-    """初始化数据库表结构"""
-    if DB_BACKEND == "sqlite":
-        with get_db() as conn:
-            conn.executescript(
-                """
-                CREATE TABLE IF NOT EXISTS users (
-                    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-                    email         TEXT UNIQUE NOT NULL,
-                    password_hash TEXT NOT NULL,
-                    created_at    TEXT NOT NULL,
-                    last_login_at TEXT
-                );
-                CREATE TABLE IF NOT EXISTS sessions (
-                    token      TEXT PRIMARY KEY,
-                    user_id    INTEGER NOT NULL,
-                    created_at TEXT NOT NULL,
-                    expires_at TEXT,
-                    revoked    INTEGER DEFAULT 0,
-                    FOREIGN KEY (user_id) REFERENCES users(id)
-                );
-                CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
-                """
+    """初始化数据库表结构（PostgreSQL）"""
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                id            SERIAL PRIMARY KEY,
+                email         TEXT UNIQUE NOT NULL,
+                password_hash TEXT NOT NULL,
+                created_at    TEXT NOT NULL,
+                last_login_at TEXT
             )
-            conn.commit()
-    else:
-        with get_db() as conn:
-            cur = conn.cursor()
-            cur.execute('''
-                CREATE TABLE IF NOT EXISTS users (
-                    id            SERIAL PRIMARY KEY,
-                    email         TEXT UNIQUE NOT NULL,
-                    password_hash TEXT NOT NULL,
-                    created_at    TEXT NOT NULL,
-                    last_login_at TEXT
-                )
-            ''')
-            cur.execute('''
-                CREATE TABLE IF NOT EXISTS sessions (
-                    token      TEXT PRIMARY KEY,
-                    user_id    INTEGER NOT NULL,
-                    created_at TEXT NOT NULL,
-                    expires_at TEXT,
-                    revoked    INTEGER DEFAULT 0,
-                    FOREIGN KEY (user_id) REFERENCES users(id)
-                )
-            ''')
-            cur.execute('''
-                CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id)
-            ''')
+        ''')
+        cur.execute('''
+            CREATE TABLE IF NOT EXISTS sessions (
+                token      TEXT PRIMARY KEY,
+                user_id    INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                expires_at TEXT,
+                revoked    INTEGER DEFAULT 0,
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            )
+        ''')
+        cur.execute('''
+            CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id)
+        ''')
 
 
 # ======================== 限流（内存，按 IP）========================
@@ -289,7 +233,7 @@ app.add_middleware(
 def _on_startup() -> None:
     try:
         init_db()
-        logger.info(f"账号服务数据库已初始化 (后端: {DB_BACKEND})")
+        logger.info("账号服务数据库已初始化 (后端: postgres)")
     except Exception as e:
         logger.error(f"账号服务数据库初始化失败: {e}")
         raise
@@ -297,13 +241,12 @@ def _on_startup() -> None:
 
 @app.on_event("shutdown")
 def _on_shutdown() -> None:
-    if DB_BACKEND != "sqlite":
-        _close_pg_pool()
+    _close_pg_pool()
 
 
 @app.get("/health")
 def health() -> dict[str, Any]:
-    return {"success": True, "service": "social-account-api", "db_backend": DB_BACKEND}
+    return {"success": True, "service": "social-account-api", "db_backend": "postgres"}
 
 
 @app.post("/auth/register")
@@ -312,35 +255,23 @@ def register(req: RegisterRequest) -> dict[str, Any]:
     now = datetime.utcnow().isoformat()
     with get_db() as conn:
         try:
-            if DB_BACKEND == "sqlite":
-                cur = _exec_sql(
-                    conn,
-                    "INSERT INTO users (email, password_hash, created_at, last_login_at) VALUES (?, ?, ?, ?)",
-                    (req.email, password_hash, now, now),
-                )
-                user_id = cur.lastrowid
-            else:
-                # PostgreSQL: 使用 RETURNING 获取自增 ID
-                cur = _exec_sql(
-                    conn,
-                    "INSERT INTO users (email, password_hash, created_at, last_login_at) "
-                    "VALUES (?, ?, ?, ?) RETURNING id",
-                    (req.email, password_hash, now, now),
-                )
-                row = cur.fetchone()
-                user_id = row[0] if row else cur.lastrowid
+            # PostgreSQL: 使用 RETURNING 获取自增 ID
+            cur = _exec_sql(
+                conn,
+                "INSERT INTO users (email, password_hash, created_at, last_login_at) "
+                "VALUES (?, ?, ?, ?) RETURNING id",
+                (req.email, password_hash, now, now),
+            )
+            row = cur.fetchone()
+            user_id = row[0] if row else cur.lastrowid
         except Exception as exc:
             # 区分唯一约束冲突（邮箱已注册）与其他数据库错误
             is_duplicate = False
-            if DB_BACKEND == "sqlite":
-                import sqlite3 as _sqlite3
-                is_duplicate = isinstance(exc, _sqlite3.IntegrityError)
-            else:
-                try:
-                    from psycopg2.errors import UniqueViolation
-                    is_duplicate = isinstance(exc, UniqueViolation)
-                except ImportError:
-                    is_duplicate = "duplicate key" in str(exc).lower() or "unique" in str(exc).lower()
+            try:
+                from psycopg2.errors import UniqueViolation
+                is_duplicate = isinstance(exc, UniqueViolation)
+            except ImportError:
+                is_duplicate = "duplicate key" in str(exc).lower() or "unique" in str(exc).lower()
             if is_duplicate:
                 raise HTTPException(status_code=409, detail="该邮箱已注册")
             logger.error(f"注册时数据库错误: {exc}")

@@ -1,3 +1,5 @@
+# DEPRECATED: PostgreSQL migration complete. Use psql instead.
+# Original script follows:
 #!/bin/bash
 # 回滚 V3 测试污染的生产数据
 DB="/www/wwwroot/CloudSever.lcjx.yun/app/data/credit_server.db"

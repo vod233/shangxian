@@ -1,3 +1,5 @@
+# DEPRECATED: PostgreSQL migration complete. Use psql instead.
+# Original script follows:
 #!/bin/bash
 DB="/www/wwwroot/CloudSever.lcjx.yun/app/data/credit_server.db"
 SRV="/www/wwwroot/CloudSever.lcjx.yun/app/credit_server/server.py"

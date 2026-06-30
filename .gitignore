@@ -10,9 +10,6 @@ venv/
 dist/
 build/
 *.log
-data/*.db
-data/*.db-shm
-data/*.db-wal
 .workbuddy/
 _server_dump/
 *.env

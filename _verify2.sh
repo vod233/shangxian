@@ -1,3 +1,5 @@
+# DEPRECATED: PostgreSQL migration complete. Use psql instead.
+# Original script follows:
 #!/bin/bash
 # 重新设计的验证脚本：避免 MAX_MACHINES_PER_LICENSE 限制
 ADMIN="adm_N6utsCVXqZ2N_a3NWZUsvQMctaoJPKAWOcVbthUaRJM"

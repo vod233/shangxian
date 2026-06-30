@@ -2,10 +2,8 @@
 PostgreSQL 数据库后端实现
 ========================
 支持高并发写入（行级锁 + MVCC），通过连接池复用连接。
-接口与 SQLiteDBManager 完全一致，可无缝切换。
-
-切换方式：设置环境变量 DB_BACKEND=postgres
 """
+
 import os
 import json
 import datetime

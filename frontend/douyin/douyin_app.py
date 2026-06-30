@@ -1167,7 +1167,7 @@ def render_data_dashboard():
 
     st.markdown("""
             <div style="margin-top:20px; padding-top:16px; border-top:1px solid rgba(255,255,255,0.06); color:#D1D5DB; font-size:12px;">
-                提示：详细操作记录继续保存于 data/scout_records.db 与 logs 文件夹。
+                提示：详细操作记录保存于 PostgreSQL 数据库与 logs 文件夹。
             </div>
         </div>
     """, unsafe_allow_html=True)

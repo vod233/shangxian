@@ -205,14 +205,13 @@ async def lifespan(app: FastAPI):
     # 关闭线程池
     _task_executor.shutdown(wait=True)
     logging.info("线程池已关闭。")
-    # 关闭 PostgreSQL 连接池（如果使用 PostgreSQL 后端）
-    if os.environ.get("DB_BACKEND", "").lower() == "postgres":
-        try:
-            from dy.db_postgres import close_pool
-            close_pool()
-            logging.info("PostgreSQL 连接池已关闭。")
-        except Exception:
-            pass
+    # 关闭 PostgreSQL 连接池
+    try:
+        from dy.db_postgres import close_pool
+        close_pool()
+        logging.info("PostgreSQL 连接池已关闭。")
+    except Exception:
+        pass
 
 app = FastAPI(title="抖音自动化后端 API", version="1.0.0", lifespan=lifespan)
 

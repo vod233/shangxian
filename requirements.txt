@@ -17,5 +17,5 @@ streamlit
 tiktoken
 uiautomator2
 uvicorn
-# PostgreSQL 后端（可选，DB_BACKEND=postgres 时需要）
+# PostgreSQL 数据库驱动
 psycopg2-binary

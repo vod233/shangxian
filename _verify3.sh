@@ -1,3 +1,5 @@
+# DEPRECATED: PostgreSQL migration complete. Use psql instead.
+# Original script follows:
 #!/bin/bash
 # Bug#5 修复后最终验证
 ADMIN="adm_N6utsCVXqZ2N_a3NWZUsvQMctaoJPKAWOcVbthUaRJM"

@@ -68,7 +68,7 @@ After=network.target
 Type=simple
 User=root
 WorkingDirectory={REMOTE_DIR}
-Environment=ACCOUNT_DB_PATH={REMOTE_DIR}/data/accounts.db
+Environment=PG_HOST=127.0.0.1 PG_PORT=5432 PG_DB=scout PG_USER=scout PG_PASSWORD=scout123
 Environment=HOST=127.0.0.1
 Environment=PORT=8200
 ExecStart={REMOTE_DIR}/venv/bin/python -m uvicorn main:app --host 127.0.0.1 --port 8200 --workers 2
