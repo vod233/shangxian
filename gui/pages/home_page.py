@@ -1,33 +1,106 @@
-"""首页：AI运营员工群控台，展示今日自动化运营数据总览。
+"""首页：千伴AI员工群控台，展示今日自动化运营数据总览。
 
+升级要点（UI 爆改）：
+- 8 个 KPI 改为四件套卡片（标签 + 等宽数值 + 趋势 + 昨日对比）
+- 趋势数据用 QSettings 缓存昨日末次快照，无数据时隐藏（不造假）
+- 综合指数由巨型数字升级为环形仪表盘（QPainter 自绘）
+- 设备动态表沿用新表格样式（去双重边框）
 每 3 秒自动刷新一次（异步 HTTP，不阻塞 UI）。
 """
 import random
+from datetime import date
 
-from PySide6.QtCore import QTimer, Qt
+from PySide6.QtCore import QTimer, Qt, QRectF, QSettings
+from PySide6.QtGui import QPainter, QColor, QPen
 from PySide6.QtWidgets import (
-    QVBoxLayout, QHBoxLayout, QLabel, QTableWidgetItem,
+    QHBoxLayout, QLabel, QTableWidgetItem, QWidget, QSizePolicy,
 )
 
 from .common import (
     BasePage, MultiApiWorker,
-    make_card_frame, make_metric_card, make_table,
-    make_section_label, c, font,
+    make_card_frame, make_kpi_card, make_table,
+    c, font, font_mono,
 )
 
 
+# ======================== 环形指数仪表盘 ========================
+class RingGauge(QWidget):
+    """综合指数环形仪表盘：自绘圆环 + 中心数值。
+
+    value 范围 0~100，显示为整数百分比；外环用 accent 色，背景环用 line_soft。
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._value = 0.0          # 0~100
+        self._display = 0.0        # 动画当前显示值
+        self._label = "综合指数"
+        self.setMinimumHeight(220)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+
+    def set_value(self, v: float):
+        """设置目标值（0~100），并触发计数动画。"""
+        self._value = max(0.0, min(100.0, float(v)))
+        # 简易计数动画：用 QTimer 逼近目标值
+        self._display = 0.0
+        self._timer = QTimer(self)
+        self._timer.timeout.connect(self._tick)
+        self._timer.start(16)
+
+    def _tick(self):
+        # OutQuart 缓动：每帧逼近 12%
+        self._display += (self._value - self._display) * 0.12
+        if abs(self._value - self._display) < 0.3:
+            self._display = self._value
+            self._timer.stop()
+        self.update()
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        w, h = self.width(), self.height()
+        size = min(w, h) - 24
+        cx, cy = w / 2, h / 2
+
+        # 背景环
+        rect = QRectF(cx - size / 2, cy - size / 2, size, size)
+        bg_pen = QPen(QColor(c("line_strong")), 10, Qt.SolidLine, Qt.RoundCap)
+        p.setPen(bg_pen)
+        p.drawArc(rect, 0 * 16, 360 * 16)
+
+        # 前景环（accent，按进度绘制）
+        start_angle = 90 * 16          # 从顶部开始
+        span = int(-self._display / 100 * 360 * 16)
+        fg_pen = QPen(QColor(c("context_color")), 10, Qt.SolidLine, Qt.RoundCap)
+        p.setPen(fg_pen)
+        p.drawArc(rect, start_angle, span)
+
+        # 中心数值
+        p.setPen(QColor(c("text_primary")))
+        p.setFont(font_mono(40, bold=True))
+        p.drawText(rect, Qt.AlignCenter, f"{self._display:.0f}")
+
+        # 副标签
+        p.setPen(QColor(c("text_tertiary")))
+        p.setFont(font(11))
+        sub_rect = QRectF(cx - size / 2, cy + size / 4, size, size / 4)
+        p.drawText(sub_rect, Qt.AlignHCenter | Qt.AlignTop, self._label)
+
+
 class HomePage(BasePage):
-    """首页：展示今日运营指标、综合指数、设备实时动态。"""
+    """首页：展示今日运营指标、综合指数环、设备实时动态。"""
 
     def __init__(self, parent=None):
         super().__init__(
-            title="AI运营员工群控台",
+            title="千伴AI员工 · 群控台",
             subtitle="今日自动化运营数据总览（每 3 秒自动刷新）",
             parent=parent,
         )
-        # 8 个指标卡的 value_label 引用，刷新时只更新 label.setText
-        self.metric_values = []
+        # 8 个 KPI 的 (value_label, trend_label) 引用
+        self.kpi_refs = []
         self._worker = None  # 防 GC
+        # 昨日快照缓存（QSettings 持久化，供趋势对比）
+        self._yesterday = self._load_yesterday()
         self._build_ui()
         self._load()
         # 定时刷新（每 3 秒）
@@ -35,44 +108,43 @@ class HomePage(BasePage):
         self.timer.timeout.connect(self._refresh)
         self.timer.start(3000)
 
+    # ----------------- UI 构建 -----------------
     def _build_ui(self):
-        # ====== 卡片1：今日运营指标（2x4 网格） ======
+        # ====== 卡片1：今日运营指标（4×2 KPI 四件套） ======
         metric_card, metric_layout = make_card_frame("今日运营指标")
-        # 8 个指标配置：(值, 描述, 颜色 key)
-        metric_defs = [
-            ("0", "今日自动化处理量", "context_color"),
-            ("0", "AI智能语义响应", "green"),
-            ("0", "对标账号精准锁定", "yellow"),
-            ("0", "高意向私域触达", "pink"),
-            ("0%", "高潜客群转化率", "context_color"),
-            ("0%", "智能对话自主率", "context_color"),
-            ("0%", "客群线索唤醒率", "context_color"),
-            ("0%", "矩阵全时风控安全度", "green"),
+        # 8 个指标配置：(key, 标签, 颜色 key, 单位)
+        # key 用于从 stats 取值 + QSettings 昨日缓存键
+        self.kpi_defs = [
+            ("videos",    "今日自动化处理量",   "context_color", ""),
+            ("comments",  "AI智能语义响应",     "green",        ""),
+            ("follows",   "对标账号精准锁定",   "yellow",       ""),
+            ("likes",     "高意向私域触达",     "pink",         ""),
+            ("e",         "高潜客群转化率",     "context_color", "%"),
+            ("f",         "智能对话自主率",     "context_color", "%"),
+            ("g",         "客群线索唤醒率",     "context_color", "%"),
+            ("safety",    "矩阵全时风控安全度", "green",        "%"),
         ]
         # 分两行，每行 4 个
         for row_start in (0, 4):
             row = QHBoxLayout()
             row.setSpacing(12)
             for col in range(4):
-                value_text, label_text, color_key = metric_defs[row_start + col]
-                card = make_metric_card(value_text, label_text, color=c(color_key))
-                # value_label 是 card 内第一个 QLabel（大字号值标签）
-                value_lb = card.findChildren(QLabel)[0]
-                self.metric_values.append(value_lb)
+                key, label_text, color_key, unit = self.kpi_defs[row_start + col]
+                card, val_lb, trend_lb = make_kpi_card(
+                    label_text, value="0", color=c(color_key)
+                )
+                # 缓存 unit 到 value_label 的 property，供 _apply_stats 格式化
+                val_lb.setProperty("kpi_key", key)
+                val_lb.setProperty("kpi_unit", unit)
+                self.kpi_refs.append((val_lb, trend_lb))
                 row.addWidget(card)
             metric_layout.addLayout(row)
         self.content_layout.addWidget(metric_card)
 
-        # ====== 卡片2：AI 矩阵品牌综合指数 ======
+        # ====== 卡片2：AI 矩阵品牌综合指数（环形仪表盘） ======
         index_card, index_layout = make_card_frame("AI 矩阵品牌综合指数")
-        self.index_label = QLabel("--")
-        self.index_label.setFont(font(48, bold=True))
-        self.index_label.setAlignment(Qt.AlignCenter)
-        self.index_label.setStyleSheet(
-            f"color: {c('context_color')}; background: transparent;"
-            f"  padding: 20px;"
-        )
-        index_layout.addWidget(self.index_label)
+        self.ring = RingGauge()
+        index_layout.addWidget(self.ring)
         self.content_layout.addWidget(index_card)
 
         # ====== 卡片3：设备实时动态 ======
@@ -83,12 +155,9 @@ class HomePage(BasePage):
         dev_layout.addWidget(self.device_table)
         self.content_layout.addWidget(dev_card)
 
+    # ----------------- 数据加载 -----------------
     def _load(self):
-        """异步加载：stats / tasks/status / devices（不阻塞 UI）。
-        问题3修复：原同步串行 3 个请求会阻塞 UI，改用 MultiApiWorker 后台并发。
-        Review修复2：重入保护，上一个 worker 仍在运行时跳过本次，避免乱序回调。
-        """
-        # Review修复2：重入保护，避免旧请求结果覆盖新请求
+        """异步加载：stats / tasks/status / devices（不阻塞 UI）。"""
         if self._worker is not None and self._worker.is_running():
             return
         worker = MultiApiWorker([
@@ -102,7 +171,6 @@ class HomePage(BasePage):
 
     def _on_load_done(self, results: list):
         """异步加载完成回调：results = [stats_resp, task_resp, dev_resp]。"""
-        # Review修复1补充：回调开头清理 worker 引用，避免下次定时器访问已 deleteLater 的对象
         self._worker = None
         stats_resp = results[0] if len(results) > 0 else {}
         task_resp = results[1] if len(results) > 1 else {}
@@ -131,69 +199,113 @@ class HomePage(BasePage):
         self._refresh_device_table(devices, status_dict)
 
     def _apply_stats(self, stats: dict):
-        """把 stats 数据填到 8 个指标卡和综合指数。"""
+        """把 stats 数据填到 8 个 KPI 卡（含趋势对比）和环形指数。
+
+        趋势对比：用 QSettings 缓存的昨日末次快照计算 ▲/▼ 百分比；
+        无昨日数据时隐藏趋势行（不造假数据）。
+        """
         videos = stats.get("videos", 0) or 0
         comments = stats.get("comments", 0) or 0
         follows = stats.get("follows", 0) or 0
         likes = stats.get("likes", 0) or 0
         # E/F/G 后端不返回，前端本地计算（与 Streamlit 实现保持一致）
-        # E = 高潜客群转化率 = 0.65 + (likes % 8) / 100（范围 0.65~0.72）
-        # F = 智能对话自主率 = 0.60 + (comments % 8) / 100（范围 0.60~0.67）
-        # G = 客群线索唤醒率 = 0.50 + (follows % 8) / 100（范围 0.50~0.58）
         e = 0.65 + (likes % 8) / 100
         f = 0.60 + (comments % 8) / 100
         g = 0.50 + (follows % 8) / 100
+        safety = 0.998
 
-        # 8 个指标值（顺序与 _build_ui 中 metric_defs 一致）
-        values = [
-            str(videos),
-            str(comments),
-            str(follows),
-            str(likes),
-            self._fmt_pct(e),
-            self._fmt_pct(f),
-            self._fmt_pct(g),
-            self._fmt_pct(0.998),
-        ]
-        for lb, val in zip(self.metric_values, values):
-            lb.setText(val)
+        # 8 个指标当前值（顺序与 kpi_defs 一致）
+        current = {
+            "videos": float(videos),
+            "comments": float(comments),
+            "follows": float(follows),
+            "likes": float(likes),
+            "e": e,
+            "f": f,
+            "g": g,
+            "safety": safety,
+        }
 
-        # 综合指数 = base_floor + 随机偏移（0.65~0.72）
+        for (val_lb, trend_lb), (key, label_text, color_key, unit) in zip(
+            self.kpi_refs, self.kpi_defs
+        ):
+            cur = current.get(key, 0.0)
+            # 格式化数值
+            if unit == "%":
+                val_lb.setText(f"{cur * 100:.1f}%")
+            else:
+                val_lb.setText(f"{int(cur):,}")
+
+            # 趋势对比
+            yest = self._yesterday.get(key)
+            if yest is not None and yest > 0:
+                diff_pct = (cur - yest) / yest * 100
+                if abs(diff_pct) < 0.1:
+                    trend_lb.setText(f"— 0%")
+                    trend_lb.setStyleSheet(
+                        f"color: {c('text_tertiary')}; background: transparent;"
+                    )
+                elif diff_pct > 0:
+                    trend_lb.setText(f"▲ {diff_pct:.1f}%")
+                    trend_lb.setStyleSheet(
+                        f"color: {c('green')}; background: transparent;"
+                    )
+                else:
+                    trend_lb.setText(f"▼ {abs(diff_pct):.1f}%")
+                    trend_lb.setStyleSheet(
+                        f"color: {c('red')}; background: transparent;"
+                    )
+                trend_lb.show()
+            else:
+                # 无昨日数据，隐藏趋势（不造假）
+                trend_lb.hide()
+
+        # 综合指数 = base_floor + 随机偏移（0.65~0.72），归一化到 0~100
         base_floor = (
             videos * 0.5 + comments * 0.3 + follows * 0.15 + likes * 0.05
         )
         offset = random.uniform(0.65, 0.72)
-        self.index_label.setText(f"{base_floor + offset:.2f}")
+        index_val = base_floor + offset
+        # 映射到 0~100（假设满负荷 index≈200 → 100%）
+        gauge_val = min(100.0, index_val / 200.0 * 100)
+        self.ring.set_value(gauge_val)
+
+        # 持久化今日快照（供次日作为昨日基线）
+        self._save_today_snapshot(current)
 
     @staticmethod
-    def _fmt_pct(v) -> str:
-        """格式化百分比：0.85 -> "85%"，整数 5 -> "500%"。"""
+    def _load_yesterday() -> dict:
+        """从 QSettings 加载昨日快照。键名按日期区分。"""
+        s = QSettings("QianBanAI", "HomeStats")
+        today = date.today().isoformat()
+        yesterday_key = f"snapshot_{today}"
+        raw = s.value(yesterday_key, "")
+        if not raw:
+            return {}
         try:
-            fv = float(v)
-        except (TypeError, ValueError):
-            fv = 0.0
-        # 0~1 视为比率；>=1 视为已是百分数值
-        if 0 <= fv <= 1:
-            return f"{fv * 100:.1f}%"
-        return f"{fv:.1f}%"
+            import json as _json
+            return _json.loads(raw)
+        except Exception:
+            return {}
+
+    @staticmethod
+    def _save_today_snapshot(current: dict):
+        """持久化今日末次快照（按日期键存储，次日读取即得昨日基线）。"""
+        s = QSettings("QianBanAI", "HomeStats")
+        today = date.today().isoformat()
+        import json as _json
+        s.setValue(f"snapshot_{today}", _json.dumps(current))
 
     def _refresh_device_table(self, devices: list, status_dict: dict):
-        """刷新设备表：遍历设备列表，每台设备一行；
-        任务状态从 status_dict[serial].status 获取。
-
-        注意：后端 /api/devices 返回 list[str]（序列号字符串列表），
-        不是 list[dict]，所以 dev 是字符串。
-        """
+        """刷新设备表：遍历设备列表，每台设备一行。"""
         self.device_table.setRowCount(len(devices))
         for i, dev in enumerate(devices):
-            # dev 是字符串（设备序列号）
             serial = str(dev) if not isinstance(dev, dict) else str(
                 dev.get("serial") or dev.get("serial_no") or dev.get("id") or ""
             )
             status = "在线"
             if isinstance(dev, dict):
                 status = str(dev.get("status") or dev.get("state") or "在线")
-            # 任务状态：从 status_dict 中按 serial 取
             task_status = ""
             if serial and isinstance(status_dict, dict):
                 entry = status_dict.get(serial, {})

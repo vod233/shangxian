@@ -1,13 +1,13 @@
 """数据看板页：今日自动化执行结果汇总 + 详细操作记录表格。"""
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import QTimer, Qt
 from PySide6.QtWidgets import (
-    QHBoxLayout, QLabel, QMessageBox, QTableWidgetItem,
+    QHBoxLayout, QMessageBox, QTableWidgetItem,
 )
 
 from .common import (
     ApiWorker, BasePage, MultiApiWorker,
-    make_card_frame, make_danger_btn, make_metric_card, make_secondary_btn,
-    make_table, c, font,
+    make_card_frame, make_danger_btn, make_kpi_card, make_secondary_btn,
+    make_table, make_status_dot, c,
 )
 
 
@@ -16,43 +16,43 @@ class DashboardPage(BasePage):
 
     def __init__(self, parent=None):
         super().__init__(
-            title="📊 获客数据看板",
-            subtitle="实时查看今日自动化执行结果及详细处理记录。",
+            title="获客数据看板",
+            subtitle="实时查看今日自动化执行结果及详细处理记录（每 5 秒刷新）。",
             parent=parent,
         )
-        # 4 个汇总指标卡的 value_label 引用（顺序：videos/likes/follows/comments）
-        self.metric_cards = []
+        # 8 个 KPI 的 (value_label, trend_label) 引用
+        self.kpi_refs = []
         self._worker = None  # 防 GC
         self._build_ui()
         self._load()
-        # 问题2修复：增加自动刷新定时器（每 5 秒），与"实时查看"副标题一致
+        # 自动刷新定时器（每 5 秒），与"实时查看"副标题一致
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._load)
         self.timer.start(5000)
 
     def _build_ui(self):
-        # ====== 卡片1：今日汇总（2x4 网格，8 张 KPI） ======
+        # ====== 卡片1：今日汇总（2x4 网格，8 张 KPI 四件套） ======
         summary_card, summary_layout = make_card_frame("今日汇总（4 大功能模块）")
         # 第一行：基础互动指标
         row1 = QHBoxLayout()
-        row1.setSpacing(8)
+        row1.setSpacing(12)
         # 第二行：4 大功能模块指标
         row2 = QHBoxLayout()
-        row2.setSpacing(8)
-        # 8 个 KPI：(初始值, 描述, 颜色 key, 行号)
+        row2.setSpacing(12)
+        # 8 个 KPI：(标签, 颜色 key, 行号) —— 数值与趋势由 _apply_stats 填充
         defs = [
-            ("0", "今日处理视频", "context_color", 1),
-            ("0", "自动点赞", "pink", 1),
-            ("0", "自动关注同行", "yellow", 1),
-            ("0", "视频主评论", "green", 2),       # 模块③
-            ("0", "楼中楼回复", "green", 2),       # 模块④
-            ("0", "博主私信", "green", 2),         # 模块①
-            ("0", "评论者私信", "green", 2),       # 模块②
-            ("0", "潜客线索数", "pink", 1),        # 核心商业价值
+            ("今日处理视频", "context_color", 1),
+            ("自动点赞", "pink", 1),
+            ("自动关注同行", "yellow", 1),
+            ("视频主评论", "green", 2),       # 模块③
+            ("楼中楼回复", "green", 2),       # 模块④
+            ("博主私信", "green", 2),         # 模块①
+            ("评论者私信", "green", 2),       # 模块②
+            ("潜客线索数", "pink", 1),        # 核心商业价值
         ]
-        for value_text, label_text, color_key, row_no in defs:
-            card = make_metric_card(value_text, label_text, color=c(color_key))
-            self.metric_cards.append(card)
+        for label_text, color_key, row_no in defs:
+            card, val_lb, trend_lb = make_kpi_card(label_text, value="0", color=c(color_key))
+            self.kpi_refs.append((val_lb, trend_lb))
             if row_no == 1:
                 row1.addWidget(card)
             else:
@@ -82,12 +82,12 @@ class DashboardPage(BasePage):
         # ====== 底部按钮：刷新 + 删除数据 ======
         btn_row = QHBoxLayout()
         btn_row.addStretch(1)
-        self.refresh_btn = make_secondary_btn("🔄 刷新数据")
+        self.refresh_btn = make_secondary_btn("刷新数据")
         self.refresh_btn.clicked.connect(self._on_refresh)
         btn_row.addWidget(self.refresh_btn)
 
         # 删除今日数据按钮（危险操作，二次确认）
-        self.delete_btn = make_danger_btn("🗑️ 删除今日数据")
+        self.delete_btn = make_danger_btn("删除今日数据")
         self.delete_btn.clicked.connect(self._on_delete_clicked)
         btn_row.addWidget(self.delete_btn)
         btn_row.addStretch(1)
@@ -149,7 +149,7 @@ class DashboardPage(BasePage):
             self.clear_status()
 
     def _apply_stats(self, stats: dict):
-        """刷新 8 个汇总指标卡的 value_label。
+        """刷新 8 个 KPI 卡的 value_label。
 
         顺序与 _build_ui 中的 defs 一致：
         今日处理视频 / 自动点赞 / 自动关注同行 / 视频主评论 /
@@ -165,10 +165,12 @@ class DashboardPage(BasePage):
             str(stats.get("lead_pm_sent", 0) or 0),   # 评论者私信 SUM(lead_pm_sent)
             str(stats.get("leads", 0) or 0),          # 潜客线索数
         ]
-        for card, val in zip(self.metric_cards, values):
-            # value_label 是 card 内第一个 QLabel（大字号值标签）
-            value_lb = card.findChildren(QLabel)[0]
-            value_lb.setText(val)
+        for (val_lb, trend_lb), val in zip(self.kpi_refs, values):
+            # 千分位格式化，数字更挺拔
+            try:
+                val_lb.setText(f"{int(val):,}")
+            except (ValueError, TypeError):
+                val_lb.setText(str(val))
 
     def _apply_details(self, rows: list):
         """把详细记录填入表格，每条一行。
@@ -193,24 +195,25 @@ class DashboardPage(BasePage):
             intent_comment = str(row.get("intent_comment") or "")
             lead_reply = str(row.get("lead_reply") or "")
 
-            # 列顺序与 _build_ui 表头一致
-            cells = [
-                str(row.get("created_at") or row.get("time") or row.get("timestamp") or ""),
-                str(row.get("keyword") or row.get("kw") or ""),
-                str(row.get("video_id") or row.get("aweme_id") or row.get("id") or ""),
-                str(row.get("follower_count") or row.get("fans") or row.get("fans_count") or 0),
-                str(row.get("stay_duration") or row.get("stay") or row.get("duration") or 0),
-                str(row.get("process_status") or row.get("status") or ""),
-                "✓" if row.get("liked") else "",
-                "✓" if row.get("followed") else "",
-                _trunc(ai_reply),                       # 模块③：视频评论内容
-                _trunc(intent_comment),                 # 模块④触发：意向评论文本
-                _trunc(lead_reply),                     # 模块④：楼中楼回复内容
-                "✓" if (row.get("pm_sent") or row.get("private_messaged")) else "",  # 模块①
-                "✓" if row.get("lead_pm_sent") else "", # 模块②
-                str(row.get("error_message") or row.get("error") or row.get("exception") or ""),
-            ]
-            for col, text in enumerate(cells):
+            # 文本列（保持 14 列原顺序）：
+            # 0 时间 / 1 关键词 / 2 视频ID / 3 博主粉丝 / 4 停留时长 / 5 处理状态
+            # 6 点赞(圆点) / 7 关注(圆点)
+            # 8 视频评论 / 9 意向评论 / 10 楼中楼回复
+            # 11 博主私信(圆点) / 12 评论者私信(圆点)
+            # 13 异常
+            text_cells = {
+                0: str(row.get("created_at") or row.get("time") or row.get("timestamp") or ""),
+                1: str(row.get("keyword") or row.get("kw") or ""),
+                2: str(row.get("video_id") or row.get("aweme_id") or row.get("id") or ""),
+                3: str(row.get("follower_count") or row.get("fans") or row.get("fans_count") or 0),
+                4: str(row.get("stay_duration") or row.get("stay") or row.get("duration") or 0),
+                5: str(row.get("process_status") or row.get("status") or ""),
+                8: _trunc(ai_reply),       # 模块③：视频评论内容
+                9: _trunc(intent_comment), # 模块④触发：意向评论文本
+                10: _trunc(lead_reply),    # 模块④：楼中楼回复内容
+                13: str(row.get("error_message") or row.get("error") or row.get("exception") or ""),
+            }
+            for col, text in text_cells.items():
                 item = QTableWidgetItem(text)
                 # 长文本字段添加完整内容 tooltip，方便客户查看 AI 实际说了什么
                 if col == 8 and ai_reply:        # 视频评论
@@ -220,6 +223,33 @@ class DashboardPage(BasePage):
                 elif col == 10 and lead_reply:    # 楼中楼回复
                     item.setToolTip(lead_reply)
                 self.detail_table.setItem(i, col, item)
+
+            # 状态圆点列：点赞(6) / 关注(7) / 博主私信(11) / 评论者私信(12)
+            self._set_dot_cell(i, 6, row.get("liked"), "success")
+            self._set_dot_cell(i, 7, row.get("followed"), "success")
+            self._set_dot_cell(
+                i, 11,
+                row.get("pm_sent") or row.get("private_messaged"),
+                "success"
+            )
+            self._set_dot_cell(i, 12, row.get("lead_pm_sent"), "success")
+
+    def _set_dot_cell(self, row: int, col: int, value, status: str = "success"):
+        """在表格指定单元格放置状态圆点。
+
+        value 为真值时显示实心圆点（已执行），否则显示空心占位（未执行）。
+        用 cellWidget 取代 ✓ 字符，视觉更高级。
+        """
+        if value:
+            dot = make_status_dot(status, "已执行")
+        else:
+            dot = make_status_dot("idle", "—")
+            dot.setStyleSheet(
+                f"color: {c('text_tertiary')}; background: transparent;"
+            )
+        # 居中显示
+        dot.setAlignment(Qt.AlignCenter)
+        self.detail_table.setCellWidget(row, col, dot)
 
     def _on_refresh(self):
         """刷新按钮回调：触发异步重新加载汇总与详细记录。

@@ -5,9 +5,9 @@ import json
 import math
 import os
 import secrets
-import sqlite3
 import subprocess
 import tempfile
+import threading
 import time
 import urllib.parse
 import urllib.request
@@ -15,6 +15,10 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any, Optional
+
+import psycopg2
+from psycopg2 import pool as pg_pool_mod
+from psycopg2.extras import RealDictCursor
 
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
@@ -24,9 +28,14 @@ from openai import OpenAI
 from pydantic import BaseModel, Field, field_validator
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DATA_DIR = os.path.join(BASE_DIR, "data")
-DB_PATH = os.path.join(DATA_DIR, "credit_server.db")
 load_dotenv(os.path.join(BASE_DIR, ".env"), override=True)
+
+# PostgreSQL 连接配置（与主业务库共用 .env）
+PG_HOST = os.getenv("PG_HOST", "127.0.0.1")
+PG_PORT = int(os.getenv("PG_PORT", "5432"))
+PG_DB = os.getenv("PG_DB", "scout")
+PG_USER = os.getenv("PG_USER", "scout")
+PG_PASSWORD = os.getenv("PG_PASSWORD", "scout123")
 # 支付宝配置复用 lcjx.yun 的 alipay.env（同服务器，密钥通用）
 ALIPAY_ENV_PATH = os.path.join("/www/wwwroot/lcjx.yun/config/alipay.env")
 if os.path.exists(ALIPAY_ENV_PATH):
@@ -75,36 +84,114 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+_pg_pool: Optional[pg_pool_mod.ThreadedConnectionPool] = None
+_pg_pool_lock = threading.Lock()
+
+
+def _get_pool() -> pg_pool_mod.ThreadedConnectionPool:
+    """惰性创建 PostgreSQL 连接池（线程安全），maxconn=20 与账号服务一致"""
+    global _pg_pool
+    if _pg_pool is None:
+        with _pg_pool_lock:
+            if _pg_pool is None:
+                _pg_pool = pg_pool_mod.ThreadedConnectionPool(
+                    minconn=2,
+                    maxconn=20,
+                    host=PG_HOST,
+                    port=PG_PORT,
+                    dbname=PG_DB,
+                    user=PG_USER,
+                    password=PG_PASSWORD,
+                )
+    return _pg_pool
+
+
+def close_pool():
+    """应用关闭时释放所有连接"""
+    global _pg_pool
+    if _pg_pool is not None:
+        _pg_pool.closeall()
+        _pg_pool = None
+
+
+class _Cursor:
+    """包装 psycopg2 cursor，使 execute() 返回 self 以兼容链式调用。
+    内部使用 RealDictCursor，使 fetchone/fetchall 返回 dict-like 行。"""
+
+    def __init__(self, cur):
+        self._cur = cur
+
+    def execute(self, sql, params=None):
+        self._cur.execute(sql, params)
+        return self
+
+    def executemany(self, sql, params_seq):
+        self._cur.executemany(sql, params_seq)
+        return self
+
+    def fetchone(self):
+        return self._cur.fetchone()
+
+    def fetchall(self):
+        return self._cur.fetchall()
+
+    @property
+    def rowcount(self):
+        return self._cur.rowcount
+
+    @property
+    def description(self):
+        return self._cur.description
+
+    def close(self):
+        return self._cur.close()
+
+    def __getattr__(self, name):
+        return getattr(self._cur, name)
+
+
 @contextmanager
 def db():
-    os.makedirs(DATA_DIR, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
+    """从 PG 连接池获取连接，yield 一个使用 RealDictCursor 的 _Cursor 包装对象。
+    退出时自动 commit/rollback 并归还连接。"""
+    pool = _get_pool()
+    conn = pool.getconn()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    wrapped = _Cursor(cur)
     try:
-        yield conn
+        yield wrapped
         conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
     finally:
-        conn.close()
+        cur.close()
+        pool.putconn(conn)
 
 
 def init_db():
+    # PG 不支持 executescript，逐条 execute；DDL 用 PG 语法（SERIAL/TEXT/DOUBLE PRECISION）
     with db() as conn:
-        conn.executescript(
+        conn.execute(
             """
             CREATE TABLE IF NOT EXISTS licenses (
                 license_key TEXT PRIMARY KEY,
                 customer_name TEXT NOT NULL DEFAULT '',
                 status TEXT NOT NULL DEFAULT 'active',
-                balance_credits REAL NOT NULL DEFAULT 0,
+                balance_credits DOUBLE PRECISION NOT NULL DEFAULT 0,
                 total_input_tokens INTEGER NOT NULL DEFAULT 0,
                 total_output_tokens INTEGER NOT NULL DEFAULT 0,
                 total_tokens INTEGER NOT NULL DEFAULT 0,
-                total_spent_credits REAL NOT NULL DEFAULT 0,
+                total_spent_credits DOUBLE PRECISION NOT NULL DEFAULT 0,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
-            );
+            )
+            """
+        )
+        conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS usage_logs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 license_key TEXT NOT NULL,
                 device_id TEXT NOT NULL DEFAULT '',
                 machine_id TEXT NOT NULL DEFAULT '',
@@ -114,12 +201,16 @@ def init_db():
                 input_tokens INTEGER NOT NULL DEFAULT 0,
                 output_tokens INTEGER NOT NULL DEFAULT 0,
                 total_tokens INTEGER NOT NULL DEFAULT 0,
-                spent_credits REAL NOT NULL DEFAULT 0,
+                spent_credits DOUBLE PRECISION NOT NULL DEFAULT 0,
                 success INTEGER NOT NULL DEFAULT 0,
                 error TEXT NOT NULL DEFAULT '',
                 created_at TEXT NOT NULL,
-                rate_multiplier REAL NOT NULL DEFAULT 1.0
-            );
+                rate_multiplier DOUBLE PRECISION NOT NULL DEFAULT 1.0
+            )
+            """
+        )
+        conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS license_activations (
                 license_key TEXT NOT NULL,
                 machine_id TEXT NOT NULL,
@@ -133,30 +224,38 @@ def init_db():
                 last_ip TEXT NOT NULL DEFAULT '',
                 last_user_agent TEXT NOT NULL DEFAULT '',
                 status TEXT NOT NULL DEFAULT 'active',
-                rate_multiplier REAL NOT NULL DEFAULT 1.0,
+                rate_multiplier DOUBLE PRECISION NOT NULL DEFAULT 1.0,
                 rate_updated_at TEXT NOT NULL DEFAULT '',
                 disabled INTEGER NOT NULL DEFAULT 0,
-                balance_credits REAL NOT NULL DEFAULT 0.0,
-                spent_credits REAL NOT NULL DEFAULT 0.0,
+                balance_credits DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+                spent_credits DOUBLE PRECISION NOT NULL DEFAULT 0.0,
                 PRIMARY KEY (license_key, machine_id)
-            );
-            CREATE INDEX IF NOT EXISTS idx_usage_license_time ON usage_logs(license_key, created_at);
-            CREATE INDEX IF NOT EXISTS idx_activation_license_seen ON license_activations(license_key, last_seen);
+            )
+            """
+        )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_usage_license_time ON usage_logs(license_key, created_at)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_activation_license_seen ON license_activations(license_key, last_seen)")
+        conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS credit_adjustments (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 license_key TEXT NOT NULL,
                 machine_id TEXT NOT NULL DEFAULT '',
-                amount REAL NOT NULL,
-                balance_before REAL NOT NULL,
-                balance_after REAL NOT NULL,
+                amount DOUBLE PRECISION NOT NULL,
+                balance_before DOUBLE PRECISION NOT NULL,
+                balance_after DOUBLE PRECISION NOT NULL,
                 reason TEXT NOT NULL DEFAULT '',
                 operator TEXT NOT NULL DEFAULT 'admin',
                 operator_ip TEXT NOT NULL DEFAULT '',
                 created_at TEXT NOT NULL
-            );
-            CREATE INDEX IF NOT EXISTS idx_credit_adj_license_time ON credit_adjustments(license_key, created_at);
+            )
+            """
+        )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_credit_adj_license_time ON credit_adjustments(license_key, created_at)")
+        conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS admin_audit_logs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 action TEXT NOT NULL,
                 target_type TEXT NOT NULL,
                 target_id TEXT NOT NULL,
@@ -165,10 +264,14 @@ def init_db():
                 operator TEXT NOT NULL DEFAULT 'admin',
                 operator_ip TEXT NOT NULL DEFAULT '',
                 created_at TEXT NOT NULL
-            );
-            CREATE INDEX IF NOT EXISTS idx_audit_action_time ON admin_audit_logs(action, created_at);
+            )
+            """
+        )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_action_time ON admin_audit_logs(action, created_at)")
+        conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS recharge_orders (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 out_trade_no TEXT NOT NULL UNIQUE,
                 license_key TEXT NOT NULL,
                 plan_id TEXT NOT NULL,
@@ -180,37 +283,44 @@ def init_db():
                 raw_notify_json TEXT NOT NULL DEFAULT '',
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 paid_at TEXT
-            );
-            CREATE INDEX IF NOT EXISTS idx_recharge_license_time ON recharge_orders(license_key, created_at);
-            CREATE INDEX IF NOT EXISTS idx_recharge_status ON recharge_orders(status);
+            )
             """
         )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_recharge_license_time ON recharge_orders(license_key, created_at)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_recharge_status ON recharge_orders(status)")
     # 启动即迁移：补列 + 把老 license 余额迁移到机器
     with db() as conn:
         ensure_columns(conn)
         migrate_license_balance(conn)
 
 
-def ensure_columns(conn: sqlite3.Connection):
-    usage_cols = {row[1] for row in conn.execute("PRAGMA table_info(usage_logs)").fetchall()}
+def ensure_columns(conn: _Cursor):
+    # PG 用 information_schema.columns 替代 PRAGMA table_info
+    usage_cols = {row["column_name"] for row in conn.execute(
+        "SELECT column_name FROM information_schema.columns WHERE table_name='usage_logs'"
+    ).fetchall()}
     if "machine_id" not in usage_cols:
         conn.execute("ALTER TABLE usage_logs ADD COLUMN machine_id TEXT NOT NULL DEFAULT ''")
     if "rate_multiplier" not in usage_cols:
-        conn.execute("ALTER TABLE usage_logs ADD COLUMN rate_multiplier REAL NOT NULL DEFAULT 1.0")
-    act_cols = {row[1] for row in conn.execute("PRAGMA table_info(license_activations)").fetchall()}
+        conn.execute("ALTER TABLE usage_logs ADD COLUMN rate_multiplier DOUBLE PRECISION NOT NULL DEFAULT 1.0")
+    act_cols = {row["column_name"] for row in conn.execute(
+        "SELECT column_name FROM information_schema.columns WHERE table_name='license_activations'"
+    ).fetchall()}
     if "rate_multiplier" not in act_cols:
-        conn.execute("ALTER TABLE license_activations ADD COLUMN rate_multiplier REAL NOT NULL DEFAULT 1.0")
+        conn.execute("ALTER TABLE license_activations ADD COLUMN rate_multiplier DOUBLE PRECISION NOT NULL DEFAULT 1.0")
     if "rate_updated_at" not in act_cols:
         conn.execute("ALTER TABLE license_activations ADD COLUMN rate_updated_at TEXT NOT NULL DEFAULT ''")
     if "disabled" not in act_cols:
         conn.execute("ALTER TABLE license_activations ADD COLUMN disabled INTEGER NOT NULL DEFAULT 0")
     # 机器级账户：每台机器独立余额
     if "balance_credits" not in act_cols:
-        conn.execute("ALTER TABLE license_activations ADD COLUMN balance_credits REAL NOT NULL DEFAULT 0.0")
+        conn.execute("ALTER TABLE license_activations ADD COLUMN balance_credits DOUBLE PRECISION NOT NULL DEFAULT 0.0")
     if "spent_credits" not in act_cols:
-        conn.execute("ALTER TABLE license_activations ADD COLUMN spent_credits REAL NOT NULL DEFAULT 0.0")
+        conn.execute("ALTER TABLE license_activations ADD COLUMN spent_credits DOUBLE PRECISION NOT NULL DEFAULT 0.0")
     # migrated_to_machine 列属于 schema，补列保留在 ensure_columns
-    lic_cols = {row[1] for row in conn.execute("PRAGMA table_info(licenses)").fetchall()}
+    lic_cols = {row["column_name"] for row in conn.execute(
+        "SELECT column_name FROM information_schema.columns WHERE table_name='licenses'"
+    ).fetchall()}
     if "migrated_to_machine" not in lic_cols:
         conn.execute("ALTER TABLE licenses ADD COLUMN migrated_to_machine INTEGER NOT NULL DEFAULT 0")
     # Bug#5 修复：license 余额迁移到机器的业务逻辑已移至 migrate_license_balance()，
@@ -220,7 +330,7 @@ def ensure_columns(conn: sqlite3.Connection):
     conn.execute("CREATE INDEX IF NOT EXISTS idx_activation_license_seen ON license_activations(license_key, last_seen)")
 
 
-def migrate_license_balance(conn: sqlite3.Connection):
+def migrate_license_balance(conn: _Cursor):
     """把 license 上未迁移的暂存余额搬到该 license 下最活跃的 active 机器。
     仅由 init_db 在启动时调用，避免 register_activation 调用 ensure_columns 时抢迁移。"""
     need_migrate = conn.execute(
@@ -228,17 +338,17 @@ def migrate_license_balance(conn: sqlite3.Connection):
     ).fetchall()
     for lic in need_migrate:
         tgt = conn.execute(
-            "SELECT machine_id FROM license_activations WHERE license_key=? AND status='active' ORDER BY verify_count DESC LIMIT 1",
+            "SELECT machine_id FROM license_activations WHERE license_key=%s AND status='active' ORDER BY verify_count DESC LIMIT 1",
             (lic["license_key"],),
         ).fetchone()
         if tgt:
             # 累加式迁移：防止机器已有余额被覆盖；同时清零 license 暂存余额
             conn.execute(
-                "UPDATE license_activations SET balance_credits=balance_credits+? WHERE license_key=? AND machine_id=?",
+                "UPDATE license_activations SET balance_credits=balance_credits+%s WHERE license_key=%s AND machine_id=%s",
                 (float(lic["balance_credits"]), lic["license_key"], tgt["machine_id"]),
             )
             conn.execute(
-                "UPDATE licenses SET balance_credits=0, migrated_to_machine=1 WHERE license_key=?",
+                "UPDATE licenses SET balance_credits=0, migrated_to_machine=1 WHERE license_key=%s",
                 (lic["license_key"],),
             )
         # 没有可迁移机器时不标记 migrated_to_machine，等新机器激活时 register_activation 处理
@@ -279,14 +389,14 @@ def register_activation(license_key: str, req: "VerifyRequest | AIRequest", requ
         ensure_columns(conn)
         # 单台机器停用校验：管理员停用后该机器拒绝 AI 调用与激活刷新
         cur = conn.execute(
-            "SELECT disabled FROM license_activations WHERE license_key=? AND machine_id=?",
+            "SELECT disabled FROM license_activations WHERE license_key=%s AND machine_id=%s",
             (license_key, machine_id),
         ).fetchone()
         if cur and int(cur["disabled"] or 0) == 1:
             raise HTTPException(status_code=403, detail="该机器已被管理员停用，请联系管理员启用")
         # S2: 限制单授权码最大绑定机器数，防止一个 key 被无限共享
         existing = conn.execute(
-            "SELECT machine_id FROM license_activations WHERE license_key=? AND status='active'",
+            "SELECT machine_id FROM license_activations WHERE license_key=%s AND status='active'",
             (license_key,),
         ).fetchall()
         existing_machines = {r["machine_id"] for r in existing}
@@ -298,7 +408,7 @@ def register_activation(license_key: str, req: "VerifyRequest | AIRequest", requ
         conn.execute(
             """
             INSERT INTO license_activations(license_key, machine_id, device_id, hostname_hash, os_name, app_version, first_seen, last_seen, verify_count, last_ip, last_user_agent, status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, 'active')
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 1, %s, %s, 'active')
             ON CONFLICT(license_key, machine_id) DO UPDATE SET
                 device_id=excluded.device_id,
                 hostname_hash=excluded.hostname_hash,
@@ -317,15 +427,15 @@ def register_activation(license_key: str, req: "VerifyRequest | AIRequest", requ
         is_new_machine = machine_id not in existing_machines
         if is_new_machine:
             lic_row = conn.execute(
-                "SELECT balance_credits FROM licenses WHERE license_key=?", (license_key,)
+                "SELECT balance_credits FROM licenses WHERE license_key=%s", (license_key,)
             ).fetchone()
             if lic_row and float(lic_row["balance_credits"]) > 0:
                 conn.execute(
-                    "UPDATE license_activations SET balance_credits=balance_credits+? WHERE license_key=? AND machine_id=?",
+                    "UPDATE license_activations SET balance_credits=balance_credits+%s WHERE license_key=%s AND machine_id=%s",
                     (float(lic_row["balance_credits"]), license_key, machine_id),
                 )
                 conn.execute(
-                    "UPDATE licenses SET balance_credits=0, migrated_to_machine=1 WHERE license_key=?",
+                    "UPDATE licenses SET balance_credits=0, migrated_to_machine=1 WHERE license_key=%s",
                     (license_key,),
                 )
     return machine_id
@@ -337,7 +447,7 @@ def get_machine_multiplier(license_key: str, machine_id: str) -> float:
     try:
         with db() as conn:
             row = conn.execute(
-                "SELECT rate_multiplier FROM license_activations WHERE license_key=? AND machine_id=?",
+                "SELECT rate_multiplier FROM license_activations WHERE license_key=%s AND machine_id=%s",
                 (license_key, machine_id),
             ).fetchone()
         return float(row["rate_multiplier"]) if row else 1.0
@@ -354,9 +464,9 @@ def require_admin(request: Request, authorization: str = Header(default="")):
     return True
 
 
-def get_license(license_key: str) -> sqlite3.Row:
+def get_license(license_key: str) -> dict:
     with db() as conn:
-        row = conn.execute("SELECT * FROM licenses WHERE license_key=?", (license_key,)).fetchone()
+        row = conn.execute("SELECT * FROM licenses WHERE license_key=%s", (license_key,)).fetchone()
     if not row:
         raise HTTPException(status_code=401, detail="invalid license key")
     if row["status"] != "active":
@@ -364,7 +474,7 @@ def get_license(license_key: str) -> sqlite3.Row:
     return row
 
 
-def require_license(authorization: str = Header(default="")) -> sqlite3.Row:
+def require_license(authorization: str = Header(default="")) -> dict:
     key = authorization.removeprefix("Bearer ").strip()
     if not key:
         raise HTTPException(status_code=401, detail="missing license key")
@@ -384,14 +494,14 @@ def spend_tokens(license_key: str, input_tokens: int, output_tokens: int, featur
             cur = conn.execute(
                 """
                 UPDATE license_activations
-                SET balance_credits=balance_credits-?, spent_credits=spent_credits+?
-                WHERE license_key=? AND machine_id=? AND balance_credits>=?
+                SET balance_credits=balance_credits-%s, spent_credits=spent_credits+%s
+                WHERE license_key=%s AND machine_id=%s AND balance_credits>=%s
                 """,
                 (spent_credits, spent_credits, license_key, machine_id, spent_credits),
             )
             if cur.rowcount == 0:
                 row = conn.execute(
-                    "SELECT balance_credits FROM license_activations WHERE license_key=? AND machine_id=?",
+                    "SELECT balance_credits FROM license_activations WHERE license_key=%s AND machine_id=%s",
                     (license_key, machine_id),
                 ).fetchone()
                 if not row:
@@ -401,27 +511,27 @@ def spend_tokens(license_key: str, input_tokens: int, output_tokens: int, featur
             conn.execute(
                 """
                 UPDATE licenses
-                SET total_input_tokens=total_input_tokens+?, total_output_tokens=total_output_tokens+?,
-                    total_tokens=total_tokens+?, total_spent_credits=total_spent_credits+?, updated_at=?
-                WHERE license_key=?
+                SET total_input_tokens=total_input_tokens+%s, total_output_tokens=total_output_tokens+%s,
+                    total_tokens=total_tokens+%s, total_spent_credits=total_spent_credits+%s, updated_at=%s
+                WHERE license_key=%s
                 """,
                 (input_tokens, output_tokens, total_tokens, spent_credits, created_at, license_key),
             )
         else:
             # 失败不扣分，仅刷新 updated_at
             conn.execute(
-                "UPDATE licenses SET updated_at=? WHERE license_key=?",
+                "UPDATE licenses SET updated_at=%s WHERE license_key=%s",
                 (created_at, license_key),
             )
         row = conn.execute(
-            "SELECT balance_credits FROM license_activations WHERE license_key=? AND machine_id=?",
+            "SELECT balance_credits FROM license_activations WHERE license_key=%s AND machine_id=%s",
             (license_key, machine_id),
         ).fetchone()
         new_balance = row["balance_credits"] if row else 0.0
         conn.execute(
             """
             INSERT INTO usage_logs(license_key, device_id, machine_id, platform, feature, model, input_tokens, output_tokens, total_tokens, spent_credits, success, error, created_at, rate_multiplier)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (license_key, device_id, machine_id, platform, feature, model, input_tokens, output_tokens, total_tokens, spent_credits if success else 0, int(success), error[:500], created_at, multiplier),
         )
@@ -442,7 +552,7 @@ def ensure_min_balance(license_key: str, required: float = MIN_CREDITS_FOR_AI, m
     with db() as conn:
         ensure_columns(conn)
         row = conn.execute(
-            "SELECT balance_credits FROM license_activations WHERE license_key=? AND machine_id=?",
+            "SELECT balance_credits FROM license_activations WHERE license_key=%s AND machine_id=%s",
             (license_key, machine_id),
         ).fetchone()
     if not row:
@@ -524,19 +634,24 @@ def startup():
     init_db()
 
 
+@app.on_event("shutdown")
+def shutdown():
+    close_pool()
+
+
 @app.get("/api/health")
 def health():
     return {"success": True, "service": "socialautoagent-ai-credit", "time": now_iso(), "model": DEEPSEEK_MODEL}
 
 
 @app.post("/api/auth/verify")
-def verify_license(req: VerifyRequest, request: Request, lic: sqlite3.Row = Depends(require_license)):
+def verify_license(req: VerifyRequest, request: Request, lic: dict = Depends(require_license)):
     check_rate_limit(request, "verify", 60)
     machine_id = register_activation(lic["license_key"], req, request)
     # 机器级账户：返回该机器的余额（而非 license 老账户），客户端 GUI 显示才正确
     with db() as conn:
         mrow = conn.execute(
-            "SELECT balance_credits FROM license_activations WHERE license_key=? AND machine_id=?",
+            "SELECT balance_credits FROM license_activations WHERE license_key=%s AND machine_id=%s",
             (lic["license_key"], machine_id),
         ).fetchone()
     return {
@@ -558,7 +673,7 @@ def admin_create_license(req: LicenseCreateRequest, _: bool = Depends(require_ad
         conn.execute(
             """
             INSERT INTO licenses(license_key, customer_name, status, balance_credits, created_at, updated_at)
-            VALUES (?, ?, 'active', ?, ?, ?)
+            VALUES (%s, %s, 'active', %s, %s, %s)
             """,
             (key, req.customer_name, req.credits, ts, ts),
         )
@@ -574,19 +689,19 @@ def admin_recharge(license_key: str, req: RechargeRequest, _: bool = Depends(req
         ensure_columns(conn)
         # 选目标机器：优先查询参数 ?machine_id=，否则最活跃的 active 机器
         tgt = conn.execute(
-            "SELECT machine_id FROM license_activations WHERE license_key=? AND status='active' ORDER BY verify_count DESC LIMIT 1",
+            "SELECT machine_id FROM license_activations WHERE license_key=%s AND status='active' ORDER BY verify_count DESC LIMIT 1",
             (license_key,),
         ).fetchone()
         if not tgt:
             raise HTTPException(status_code=404, detail="该授权码无已激活机器，无法充值")
         cur = conn.execute(
-            "UPDATE license_activations SET balance_credits=balance_credits+? WHERE license_key=? AND machine_id=?",
+            "UPDATE license_activations SET balance_credits=balance_credits+%s WHERE license_key=%s AND machine_id=%s",
             (req.credits, license_key, tgt["machine_id"]),
         )
         if cur.rowcount == 0:
             raise HTTPException(status_code=404, detail="license/machine not found")
         row = conn.execute(
-            "SELECT balance_credits FROM license_activations WHERE license_key=? AND machine_id=?",
+            "SELECT balance_credits FROM license_activations WHERE license_key=%s AND machine_id=%s",
             (license_key, tgt["machine_id"]),
         ).fetchone()
     return {"success": True, "license_key": license_key, "machine_id": tgt["machine_id"], "balance_credits": row["balance_credits"]}
@@ -605,7 +720,7 @@ def admin_adjust_credits(license_key: str, req: AdjustRequest, request: Request,
     with db() as conn:
         ensure_columns(conn)
         row = conn.execute(
-            "SELECT balance_credits FROM license_activations WHERE license_key=? AND machine_id=?",
+            "SELECT balance_credits FROM license_activations WHERE license_key=%s AND machine_id=%s",
             (license_key, req.machine_id[:120]),
         ).fetchone()
         if not row:
@@ -615,13 +730,13 @@ def admin_adjust_credits(license_key: str, req: AdjustRequest, request: Request,
         if after < 0:
             raise HTTPException(status_code=400, detail=f"扣减后该机器余额为负({after:.3f})，拒绝操作")
         conn.execute(
-            "UPDATE license_activations SET balance_credits=? WHERE license_key=? AND machine_id=?",
+            "UPDATE license_activations SET balance_credits=%s WHERE license_key=%s AND machine_id=%s",
             (after, license_key, req.machine_id[:120]),
         )
         conn.execute(
             """
             INSERT INTO credit_adjustments(license_key, machine_id, amount, balance_before, balance_after, reason, operator, operator_ip, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (license_key, req.machine_id[:120], req.amount, before, after, req.reason[:200], "admin", ip, ts),
         )
@@ -636,7 +751,7 @@ def admin_update_machine(license_key: str, machine_id: str, req: MachineUpdateRe
     with db() as conn:
         ensure_columns(conn)
         row = conn.execute(
-            "SELECT rate_multiplier, disabled FROM license_activations WHERE license_key=? AND machine_id=?",
+            "SELECT rate_multiplier, disabled FROM license_activations WHERE license_key=%s AND machine_id=%s",
             (license_key, machine_id),
         ).fetchone()
         if not row:
@@ -652,15 +767,15 @@ def admin_update_machine(license_key: str, machine_id: str, req: MachineUpdateRe
         conn.execute(
             """
             UPDATE license_activations
-            SET rate_multiplier=?, rate_updated_at=?, disabled=?
-            WHERE license_key=? AND machine_id=?
+            SET rate_multiplier=%s, rate_updated_at=%s, disabled=%s
+            WHERE license_key=%s AND machine_id=%s
             """,
             (after["rate_multiplier"], ts, after["disabled"], license_key, machine_id),
         )
         conn.execute(
             """
             INSERT INTO admin_audit_logs(action, target_type, target_id, before, after, operator, operator_ip, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             """,
             ("update_machine", "machine", f"{license_key}/{machine_id}", json.dumps(before, ensure_ascii=False), json.dumps(after, ensure_ascii=False), "admin", ip, ts),
         )
@@ -674,7 +789,7 @@ def admin_unbind_machine(license_key: str, machine_id: str, request: Request, _:
     ts = now_iso()
     with db() as conn:
         cur = conn.execute(
-            "UPDATE license_activations SET status='unbound' WHERE license_key=? AND machine_id=? AND status='active'",
+            "UPDATE license_activations SET status='unbound' WHERE license_key=%s AND machine_id=%s AND status='active'",
             (license_key, machine_id),
         )
         if cur.rowcount == 0:
@@ -682,7 +797,7 @@ def admin_unbind_machine(license_key: str, machine_id: str, request: Request, _:
         conn.execute(
             """
             INSERT INTO admin_audit_logs(action, target_type, target_id, before, after, operator, operator_ip, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             """,
             ("unbind_machine", "machine", f"{license_key}/{machine_id}", "active", "unbound", "admin", ip, ts),
         )
@@ -696,11 +811,11 @@ def admin_credit_adjustments(license_key: str = "", limit: int = 200, _: bool = 
     with db() as conn:
         if license_key:
             rows = conn.execute(
-                "SELECT * FROM credit_adjustments WHERE license_key=? ORDER BY id DESC LIMIT ?",
+                "SELECT * FROM credit_adjustments WHERE license_key=%s ORDER BY id DESC LIMIT %s",
                 (license_key, limit),
             ).fetchall()
         else:
-            rows = conn.execute("SELECT * FROM credit_adjustments ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+            rows = conn.execute("SELECT * FROM credit_adjustments ORDER BY id DESC LIMIT %s", (limit,)).fetchall()
     return {"success": True, "adjustments": [dict(r) for r in rows]}
 
 
@@ -711,11 +826,11 @@ def admin_audit_logs(action: str = "", limit: int = 200, _: bool = Depends(requi
     with db() as conn:
         if action:
             rows = conn.execute(
-                "SELECT * FROM admin_audit_logs WHERE action=? ORDER BY id DESC LIMIT ?",
+                "SELECT * FROM admin_audit_logs WHERE action=%s ORDER BY id DESC LIMIT %s",
                 (action, limit),
             ).fetchall()
         else:
-            rows = conn.execute("SELECT * FROM admin_audit_logs ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+            rows = conn.execute("SELECT * FROM admin_audit_logs ORDER BY id DESC LIMIT %s", (limit,)).fetchall()
     return {"success": True, "logs": [dict(r) for r in rows]}
 
 
@@ -729,15 +844,15 @@ def admin_list_licenses(_: bool = Depends(require_admin)):
 @app.get("/api/admin/licenses/{license_key}")
 def admin_get_license(license_key: str, _: bool = Depends(require_admin)):
     with db() as conn:
-        row = conn.execute("SELECT * FROM licenses WHERE license_key=?", (license_key,)).fetchone()
+        row = conn.execute("SELECT * FROM licenses WHERE license_key=%s", (license_key,)).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="license not found")
         usage = conn.execute(
-            "SELECT * FROM usage_logs WHERE license_key=? ORDER BY id DESC LIMIT 100",
+            "SELECT * FROM usage_logs WHERE license_key=%s ORDER BY id DESC LIMIT 100",
             (license_key,),
         ).fetchall()
         activations = conn.execute(
-            "SELECT * FROM license_activations WHERE license_key=? ORDER BY last_seen DESC LIMIT 200",
+            "SELECT * FROM license_activations WHERE license_key=%s ORDER BY last_seen DESC LIMIT 200",
             (license_key,),
         ).fetchall()
     return {"success": True, "license": dict(row), "usage": [dict(r) for r in usage], "activations": [dict(r) for r in activations]}
@@ -759,9 +874,9 @@ def admin_activations(license_key: str = "", limit: int = 200, _: bool = Depends
             LEFT JOIN licenses l ON l.license_key = a.license_key
         """
         if license_key:
-            rows = conn.execute(sql + " WHERE a.license_key=? ORDER BY a.last_seen DESC LIMIT ?", (license_key, limit)).fetchall()
+            rows = conn.execute(sql + " WHERE a.license_key=%s ORDER BY a.last_seen DESC LIMIT %s", (license_key, limit)).fetchall()
         else:
-            rows = conn.execute(sql + " ORDER BY a.last_seen DESC LIMIT ?", (limit,)).fetchall()
+            rows = conn.execute(sql + " ORDER BY a.last_seen DESC LIMIT %s", (limit,)).fetchall()
     return {"success": True, "activations": [dict(r) for r in rows]}
 
 
@@ -771,16 +886,16 @@ def admin_usage(limit: int = 100, license_key: str = "", _: bool = Depends(requi
     with db() as conn:
         if license_key:
             rows = conn.execute(
-                "SELECT * FROM usage_logs WHERE license_key=? ORDER BY id DESC LIMIT ?",
+                "SELECT * FROM usage_logs WHERE license_key=%s ORDER BY id DESC LIMIT %s",
                 (license_key, limit),
             ).fetchall()
         else:
-            rows = conn.execute("SELECT * FROM usage_logs ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+            rows = conn.execute("SELECT * FROM usage_logs ORDER BY id DESC LIMIT %s", (limit,)).fetchall()
     return {"success": True, "usage": [dict(r) for r in rows]}
 
 
 @app.post("/api/ai/generate-video-comment")
-def generate_video_comment(req: AIRequest, request: Request, lic: sqlite3.Row = Depends(require_license)):
+def generate_video_comment(req: AIRequest, request: Request, lic: dict = Depends(require_license)):
     check_rate_limit(request, "ai", 600)
     machine_id = register_activation(lic["license_key"], req, request)
     prompt = f"请根据抖音视频标题生成一条自然、简短、合规的中文评论，不要包含联系方式、引流词和夸张营销。关键词：{req.keyword}\n标题：{req.title}"
@@ -806,7 +921,7 @@ def generate_video_comment(req: AIRequest, request: Request, lic: sqlite3.Row = 
 
 
 @app.post("/api/ai/check-intent-comment")
-def check_intent_comment(req: AIRequest, request: Request, lic: sqlite3.Row = Depends(require_license)):
+def check_intent_comment(req: AIRequest, request: Request, lic: dict = Depends(require_license)):
     check_rate_limit(request, "ai", 600)
     machine_id = register_activation(lic["license_key"], req, request)
     custom = "、".join(req.custom_keywords or [])
@@ -833,7 +948,7 @@ def check_intent_comment(req: AIRequest, request: Request, lic: sqlite3.Row = De
 
 
 @app.post("/api/ai/generate-lead-reply")
-def generate_lead_reply(req: AIRequest, request: Request, lic: sqlite3.Row = Depends(require_license)):
+def generate_lead_reply(req: AIRequest, request: Request, lic: dict = Depends(require_license)):
     check_rate_limit(request, "ai", 600)
     machine_id = register_activation(lic["license_key"], req, request)
     prompt = f"针对这条有意向的评论，生成一条自然、克制的楼中楼回复，引导对方查看主页，不要出现微信、电话、链接、二维码。评论：{req.comment_text}\n视频标题：{req.title}\n关键词：{req.keyword}"
@@ -947,7 +1062,7 @@ def recharge_plans():
 
 
 @app.post("/api/recharge/create")
-def recharge_create(req: RechargeCreateRequest, request: Request, lic: sqlite3.Row = Depends(require_license)):
+def recharge_create(req: RechargeCreateRequest, request: Request, lic: dict = Depends(require_license)):
     """创建充值订单，返回支付宝支付页 URL"""
     check_rate_limit(request, "recharge", 30)
     if not ALIPAY_APP_ID or not ALIPAY_APP_PRIVATE_KEY:
@@ -958,7 +1073,7 @@ def recharge_create(req: RechargeCreateRequest, request: Request, lic: sqlite3.R
     # P3: 幂等控制——10分钟内同授权码+套餐已有pending订单则复用，避免重复创建
     with db() as conn:
         existing = conn.execute(
-            "SELECT out_trade_no FROM recharge_orders WHERE license_key=? AND plan_id=? AND status='pending' AND created_at > datetime('now','-10 minutes') ORDER BY id DESC LIMIT 1",
+            "SELECT out_trade_no FROM recharge_orders WHERE license_key=%s AND plan_id=%s AND status='pending' AND created_at::timestamptz > NOW() - INTERVAL '10 minutes' ORDER BY id DESC LIMIT 1",
             (lic["license_key"], plan["id"]),
         ).fetchone()
     if existing:
@@ -988,8 +1103,8 @@ def recharge_create(req: RechargeCreateRequest, request: Request, lic: sqlite3.R
     if not existing:
         with db() as conn:
             conn.execute(
-                "INSERT INTO recharge_orders(out_trade_no, license_key, plan_id, plan_name, money, credits, status) VALUES(?,?,?,?,?,?,'pending')",
-                (out_trade_no, lic["license_key"], plan["id"], plan["name"], plan["money"], plan["credits"]),
+                "INSERT INTO recharge_orders(out_trade_no, license_key, plan_id, plan_name, money, credits, status, created_at) VALUES(%s,%s,%s,%s,%s,%s,'pending',%s)",
+                (out_trade_no, lic["license_key"], plan["id"], plan["name"], plan["money"], plan["credits"], now_iso()),
             )
     # 拼接支付宝跳转 URL（GET 方式）
     pay_url = f"{ALIPAY_GATEWAY}?{urllib.parse.urlencode(params)}"
@@ -1014,7 +1129,7 @@ async def recharge_alipay_notify(request: Request):
     if not out_trade_no:
         return PlainTextResponse("fail")
     with db() as conn:
-        order = conn.execute("SELECT * FROM recharge_orders WHERE out_trade_no=?", (out_trade_no,)).fetchone()
+        order = conn.execute("SELECT * FROM recharge_orders WHERE out_trade_no=%s", (out_trade_no,)).fetchone()
         if not order:
             return PlainTextResponse("fail")
         if order["status"] == "paid":
@@ -1030,24 +1145,24 @@ async def recharge_alipay_notify(request: Request):
         # 机器级账户：充值加到该授权码下最活跃的 active 机器（与 admin_recharge 一致）
         # 若该授权码尚无已激活机器，则暂存到 license.balance_credits，待首台机器激活时迁移
         tgt = conn.execute(
-            "SELECT machine_id FROM license_activations WHERE license_key=? AND status='active' ORDER BY verify_count DESC LIMIT 1",
+            "SELECT machine_id FROM license_activations WHERE license_key=%s AND status='active' ORDER BY verify_count DESC LIMIT 1",
             (order["license_key"],),
         ).fetchone()
         if tgt:
             conn.execute(
-                "UPDATE license_activations SET balance_credits=balance_credits+? WHERE license_key=? AND machine_id=?",
+                "UPDATE license_activations SET balance_credits=balance_credits+%s WHERE license_key=%s AND machine_id=%s",
                 (order["credits"], order["license_key"], tgt["machine_id"]),
             )
             # 标记已迁移，避免启动时重复搬运
-            conn.execute("UPDATE licenses SET migrated_to_machine=1 WHERE license_key=?", (order["license_key"],))
+            conn.execute("UPDATE licenses SET migrated_to_machine=1 WHERE license_key=%s", (order["license_key"],))
         else:
             # 暂无机器：暂存到 license，首台激活时由 register_activation 迁移
             conn.execute(
-                "UPDATE licenses SET balance_credits=balance_credits+? WHERE license_key=?",
+                "UPDATE licenses SET balance_credits=balance_credits+%s WHERE license_key=%s",
                 (order["credits"], order["license_key"]),
             )
         conn.execute(
-            "UPDATE recharge_orders SET status='paid', trade_no=?, raw_notify_json=?, paid_at=? WHERE out_trade_no=?",
+            "UPDATE recharge_orders SET status='paid', trade_no=%s, raw_notify_json=%s, paid_at=%s WHERE out_trade_no=%s",
             (trade_no, json.dumps(notify, ensure_ascii=False)[:2000], ts, out_trade_no),
         )
     return PlainTextResponse("success")
@@ -1076,23 +1191,23 @@ def recharge_result(request: Request):
 
 
 @app.get("/api/recharge/orders")
-def recharge_orders_list(request: Request, lic: sqlite3.Row = Depends(require_license)):
+def recharge_orders_list(request: Request, lic: dict = Depends(require_license)):
     """查询当前授权码的充值记录（弹窗里展示）"""
     check_rate_limit(request, "recharge_query", 30)
     with db() as conn:
         rows = conn.execute(
-            "SELECT out_trade_no, plan_name, money, credits, status, created_at, paid_at FROM recharge_orders WHERE license_key=? ORDER BY id DESC LIMIT 20",
+            "SELECT out_trade_no, plan_name, money, credits, status, created_at, paid_at FROM recharge_orders WHERE license_key=%s ORDER BY id DESC LIMIT 20",
             (lic["license_key"],),
         ).fetchall()
     return {"orders": [dict(r) for r in rows]}
 
 
 @app.get("/api/recharge/status")
-def recharge_status(out_trade_no: str, request: Request, lic: sqlite3.Row = Depends(require_license)):
+def recharge_status(out_trade_no: str, request: Request, lic: dict = Depends(require_license)):
     """查询单个订单状态（前端支付后轮询）"""
     with db() as conn:
         row = conn.execute(
-            "SELECT status, credits, paid_at FROM recharge_orders WHERE out_trade_no=? AND license_key=?",
+            "SELECT status, credits, paid_at FROM recharge_orders WHERE out_trade_no=%s AND license_key=%s",
             (out_trade_no, lic["license_key"]),
         ).fetchone()
     if not row:

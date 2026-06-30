@@ -1,10 +1,11 @@
 """公共层：主题色访问 + API Worker + BasePage + 公共 widget 工厂。
 
-统一深色科技风（GitHub Dark 色板），保证整体美学与专业感。
-- 字体：Microsoft YaHei UI
-- 主色：#6366F1（紫蓝）
-- 背景：#0D1117 / #161B28 / #21262D
-- 文字：#FFFFFF（主） / #D1D5DB（次） / #6B7280（弱）
+千伴AI员工 · 现代扁平暗黑设计系统
+- 字体：Microsoft YaHei UI（界面） + JetBrains Mono / Consolas（数值）
+- 主色：#6366F1（靛蓝，唯一强调色）
+- 底色层级：bg_base #0A0E14 / bg_surface #11161F / bg_raise #161C28 / bg_hover #1E2533
+- 分隔：line_soft #232A37（发丝）/ line_strong #2F3744（强调）
+- 文字：text_primary #F4F6FB / text_secondary #A8B0BD / text_tertiary #6B7280
 """
 import os
 import sys
@@ -50,14 +51,21 @@ class _ThemeProxy:
         except Exception:
             # 兜底硬编码（与 default.json 一致）
             self._colors = {
-                "dark_one": "#0D1117", "dark_two": "#161B28",
-                "dark_three": "#21262D", "dark_four": "#30363D",
-                "bg_one": "#161B28", "bg_two": "#1C2333", "bg_three": "#21262D",
-                "icon_color": "#D1D5DB", "icon_hover": "#FFFFFF",
+                "dark_one": "#0A0E14", "dark_two": "#11161F",
+                "dark_three": "#161C28", "dark_four": "#232A37",
+                "bg_one": "#11161F", "bg_two": "#161C28", "bg_three": "#1E2533",
+                "bg_base": "#0A0E14", "bg_surface": "#11161F",
+                "bg_raise": "#161C28", "bg_hover": "#1E2533",
+                "line_soft": "#232A37", "line_strong": "#2F3744",
+                "accent_glow": "rgba(99,102,241,0.16)",
+                "icon_color": "#A8B0BD", "icon_hover": "#F4F6FB",
+                "icon_pressed": "#6366F1", "icon_active": "#F4F6FB",
                 "context_color": "#6366F1", "context_hover": "#818CF8",
                 "context_pressed": "#4F46E5",
-                "text_title": "#FFFFFF", "text_foreground": "#D1D5DB",
-                "text_description": "#6B7280", "text_active": "#FFFFFF",
+                "text_title": "#F4F6FB", "text_foreground": "#A8B0BD",
+                "text_description": "#6B7280", "text_active": "#F4F6FB",
+                "text_primary": "#F4F6FB", "text_secondary": "#A8B0BD",
+                "text_tertiary": "#6B7280", "text_inverse": "#0A0E14",
                 "white": "#FFFFFF", "pink": "#EC4899", "green": "#10B981",
                 "red": "#EF4444", "yellow": "#F59E0B",
             }
@@ -150,6 +158,28 @@ def font(size: int = 13, bold: bool = False) -> QFont:
     actual_size = max(6, int(round(size * scale)))
     f = QFont(family, actual_size)
     f.setBold(bold)
+    return f
+
+
+# 数值等宽字体优先级：JetBrains Mono → Consolas → Cascadia Mono → 系统等宽
+_MONO_FAMILIES = ("JetBrains Mono", "Consolas", "Cascadia Mono", "DejaVu Sans Mono")
+
+
+def font_mono(size: int = 22, bold: bool = True) -> QFont:
+    """数值等宽字体工厂：用于 KPI 数值/时间戳/序号，让数字更挺拔。
+
+    自动探测系统可用的等宽字体，找不到则回退到界面字体。
+    """
+    family, base_pt = _load_font_config()
+    scale = base_pt / _FONT_BASE_PT
+    actual_size = max(6, int(round(size * scale)))
+    from PySide6.QtGui import QFontDatabase
+    available = set(QFontDatabase.families())
+    chosen = next((fam for fam in _MONO_FAMILIES if fam in available), family)
+    f = QFont(chosen, actual_size)
+    f.setBold(bold)
+    # 等宽字体开启 tabular figures 更稳（部分字体支持）
+    f.setStyleStrategy(QFont.PreferAntialias)
     return f
 
 
@@ -306,19 +336,19 @@ def api_post(path: str, json_body: dict = None, params: dict = None,
 
 # ======================== 统一样式字符串 ========================
 def qss_card() -> str:
-    """卡片 QSS：圆角深色背景。"""
+    """卡片 QSS：去描边，仅靠 bg_raise 底色 + 圆角分层。"""
     return (
-        f"QFrame#card {{ background-color: {c('bg_two')}; "
-        f"border: 1px solid {c('dark_four')}; border-radius: 10px; }}"
+        f"QFrame#card {{ background-color: {c('bg_raise')}; "
+        f"border: none; border-radius: 10px; }}"
     )
 
 
 def qss_input() -> str:
-    """输入框 QSS：圆角、深色背景、focus 变紫边框。"""
+    """输入框 QSS：圆角、深色背景、focus 变靛蓝边框。"""
     return (
         f"QLineEdit, QPlainTextEdit, QSpinBox, QDoubleSpinBox, QComboBox {{"
-        f"  background-color: {c('dark_one')}; color: {c('text_title')};"
-        f"  border: 1px solid {c('dark_four')}; border-radius: 6px;"
+        f"  background-color: {c('bg_base')}; color: {c('text_primary')};"
+        f"  border: 1px solid {c('line_soft')}; border-radius: 6px;"
         f"  padding: 8px 10px; font-size: 13px;"
         f"  selection-background-color: {c('context_color')};"
         f"}}"
@@ -327,33 +357,35 @@ def qss_input() -> str:
         f"  border: 1px solid {c('context_color')};"
         f"}}"
         f"QComboBox::drop-down {{ border: none; width: 24px; }}"
-        f"QComboBox QAbstractItemView {{ background-color: {c('dark_two')};"
-        f"  color: {c('text_title')}; selection-background-color: {c('context_color')};"
-        f"  border: 1px solid {c('dark_four')}; }}"
+        f"QComboBox QAbstractItemView {{ background-color: {c('bg_surface')};"
+        f"  color: {c('text_primary')}; selection-background-color: {c('context_color')};"
+        f"  border: 1px solid {c('line_strong')}; }}"
     )
 
 
 def qss_btn_primary() -> str:
-    """主按钮 QSS：紫蓝背景 + 白字。"""
+    """主按钮 QSS：靛蓝背景 + 反色文字。"""
     return (
-        f"QPushButton {{ background-color: {c('context_color')}; color: #FFFFFF;"
+        f"QPushButton {{ background-color: {c('context_color')}; color: {c('text_inverse')};"
         f"  border: none; border-radius: 6px; padding: 9px 18px;"
-        f"  font-size: 13px; font-weight: bold; }}"
+        f"  font-size: 13px; font-weight: 600; }}"
         f"QPushButton:hover {{ background-color: {c('context_hover')}; }}"
         f"QPushButton:pressed {{ background-color: {c('context_pressed')}; }}"
-        f"QPushButton:disabled {{ background-color: #4B5563; color: #9CA3AF; }}"
+        f"QPushButton:disabled {{ background-color: #3A4252; color: #6B7280; }}"
     )
 
 
 def qss_btn_secondary() -> str:
-    """次按钮 QSS：深色背景。"""
+    """次按钮 QSS：ghost 风格——透明底 + 发丝描边，悬停抬升底色。"""
     return (
-        f"QPushButton {{ background-color: {c('dark_three')}; color: {c('text_title')};"
-        f"  border: 1px solid {c('dark_four')}; border-radius: 6px; padding: 8px 16px;"
+        f"QPushButton {{ background-color: transparent; color: {c('text_primary')};"
+        f"  border: 1px solid {c('line_strong')}; border-radius: 6px; padding: 8px 16px;"
         f"  font-size: 13px; }}"
-        f"QPushButton:hover {{ background-color: {c('dark_four')}; }}"
-        f"QPushButton:pressed {{ background-color: {c('context_pressed')}; }}"
-        f"QPushButton:disabled {{ background-color: #2D333B; color: #6B7280; }}"
+        f"QPushButton:hover {{ background-color: {c('bg_hover')};"
+        f"  border-color: {c('context_color')}; }}"
+        f"QPushButton:pressed {{ background-color: {c('context_pressed')};"
+        f"  color: {c('text_inverse')}; }}"
+        f"QPushButton:disabled {{ color: #4B5563; border-color: {c('line_soft')}; }}"
     )
 
 
@@ -362,51 +394,56 @@ def qss_btn_danger() -> str:
     return (
         f"QPushButton {{ background-color: {c('red')}; color: #FFFFFF;"
         f"  border: none; border-radius: 6px; padding: 9px 18px;"
-        f"  font-size: 13px; font-weight: bold; }}"
+        f"  font-size: 13px; font-weight: 600; }}"
         f"QPushButton:hover {{ background-color: #DC2626; }}"
         f"QPushButton:pressed {{ background-color: #B91C1C; }}"
-        f"QPushButton:disabled {{ background-color: #4B5563; color: #9CA3AF; }}"
+        f"QPushButton:disabled {{ background-color: #3A4252; color: #6B7280; }}"
     )
 
 
 def qss_checkbox() -> str:
     """复选框 QSS。"""
     return (
-        f"QCheckBox {{ color: {c('text_foreground')}; font-size: 13px; spacing: 8px; }}"
+        f"QCheckBox {{ color: {c('text_secondary')}; font-size: 13px; spacing: 8px; }}"
         f"QCheckBox::indicator {{ width: 18px; height: 18px;"
-        f"  border: 2px solid {c('dark_four')}; border-radius: 4px;"
-        f"  background-color: {c('dark_one')}; }}"
+        f"  border: 2px solid {c('line_strong')}; border-radius: 4px;"
+        f"  background-color: {c('bg_base')}; }}"
         f"QCheckBox::indicator:hover {{ border-color: {c('context_hover')}; }}"
         f"QCheckBox::indicator:checked {{ background-color: {c('context_color')};"
         f"  border-color: {c('context_color')}; }}"
-        f"QRadioButton {{ color: {c('text_foreground')}; font-size: 13px; spacing: 8px; }}"
+        f"QRadioButton {{ color: {c('text_secondary')}; font-size: 13px; spacing: 8px; }}"
         f"QRadioButton::indicator {{ width: 16px; height: 16px;"
-        f"  border: 2px solid {c('dark_four')}; border-radius: 9px;"
-        f"  background-color: {c('dark_one')}; }}"
+        f"  border: 2px solid {c('line_strong')}; border-radius: 9px;"
+        f"  background-color: {c('bg_base')}; }}"
         f"QRadioButton::indicator:checked {{ border-color: {c('context_color')};"
         f"  background-color: {c('context_color')}; }}"
     )
 
 
 def qss_table() -> str:
-    """表格 QSS。"""
+    """表格 QSS：去双重边框，透明背景承接卡片底色，仅水平发丝线。
+
+    内嵌于卡片时卡片提供圆角与底色，表格自身无描边无圆角。
+    """
     return (
-        f"QTableWidget {{ background-color: {c('bg_two')}; color: {c('text_foreground')};"
-        f"  border: 1px solid {c('dark_four')}; border-radius: 8px;"
-        f"  gridline-color: {c('dark_four')}; outline: none; }}"
-        f"QHeaderView::section {{ background-color: {c('dark_two')};"
-        f"  color: {c('text_title')}; padding: 8px; border: none;"
-        f"  border-bottom: 1px solid {c('dark_four')}; font-size: 12px;"
-        f"  font-weight: bold; }}"
-        f"QTableWidget::item {{ padding: 6px; border-bottom: 1px solid {c('dark_three')}; }}"
-        f"QTableWidget::item:selected {{ background-color: {c('context_color')};"
-        f"  color: #FFFFFF; }}"
-        f"QScrollBar:vertical {{ background-color: {c('dark_one')}; width: 10px;"
+        f"QTableWidget {{ background-color: transparent; color: {c('text_secondary')};"
+        f"  border: none; border-radius: 0px;"
+        f"  gridline-color: transparent; outline: none; }}"
+        f"QHeaderView::section {{ background-color: {c('bg_raise')};"
+        f"  color: {c('text_primary')}; padding: 10px 12px; border: none;"
+        f"  border-bottom: 1px solid {c('line_strong')}; font-size: 12px;"
+        f"  font-weight: 600; }}"
+        f"QTableWidget::item {{ padding: 8px 12px; border-bottom: 1px solid {c('line_soft')}; }}"
+        f"QTableWidget::item:hover {{ background-color: {c('bg_hover')}; }}"
+        f"QTableWidget::item:selected {{ background-color: {c('accent_glow')};"
+        f"  color: {c('text_primary')}; }}"
+        f"QScrollBar:vertical {{ background-color: transparent; width: 10px;"
         f"  border: none; }}"
-        f"QScrollBar::handle:vertical {{ background-color: {c('dark_four')};"
+        f"QScrollBar::handle:vertical {{ background-color: {c('line_strong')};"
         f"  border-radius: 5px; min-height: 30px; }}"
         f"QScrollBar::handle:vertical:hover {{ background-color: {c('context_color')}; }}"
         f"QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}"
+        f"QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: none; }}"
     )
 
 
@@ -414,9 +451,9 @@ def qss_scrollarea() -> str:
     """滚动区 QSS：透明背景 + 细滚动条。"""
     return (
         f"QScrollArea {{ background: transparent; border: none; }}"
-        f"QScrollBar:vertical {{ background-color: {c('dark_one')}; width: 10px;"
+        f"QScrollBar:vertical {{ background-color: transparent; width: 10px;"
         f"  border: none; }}"
-        f"QScrollBar::handle:vertical {{ background-color: {c('dark_four')};"
+        f"QScrollBar::handle:vertical {{ background-color: {c('line_strong')};"
         f"  border-radius: 5px; min-height: 30px; }}"
         f"QScrollBar::handle:vertical:hover {{ background-color: {c('context_color')}; }}"
         f"QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}"
@@ -461,11 +498,7 @@ def make_field_label(text: str) -> QLabel:
 def make_card_frame(title: str = "") -> tuple:
     """创建卡片容器。返回 (frame, inner_layout)。
 
-    内部结构：
-        frame（圆角深色背景）
-          └─ 主布局（VBoxLayout, margin 20）
-               ├─ 标题 label（如有 title）
-               └─ 内容 layout（QVBoxLayout，供外部 addWidget）
+    去描边设计：仅 bg_raise 底色 + 10px 圆角，标题下用发丝线分隔。
     """
     frame = QFrame()
     frame.setObjectName("card")
@@ -479,10 +512,10 @@ def make_card_frame(title: str = "") -> tuple:
     if title:
         title_lb = make_section_label(title, size=14)
         outer.addWidget(title_lb)
-        # 标题下分隔线
+        # 标题下发丝线（非粗描边）
         line = QFrame()
         line.setFixedHeight(1)
-        line.setStyleSheet(f"background-color: {c('dark_four')}; border: none;")
+        line.setStyleSheet(f"background-color: {c('line_soft')}; border: none;")
         outer.addWidget(line)
 
     content_layout = QVBoxLayout()
@@ -634,32 +667,114 @@ def make_radio_group(options: list, default: str = "") -> tuple:
 
 
 def make_metric_card(value: str, label: str, color: str = None) -> QFrame:
-    """指标卡（大数字 + 描述）。"""
+    """指标卡（大数字 + 描述）——左对齐、等宽数字字体。
+
+    保持向后兼容：返回的 card 内第一个 QLabel 仍是数值标签（供 findChildren 取用）。
+    """
     if color is None:
-        color = c("text_title")
+        color = c("text_primary")
     frame = QFrame()
     frame.setObjectName("card")
     frame.setStyleSheet(qss_card())
-    frame.setMinimumHeight(90)
+    frame.setMinimumHeight(96)
 
     layout = QVBoxLayout(frame)
     layout.setContentsMargins(16, 14, 16, 14)
     layout.setSpacing(4)
 
     value_lb = QLabel(value)
-    value_lb.setFont(font(22, bold=True))
+    value_lb.setFont(font_mono(28, bold=True))
     value_lb.setStyleSheet(f"color: {color}; background: transparent;")
-    value_lb.setAlignment(Qt.AlignCenter)
+    value_lb.setAlignment(Qt.AlignLeft)
 
     label_lb = QLabel(label)
     label_lb.setFont(font(11))
-    label_lb.setStyleSheet(f"color: {c('text_description')}; background: transparent;")
-    label_lb.setAlignment(Qt.AlignCenter)
+    label_lb.setStyleSheet(f"color: {c('text_tertiary')}; background: transparent;")
+    label_lb.setAlignment(Qt.AlignLeft)
     label_lb.setWordWrap(True)
 
     layout.addWidget(value_lb)
     layout.addWidget(label_lb)
     return frame
+
+
+def make_kpi_card(label: str, value: str = "0", color: str = None,
+                  trend: str = "", trend_dir: str = "") -> tuple:
+    """KPI 四件套卡片：标签 + 数值 + 趋势 + 占位进度。
+
+    返回 (frame, value_label, trend_label)。
+    - trend_dir: "up" / "down" / ""（控制趋势箭头与颜色）
+    - 数值用等宽字体左对齐；无趋势数据时 trend_label 隐藏。
+
+    用法：
+        card, val_lb, trend_lb = make_kpi_card("今日处理量", "1284", trend="12%", trend_dir="up")
+        val_lb.setText("2000")            # 更新数值
+        trend_lb.setText("▲ 12%")         # 更新趋势
+    """
+    if color is None:
+        color = c("text_primary")
+    frame = QFrame()
+    frame.setObjectName("card")
+    frame.setStyleSheet(qss_card())
+    frame.setMinimumHeight(108)
+
+    layout = QVBoxLayout(frame)
+    layout.setContentsMargins(18, 16, 18, 16)
+    layout.setSpacing(6)
+
+    # 标签（tertiary，小号）
+    label_lb = QLabel(label)
+    label_lb.setFont(font(11))
+    label_lb.setStyleSheet(f"color: {c('text_tertiary')}; background: transparent;")
+    label_lb.setAlignment(Qt.AlignLeft)
+
+    # 数值（等宽，大号）
+    value_lb = QLabel(value)
+    value_lb.setFont(font_mono(28, bold=True))
+    value_lb.setStyleSheet(f"color: {color}; background: transparent;")
+    value_lb.setAlignment(Qt.AlignLeft)
+
+    # 趋势行
+    trend_color = c("text_tertiary")
+    if trend_dir == "up":
+        trend_color = c("green")
+        if trend and not trend.startswith(("▲", "▼")):
+            trend = f"▲ {trend}"
+    elif trend_dir == "down":
+        trend_color = c("red")
+        if trend and not trend.startswith(("▲", "▼")):
+            trend = f"▼ {trend}"
+    trend_lb = QLabel(trend)
+    trend_lb.setFont(font(11, bold=True))
+    trend_lb.setStyleSheet(f"color: {trend_color}; background: transparent;")
+    trend_lb.setAlignment(Qt.AlignLeft)
+    if not trend:
+        trend_lb.hide()
+
+    layout.addWidget(label_lb)
+    layout.addWidget(value_lb)
+    layout.addWidget(trend_lb)
+    return frame, value_lb, trend_lb
+
+
+def make_status_dot(status: str = "info", text: str = "") -> QLabel:
+    """状态圆点 + 文字。status: info/success/warning/danger/idle。
+
+    用于表格状态列，取代 ✓ 字符，更高级。
+    """
+    colors = {
+        "info": c("context_color"),
+        "success": c("green"),
+        "warning": c("yellow"),
+        "danger": c("red"),
+        "idle": c("text_tertiary"),
+    }
+    dot_color = colors.get(status, colors["info"])
+    lb = QLabel(f"● {text}" if text else "●")
+    lb.setFont(font(11, bold=True))
+    lb.setStyleSheet(f"color: {dot_color}; background: transparent;")
+    lb.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+    return lb
 
 
 def make_table(columns: list, min_height: int = 200) -> QTableWidget:
@@ -704,23 +819,19 @@ def make_status_badge(text: str, status: str = "info") -> QLabel:
 class BasePage(QWidget):
     """所有业务页的基类。
 
-    统一布局：
-        ┌───────────────────────────────────┐
-        │  QScrollArea（透明背景 + 细滚动条）  │
-        │   ┌─────────────────────────────┐ │
-        │   │  QVBoxLayout（margin 24）     │ │
-        │   │   ├─ 页面主标题（22pt bold）   │ │
-        │   │   ├─ 页面副标题（13pt 灰）     │ │
-        │   │   ├─ 分隔线                  │ │
-        │   │   └─ 内容区（content_layout） │ │
-        │   │       （子类在此 addLayout）  │ │
-        │   └─────────────────────────────┘ │
-        └───────────────────────────────────┘
+    页头栏布局（去分隔线，用留白代替）：
+        ┌─────────────────────────────────────────────┐
+        │  页面标题 20pt              〔操作槽 横向〕 │
+        │  副标题 13pt tertiary（含鲜活信息）         │
+        │                                             │
+        │  （16px 留白）                              │
+        │  ── 内容区 content_layout ──                │
+        └─────────────────────────────────────────────┘
     """
 
     def __init__(self, title: str = "", subtitle: str = "", parent=None):
         super().__init__(parent)
-        self.setStyleSheet(f"background-color: {c('dark_one')};")
+        self.setStyleSheet(f"background-color: {c('bg_surface')};")
 
         # 外层布局
         outer = QVBoxLayout(self)
@@ -737,22 +848,34 @@ class BasePage(QWidget):
         container = QWidget()
         container.setStyleSheet("background: transparent;")
         self.main_layout = QVBoxLayout(container)
-        self.main_layout.setContentsMargins(24, 20, 24, 20)
-        self.main_layout.setSpacing(14)
+        self.main_layout.setContentsMargins(28, 22, 28, 22)
+        self.main_layout.setSpacing(16)
 
-        # 页面标题
+        # ===== 页头栏：标题左 + 操作槽右 =====
+        header_row = QHBoxLayout()
+        header_row.setContentsMargins(0, 0, 0, 0)
+        header_row.setSpacing(12)
+
+        # 左侧标题列
+        title_col = QVBoxLayout()
+        title_col.setContentsMargins(0, 0, 0, 0)
+        title_col.setSpacing(4)
         if title:
-            self.title_label = make_title_label(title, size=22)
-            self.main_layout.addWidget(self.title_label)
+            self.title_label = make_title_label(title, size=20)
+            title_col.addWidget(self.title_label)
         if subtitle:
             self.subtitle_label = make_subtitle_label(subtitle, size=13)
-            self.main_layout.addWidget(self.subtitle_label)
+            title_col.addWidget(self.subtitle_label)
+        header_row.addLayout(title_col)
+        header_row.addStretch(1)
 
-        # 分隔线
-        line = QFrame()
-        line.setFixedHeight(1)
-        line.setStyleSheet(f"background-color: {c('dark_four')}; border: none;")
-        self.main_layout.addWidget(line)
+        # 右侧操作槽（子类可 self.header_actions.addWidget(...) 注入按钮）
+        self.header_actions = QHBoxLayout()
+        self.header_actions.setContentsMargins(0, 0, 0, 0)
+        self.header_actions.setSpacing(8)
+        header_row.addLayout(self.header_actions)
+
+        self.main_layout.addLayout(header_row)
 
         # 内容区（子类通过 self.content_layout.addWidget 添加业务内容）
         self.content_layout = QVBoxLayout()
@@ -769,10 +892,11 @@ class BasePage(QWidget):
         self.status_label = QLabel("")
         self.status_label.setFont(font(12))
         self.status_label.setStyleSheet(
-            f"color: {c('text_description')}; background: transparent;"
-            f"  padding: 8px; border-radius: 6px;"
+            f"color: {c('text_primary')}; background-color: {c('bg_hover')};"
+            f"  padding: 10px 14px; border-radius: 6px;"
+            f"  border-left: 3px solid {c('context_color')};"
         )
-        self.status_label.setAlignment(Qt.AlignCenter)
+        self.status_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         self.status_label.hide()
         self.content_layout.addWidget(self.status_label)
 
@@ -781,17 +905,17 @@ class BasePage(QWidget):
         if not msg:
             self.status_label.hide()
             return
-        colors = {
-            "info": (c("context_color"), "#FFFFFF"),
-            "success": (c("green"), "#FFFFFF"),
-            "warning": (c("yellow"), "#0D1117"),
-            "danger": (c("red"), "#FFFFFF"),
-        }
-        bg, fg = colors.get(level, colors["info"])
+        accent = {
+            "info": c("context_color"),
+            "success": c("green"),
+            "warning": c("yellow"),
+            "danger": c("red"),
+        }.get(level, c("context_color"))
         self.status_label.setText(msg)
         self.status_label.setStyleSheet(
-            f"background-color: {bg}; color: {fg};"
-            f"  padding: 10px; border-radius: 6px; font-size: 13px;"
+            f"color: {c('text_primary')}; background-color: {c('bg_hover')};"
+            f"  padding: 10px 14px; border-radius: 6px;"
+            f"  border-left: 3px solid {accent}; font-size: 13px;"
         )
         self.status_label.show()
 

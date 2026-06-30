@@ -80,7 +80,8 @@ class MainWindow(QMainWindow):
 
         # 取消标题栏设置按钮 active
         top_settings = MainFunctions.get_title_bar_btn(self, "btn_top_settings")
-        top_settings.set_active(False)
+        if top_settings is not None:
+            top_settings.set_active(False)
 
         # 12 个业务页路由映射：btn_id → page_N
         page_map = {
@@ -98,11 +99,30 @@ class MainWindow(QMainWindow):
             "btn_settings": self.ui.load_pages.page_12,
         }
 
+        # btn_id → 标题栏动态页名（品牌 logo 始终保留，页名随切换变化）
+        page_name_map = {
+            "btn_home": "千伴AI员工",
+            "btn_devices": "AI员工群控管理",
+            "btn_search": "AI搜索控制大模型",
+            "btn_functions": "AI功能自主选项",
+            "btn_intent": "AI深度挖掘客户",
+            "btn_message": "AI员工话术私信调整",
+            "btn_process": "AI一键控制开关",
+            "btn_strategy": "AI员工工作调整台",
+            "btn_monitor": "AI员工工作动向",
+            "btn_dashboard": "AI获客面板员工走向",
+            "btn_video": "视频处理设置",
+            "btn_settings": "系统设置",
+        }
+
         if btn.objectName() in page_map:
-            # 高亮当前菜单
+            # 高亮当前菜单（accent 竖条选中态）
             self.ui.left_menu.select_only_one(btn.objectName())
             # 切换页面
             MainFunctions.set_page(self, page_map[btn.objectName()])
+            # 动态页名：标题栏显示当前页名，品牌 logo 始终保留
+            name = page_name_map.get(btn.objectName(), self.settings["app_name"])
+            self.ui.title_bar.set_title(name)
             print(f"切换到页面：{btn.objectName()}")
             return
 
