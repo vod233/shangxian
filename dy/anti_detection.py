@@ -269,8 +269,10 @@ class InteractionProbability:
         :param action_type: like/comment/follow/private_message/comment_lead/lead_pm/long_watch
         :param config: 配置字典，可覆盖默认概率
         """
-        # 极速测试模式：总是返回 True，每个功能都执行
+        # 极速测试模式：总是返回 True，每个功能都执行（但长停留除外——长停留延长等待时间，与极速测试快速性冲突）
         if cls._turbo_enabled:
+            if action_type == 'long_watch':
+                return False
             return True
 
         anti_cfg = (config or {}).get('anti_detection', {})

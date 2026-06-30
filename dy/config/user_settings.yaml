@@ -27,19 +27,10 @@ interaction:
   enable_private_message: true
   pm_followers_threshold: 0.01
   pm_message_list:
-  - 看到你的内容很有启发，谢谢你
-  - 你的视频做得真好，学到了很多
-  - 内容很有价值，感谢分享
-  - 关注你了，期待更多好内容
-  - 你的分享对我帮助很大
-  - 创意很棒，继续加油
-  - 这个角度很新颖，学到了
-  - 内容质量很高，已收藏
+  - 看我主页有联系方式
   lead_pm_message_list:
   - 看到你评论很有共鸣，详细聊聊
-  - 你的评论很有启发，主页有更多你感兴趣的内容
   - 你的想法很棒，可以聊聊更多吗
-  - 评论说得太对了，主页有整理相关内容
   - 你的评论让我印象深刻，期待交流
 anti_detection:
   night_mode:

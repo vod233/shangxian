@@ -979,7 +979,9 @@ class TikTokTaskFlow:
             long_watch_triggered = 0
 
             # 15% 概率长停留（模拟看完整个视频）— 受概率决策总开关控制
-            if self._probability_allows('long_watch'):
+            # 极速测试模式下跳过长停留，保证测试快速性
+            turbo_enabled = bool(self.config.get('anti_detection', {}).get('turbo_test_mode', {}).get('enabled', False))
+            if not turbo_enabled and self._probability_allows('long_watch'):
                 stay_time += random.uniform(5.0, 15.0)
                 long_watch_triggered = 1
                 logger.info(f"📺 长停留模式: 预计停留 {stay_time:.1f} 秒")
