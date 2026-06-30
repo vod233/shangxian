@@ -3,7 +3,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QFormLayout, QWidget
 
 from .common import (
-    BasePage, api_get, ApiWorker,
+    BasePage, ApiWorker,
     make_card_frame, make_primary_btn, make_secondary_btn,
     make_line_edit, make_spinbox, make_slider, make_checkbox,
     make_field_label, c, font,
@@ -124,8 +124,26 @@ class StrategyPage(BasePage):
         self.ai_temperature_value_label.setText(f"{val / 10:.1f}")
 
     def _load(self):
-        """加载配置：GET /config?platform=douyin"""
-        data = api_get("/config", params={"platform": "douyin"})
+        """异步加载配置：GET /config?platform=douyin。
+
+        参照 process_page._load 模式，原同步 api_get 会阻塞 GUI 线程最长 10 秒，
+        改为 ApiWorker 后台请求，回调中更新 UI。
+        """
+        # 重入保护：上一次加载仍在运行时跳过
+        if self._worker is not None:
+            try:
+                if self._worker.isRunning():
+                    return
+            except RuntimeError:
+                pass
+        worker = ApiWorker("GET", "/config", params={"platform": "douyin"})
+        worker.result_ready.connect(self._on_load_done)
+        worker.start()
+        self._worker = worker  # 防 GC
+
+    def _on_load_done(self, data: dict):
+        """配置加载完成回调（GUI 线程执行）。"""
+        self._worker = None  # 释放引用
         if not data.get("success"):
             self.set_status(f"加载配置失败：{data.get('message', '')}", "danger")
             return
@@ -169,9 +187,9 @@ class StrategyPage(BasePage):
 
         self.set_status("配置已加载", "success")
 
-    def _collect_payload(self) -> dict:
-        """从控件收集配置 payload。"""
-        payload = dict(self._config)
+    def _collect_payload(self, base: dict = None) -> dict:
+        """从控件收集配置 payload。base 为最新拉取的配置，避免跨页面缓存覆写。"""
+        payload = dict(base if base is not None else self._config)
         payload["max_ai_comment_reviews"] = self.max_ai_comment_reviews.value()
         payload["max_comment_swipes"] = self.max_comment_swipes.value()
         payload["ai_enabled"] = self.ai_enabled.isChecked()
@@ -184,11 +202,31 @@ class StrategyPage(BasePage):
         return payload
 
     def _on_save(self):
-        """保存配置：POST /config?platform=douyin"""
+        """保存配置：先异步拉取最新配置（避免跨页面缓存覆写），再合并本页字段后 POST。"""
         self.save_btn.setEnabled(False)
-        self.set_status("正在保存配置...", "info")
+        self.set_status("正在拉取最新配置...", "info")
+        worker = ApiWorker("GET", "/config", params={"platform": "douyin"})
+        worker.result_ready.connect(self._on_latest_config_loaded)
+        worker.start()
+        self._worker = worker  # 防 GC
+
+    def _on_latest_config_loaded(self, data: dict):
+        """最新配置拉取完成：校验后合并本页字段并提交保存。"""
+        if not data.get("success"):
+            self.save_btn.setEnabled(True)
+            self.set_status(f"拉取最新配置失败：{data.get('message', '')}", "danger")
+            return
+        latest = data.get("config", {}) or {}
+        # 校验必填字段存在，避免后端 422
+        if not latest.get("search_keywords"):
+            self.save_btn.setEnabled(True)
+            self.set_status("服务端配置不完整（缺少 search_keywords），无法保存", "danger")
+            return
+        self._config = latest  # 更新本地缓存为最新值
+        payload = self._collect_payload(base=latest)
+        self.set_status("保存中...", "info")
         worker = ApiWorker("POST", "/config",
-                           json_body=self._collect_payload(),
+                           json_body=payload,
                            params={"platform": "douyin"})
         worker.result_ready.connect(self._on_save_done)
         worker.start()

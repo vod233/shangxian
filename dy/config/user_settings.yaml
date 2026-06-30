@@ -1,7 +1,6 @@
 search:
   keywords:
-  - 苹果手机
-  - macbook
+  - 键盘
   sort_by: latest
 crawler:
   max_daily_videos: 9999

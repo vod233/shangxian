@@ -1,13 +1,13 @@
 ai_reply:
   enabled: true
-  mode: local
+  mode: cloud
   cloud_base_url: https://lcjx.yun/social-ai-credit-api
   base_url: https://api.deepseek.com/v1
-  api_key: sk-38922203e64643f89e33b53cfc74db5f
+  # api_key 已移除，改为从环境变量 DEEPSEEK_API_KEY 读取
   model: deepseek-chat
   temperature: 1.1
   max_tokens: 120
   persona: a_qiang
   license:
     server_url: https://lcjx.yun/social-ai-credit-api
-    key: saa_DTFje43GdrtsYwWtax3xi5xQ79HOhT5o
+    # key 已移除，由用户在 GUI 中输入并通过后端加密存储

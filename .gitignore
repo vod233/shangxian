@@ -18,3 +18,18 @@ _server_dump/
 *.env
 config/auth.json
 .env
+# 敏感配置文件（含授权码、API Key 等，禁止入仓）
+dy/config/api_settings.yaml
+dy/config/user_settings.yaml
+dy/config/scout_settings.yaml
+# 临时审计脚本
+_tmp_*.py
+_rev_server.py
+# 备份与调试脚本
+_*.sh
+_bak_*.sh
+# 机器绑定标识
+.socialautoagent/
+# 临时数据库转储
+dump_*.xml
+.credit_server_dump.txt
