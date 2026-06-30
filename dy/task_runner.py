@@ -339,7 +339,268 @@ class TikTokTaskFlow:
             return False, result
         return True, result
 
-    def _run_comment_lead_safely(self, video_title, keyword, enable_lead_pm=False, video_started_at=None):
+    def _resolve_business_mode(self):
+        """解析业务模式：1=作者私信流，2=评论区截流。
+        缺省时由现有 enable_* 开关自动推断（向后兼容）。
+        """
+        interaction = self.config.get('interaction', {})
+        mode = interaction.get('business_mode')
+        if mode in (1, 2):
+            logger.info(f"业务模式由 business_mode={mode} 指定")
+            return mode
+        # 自动推断
+        if self._interaction_enabled("enable_author_follow") or self._interaction_enabled("enable_private_message"):
+            logger.info("业务模式自动推断为 1（作者私信流）")
+            return 1
+        if self._interaction_enabled("enable_video_comment") or self._interaction_enabled("enable_comment_lead"):
+            logger.info("业务模式自动推断为 2（评论区截流）")
+            return 2
+        logger.info("未启用任何互动链路，仅执行全局点赞")
+        return 0
+
+    def _global_pre_action_like(self, video_id, video_started_at):
+        """全局前置点赞（受 enable_like 开关 + 限额/概率控制）。"""
+        if not self._interaction_enabled("enable_like"):
+            logger.info("已关闭功能: 点赞，跳过")
+            self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.1", "msg": "功能关闭:点赞"})
+            return
+        self._check_stop()
+        if not self.anti.can_do('like') or not self._probability_allows('like'):
+            logger.info("限额/概率决策: 跳过点赞")
+            self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.1", "msg": "跳过点赞(限额/概率)"})
+            self._interruptible_sleep(random.uniform(0.8, 2.0))
+            return
+        self._report(current_action="执行 AI 智能算法加权互动")
+        stable, liked = self._run_feature_safely(
+            "点赞",
+            lambda: self.runner.run_action(DoubleClickLikeAction),
+        )
+        if liked:
+            self.db.update_interaction(video_id, "like")
+            self._report(executed_action="点赞")
+            self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.1", "msg": "点赞成功"})
+        if not stable:
+            self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.1", "msg": "点赞失败(页面不稳定)"})
+        elif not liked:
+            logger.info("点赞未成功但页面稳定，继续执行后续功能")
+            self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.1", "msg": "点赞未成功(页面稳定,不阻断)"})
+        self._interruptible_sleep(random.uniform(0.8, 2.0))
+
+    def _pipeline_author_dm(self, video_id, video_title, video_started_at):
+        """模式1：作者私信流 — 关注作者 + 私信。严禁评论相关调用。"""
+        if self._video_processing_timed_out(video_started_at):
+            logger.warning("视频处理超时，跳过作者私信流")
+            self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.2", "msg": "跳过(超时)"})
+            return
+        # 当 business_mode=1 显式设置时，隐含启用作者关注/私信，不依赖 enable_author_follow 独立开关
+        business_mode = self.config.get('interaction', {}).get('business_mode')
+        if not self._interaction_enabled("enable_author_follow"):
+            if business_mode == 1:
+                logger.warning("business_mode=1 隐含启用作者关注/私信，忽略 enable_author_follow=false")
+            else:
+                logger.info("已关闭功能: 作者主页/关注/私信，跳过")
+                self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.2", "msg": "功能关闭:关注/私信"})
+                return
+        self._check_stop()
+        if not self.anti.can_do('follow') or not self._probability_allows('follow'):
+            logger.info("限额/概率决策: 跳过关注/私信")
+            self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.2", "msg": "跳过关注/私信(限额/概率)"})
+            self._interruptible_sleep(random.uniform(1.0, 2.5))
+            return
+        private_message_allowed = (
+            self._interaction_enabled("enable_private_message", False)
+            and self.anti.can_do('private_message')
+            and self._probability_allows('private_message')
+        )
+        self._report(current_action="锁定高潜客户，执行 AI 私域线索破冰")
+        stable, follow_result = self._run_feature_safely(
+            "作者主页/关注/私信",
+            lambda: self.runner.run_action(
+                FollowAuthorAction,
+                private_message_allowed=private_message_allowed,
+            ),
+        )
+        if isinstance(follow_result, dict):
+            if follow_result.get("followed"):
+                self.db.update_interaction(video_id, "follow")
+                self._report(executed_action="关注作者")
+                self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.2", "msg": "关注成功"})
+            if follow_result.get("private_message_sent"):
+                self.db.update_interaction(video_id, "private_message")
+                self._report(executed_action="发送私信")
+                self.db.update_video_detail(video_id, pm_sent=1, action_event={"t": _now_str(), "phase": "B.2", "msg": "私信发送成功"})
+            follower_count = follow_result.get("follower_count") or ""
+            if follower_count:
+                self.db.update_video_detail(video_id, follower_count=str(follower_count))
+        elif follow_result:
+            self.db.update_interaction(video_id, "follow")
+            self._report(executed_action="关注作者")
+            self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.2", "msg": "关注成功(无私信)"})
+        if not stable:
+            self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.2", "msg": "关注/私信失败(页面不稳定)"})
+        self._interruptible_sleep(random.uniform(1.0, 2.5))
+
+    def _pipeline_comment_ecosystem(self, video_id, video_title, video_started_at):
+        """模式2：评论区截流 — 一次展开评论面板，闭环完成发主评+截流+私信，最后统一关闭。"""
+        if self._video_processing_timed_out(video_started_at):
+            logger.warning("视频处理超时，跳过评论区截流")
+            self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.3", "msg": "跳过(超时)"})
+            return
+
+        # 当 business_mode=2 显式设置时，隐含启用视频评论+评论区截流，不依赖独立开关
+        business_mode = self.config.get('interaction', {}).get('business_mode')
+        enable_comment = self._interaction_enabled("enable_video_comment")
+        enable_lead = self._interaction_enabled("enable_comment_lead")
+        if business_mode == 2:
+            if not enable_comment:
+                logger.warning("business_mode=2 隐含启用视频评论，忽略 enable_video_comment=false")
+                enable_comment = True
+            if not enable_lead:
+                logger.warning("business_mode=2 隐含启用评论区截流，忽略 enable_comment_lead=false")
+                enable_lead = True
+
+        if not enable_comment and not enable_lead:
+            logger.info("已关闭功能: 视频评论 + 评论区截流，跳过")
+            self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.3", "msg": "功能关闭:评论区链路"})
+            return
+
+        # 生成AI评论（供B.3使用）
+        comment_text = ""
+        if enable_comment and self.anti.can_do('comment') and self._probability_allows('comment'):
+            comment_text = self.reply_agent.generate_reply(
+                title=video_title,
+                keyword=self.current_keyword or ""
+            ) or ""
+
+        # 确定 B.4/B.5 策略
+        enable_lead_pm = False
+        lead_quota_ok = self.anti.can_do('comment') and self._probability_allows('comment_lead')
+
+        if enable_lead and lead_quota_ok:
+            enable_lead_pm = self._interaction_enabled("enable_comment_lead_pm")
+            if enable_lead_pm:
+                if not self.anti.can_do('lead_pm'):
+                    enable_lead_pm = False
+                    logger.info("B.5 跳过：lead_pm 限额已满")
+                    self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.5", "msg": "跳过(lead_pm限额)"})
+                elif not self._probability_allows('lead_pm'):
+                    enable_lead_pm = False
+                    logger.info("B.5 跳过：概率决策")
+                    self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.5", "msg": "跳过(概率)"})
+
+        has_work = bool(comment_text) or (enable_lead and lead_quota_ok)
+        if not has_work:
+            logger.info("评论区链路无可执行动作（无评论+无限额），跳过")
+            return
+
+        # --- 一次打开评论区 ---
+        self._check_stop()
+        if not self._recover_to_video_page("评论区截流-执行前"):
+            logger.warning("评论区截流前无法确认视频页，跳过")
+            self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.3", "msg": "跳过(不在视频页)"})
+            return
+
+        opened = self.runner.run_action(OpenCommentSectionAction)
+        self._dismiss_video_context_menu_if_present()
+        opened_state = self._detect_page_state()
+        logger.info(f"评论区截流-打开评论区后状态: {opened_state}")
+        if not opened or opened_state not in ("comment_panel", "input_or_chat"):
+            if opened and (self._resource_exists(L.COMMENT_CARD_CONTAINER_ID, timeout=0.5)
+                           or self._resource_exists(L.COMMENT_LIST_CONTAINER, timeout=0.5)):
+                logger.info("评论区已打开（直接容器检测通过）")
+            else:
+                logger.warning(f"评论区未可靠打开，当前状态: {opened_state}")
+                self._recover_to_video_page("评论区截流-打开失败后")
+                self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.3", "msg": "打开评论区失败"})
+                return
+
+        # --- [动作1] 在同一展开面板内发主评 ---
+        if comment_text:
+            self._check_stop()
+            self._report(current_action="AI 正在根据垂直行业知识库生成精准评论")
+            if self.reply_agent.is_enabled():
+                logger.info(f"🤖 AI 生成回复: {comment_text}")
+            self.db.save_ai_reply(video_id, note_title=video_title, ai_reply=comment_text)
+            try:
+                commented = self.runner.run_action(PostCommentAction, comment_text)
+            except InterruptedError:
+                raise
+            except Exception as exc:
+                logger.error(f"发主评异常: {exc}")
+                commented = False
+            if commented:
+                self.db.update_interaction(video_id, "comment")
+                self._report(executed_action="发布视频评论")
+                self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.3", "msg": f"评论已发布: {comment_text[:30]}"})
+            else:
+                self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.3", "msg": "评论发送失败"})
+            self._interruptible_sleep(random.uniform(0.8, 2.0))
+        elif enable_comment:
+            self.db.save_ai_reply(video_id, note_title=video_title, ai_reply="")
+            logger.info("未生成可发布的回复，跳过评论环节。")
+            self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.3", "msg": "AI未生成评论"})
+
+        # --- [动作2] 在已打开的评论区执行截流 + 楼中楼私信 ---
+        if enable_lead and lead_quota_ok:
+            self._check_stop()
+            self._report(current_action="正在对评论区意向线索进行精准拦截")
+            lead_result = self._run_comment_lead_safely(
+                video_title, self.current_keyword or "",
+                enable_lead_pm=enable_lead_pm,
+                video_started_at=video_started_at,
+                already_open=True,
+            )
+            self._report(executed_action="评论区AI截流")
+            # DB 记录
+            if lead_result.get("lead_reply_sent"):
+                reply_count = max(lead_result.get("lead_reply_fallback_count", 0), 1)
+                for _ in range(reply_count):
+                    self.db.update_interaction(video_id, "comment")
+                action_msg = f"楼中楼回复已发送 ×{reply_count}" if reply_count > 1 else "楼中楼回复已发送"
+                self.db.update_video_detail(video_id, lead_sent=1,
+                    intent_comment=lead_result.get("lead_comment_text", ""),
+                    lead_reply=lead_result.get("lead_reply_text", ""),
+                    action_event={"t": _now_str(), "phase": "B.4", "msg": action_msg})
+            else:
+                self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.4", "msg": "评论区截流完成(未发送回复)"})
+
+            fallback_pm_count = lead_result.get("lead_pm_fallback_count", 0)
+            if lead_result.get("lead_pm_sent"):
+                self.db.update_interaction(video_id, "lead_pm")
+                self._report(executed_action="楼中楼私信评论者")
+                self.db.update_video_detail(video_id, lead_pm_sent=1, action_event={"t": _now_str(), "phase": "B.5", "msg": "楼中楼私信已发送"})
+            elif fallback_pm_count > 0:
+                for _ in range(fallback_pm_count):
+                    self.db.update_interaction(video_id, "lead_pm")
+                self._report(executed_action=f"兜底私信评论者 ×{fallback_pm_count}")
+                self.db.update_video_detail(video_id, lead_pm_sent=1, action_event={"t": _now_str(), "phase": "B.5", "msg": f"兜底私信已发送({fallback_pm_count}人)"})
+            else:
+                reason = lead_result.get("lead_pm_reason", "unknown")
+                if reason in ("skipped", "lead_reply_not_sent"):
+                    logger.info(f"B.5 跳过: {reason}")
+                    self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.5", "msg": f"跳过({reason})"})
+                else:
+                    logger.warning(f"B.5 楼中楼私信失败: {reason}")
+                    self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.5", "msg": f"私信失败({reason})"})
+        elif not enable_lead:
+            self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.4", "msg": "功能关闭:评论区截流"})
+        else:
+            self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.4", "msg": "跳过截流(comment限额/概率)"})
+
+        # 确保评论区已关闭并恢复到视频页
+        self._recover_to_video_page("评论区截流-最终恢复", max_back=4)
+
+    def _recover_after_pipeline(self, mode, reason):
+        """按模式语义恢复页面状态。失败则重置并重进视频流。"""
+        mode_label = {1: "作者私信流", 2: "评论区截流"}.get(mode, f"模式{mode}")
+        logger.info(f"恢复页面[{mode_label}]：{reason}")
+        recovered = self._recover_to_video_page(f"{mode_label}-{reason}", max_back=5)
+        if not recovered:
+            logger.warning(f"{mode_label} 恢复失败，重置并重进视频流")
+            self._reset_and_reenter_video_flow(f"{mode_label}-恢复失败")
+        return recovered
+
+    def _run_comment_lead_safely(self, video_title, keyword, enable_lead_pm=False, video_started_at=None, already_open=False):
         """评论区截流 + 楼中楼私信评论者（B.4 + B.5）。
         当 enable_lead_pm=True 时，B.4 发现意向评论后不关闭评论区，直接在评论区打开状态下执行 B.5。
         返回 dict: {"recovered": bool, "lead_reply_sent": bool, "lead_pm_sent": bool, "lead_pm_reason": str}
@@ -352,11 +613,12 @@ class TikTokTaskFlow:
         if video_started_at is not None:
             max_seconds = float(self.config.get('crawler', {}).get('max_seconds_per_video', 90))
             deadline_ts = video_started_at + max_seconds
-        before_state = self._detect_page_state()
-        logger.info(f"功能前状态[{feature_name}]: {before_state}")
-        if not self._recover_to_video_page(f"{feature_name}-执行前"):
-            logger.warning(f"跳过功能[{feature_name}]：执行前无法确认视频页")
-            return {"recovered": False, "lead_reply_sent": False, "lead_pm_sent": False, "lead_pm_reason": "pre_recover_failed"}
+        if not already_open:
+            before_state = self._detect_page_state()
+            logger.info(f"功能前状态[{feature_name}]: {before_state}")
+            if not self._recover_to_video_page(f"{feature_name}-执行前"):
+                logger.warning(f"跳过功能[{feature_name}]：执行前无法确认视频页")
+                return {"recovered": False, "lead_reply_sent": False, "lead_pm_sent": False, "lead_pm_reason": "pre_recover_failed"}
 
         lead_reply_sent = False
         lead_pm_sent = False
@@ -370,20 +632,19 @@ class TikTokTaskFlow:
         lead_comment_text = ""
         lead_reply_text = ""
         try:
-            opened = self.runner.run_action(OpenCommentSectionAction)
-            self._dismiss_video_context_menu_if_present()
-            opened_state = self._detect_page_state()
-            logger.info(f"功能中状态[打开评论区后]: {opened_state}")
-            if not opened or opened_state not in ("comment_panel", "input_or_chat"):
-                # 第二层兜底：_detect_page_state 可能因 rlp 资源ID 变动而误判，
-                # 但 OpenCommentSectionAction 已确认评论区打开。直接检查关键容器。
-                if opened and (self._resource_exists(L.COMMENT_CARD_CONTAINER_ID, timeout=0.5)
-                               or self._resource_exists(L.COMMENT_LIST_CONTAINER, timeout=0.5)):
-                    logger.info("评论区已打开（直接容器检测通过，忽略 _detect_page_state 误判）")
-                else:
-                    logger.warning(f"评论区未可靠打开，当前状态: {opened_state}")
-                    recovered = self._recover_to_video_page(f"{feature_name}-打开失败后")
-                    return {"recovered": recovered, "lead_reply_sent": False, "lead_pm_sent": False, "lead_pm_reason": "open_failed"}
+            if not already_open:
+                opened = self.runner.run_action(OpenCommentSectionAction)
+                self._dismiss_video_context_menu_if_present()
+                opened_state = self._detect_page_state()
+                logger.info(f"功能中状态[打开评论区后]: {opened_state}")
+                if not opened or opened_state not in ("comment_panel", "input_or_chat"):
+                    if opened and (self._resource_exists(L.COMMENT_CARD_CONTAINER_ID, timeout=0.5)
+                                   or self._resource_exists(L.COMMENT_LIST_CONTAINER, timeout=0.5)):
+                        logger.info("评论区已打开（直接容器检测通过，忽略 _detect_page_state 误判）")
+                    else:
+                        logger.warning(f"评论区未可靠打开，当前状态: {opened_state}")
+                        recovered = self._recover_to_video_page(f"{feature_name}-打开失败后")
+                        return {"recovered": recovered, "lead_reply_sent": False, "lead_pm_sent": False, "lead_pm_reason": "open_failed"}
 
             self._check_stop()
             # 手动实例化 ProcessCommentSectionAction，以便读取 lead_comment_node 供 B.5 使用
@@ -720,7 +981,6 @@ class TikTokTaskFlow:
                     self.video_index += 1
                     logger.info("🎬 开始对新视频执行互动...")
                     logger.info(f"📝 当前视频标题: {video_title}")
-                    skip_remaining_features = False
                     # 初始化本视频详细记录
                     self.db.update_video_detail(
                         video_id,
@@ -730,212 +990,25 @@ class TikTokTaskFlow:
                         action_event={"t": _now_str(), "phase": "B.0", "msg": f"开始处理: {video_title}"},
                     )
 
-                    # B.1 点赞（功能开关为确定性指令，仍保留每日限额与概率决策）
-                    if self._interaction_enabled("enable_like"):
-                        self._check_stop()
-                        if self.anti.can_do('like') and self._probability_allows('like'):
-                            self._report(current_action="执行 AI 智能算法加权互动")
-                            stable, liked = self._run_feature_safely(
-                                "点赞",
-                                lambda: self.runner.run_action(DoubleClickLikeAction),
-                            )
-                            if liked:
-                                self.db.update_interaction(video_id, "like")
-                                self._report(executed_action="点赞")
-                                self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.1", "msg": "点赞成功"})
-                            # FIX-11: 仅"页面不稳定"(stable=False) 才级联跳过后续功能；
-                            # "功能执行失败"(liked=False) 但页面稳定时不阻断 B.2/B.3/B.4。
-                            if not stable:
-                                skip_remaining_features = True
-                                self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.1", "msg": "点赞失败(页面不稳定)"})
-                            elif not liked:
-                                logger.info("点赞未成功但页面稳定，继续执行后续功能")
-                                self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.1", "msg": "点赞未成功(页面稳定,不阻断)"})
-                        else:
-                            logger.info("限额/概率决策: 跳过点赞")
-                            self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.1", "msg": "跳过点赞(限额/概率)"})
-                        self._interruptible_sleep(random.uniform(0.8, 2.0))
+                    # 全局前置：点赞
+                    self._global_pre_action_like(video_id, video_started_at)
+
+                    # 模式分流
+                    mode = self._resolve_business_mode()
+                    pipeline_ok = True
+                    if mode == 1:
+                        # 作者私信流：关注 + 私信
+                        self._pipeline_author_dm(video_id, video_title, video_started_at)
+                        pipeline_ok = self._recover_after_pipeline(1, "作者私信流结束")
+                    elif mode == 2:
+                        # 评论区截流：打开面板 → 发主评 → 截流/私信 → 关闭面板
+                        self._pipeline_comment_ecosystem(video_id, video_title, video_started_at)
+                        pipeline_ok = self._recover_after_pipeline(2, "评论区截流结束")
                     else:
-                        logger.info("已关闭功能: 点赞，跳过")
-                        self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.1", "msg": "功能关闭:点赞"})
-
-                    # B.2 作者主页链路：粉丝数判断 -> 关注 -> 私信（功能开关为确定性指令，仍保留每日限额）
-                    if self._video_processing_timed_out(video_started_at):
-                        skip_remaining_features = True
-                    if skip_remaining_features:
-                        logger.warning("页面恢复失败，跳过当前视频剩余功能")
-                        self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.2", "msg": "跳过(页面恢复失败)"})
-                    elif self._interaction_enabled("enable_author_follow"):
-                        self._check_stop()
-                        if self.anti.can_do('follow') and self._probability_allows('follow'):
-                            private_message_allowed = (
-                                self._interaction_enabled("enable_private_message", False)
-                                and self.anti.can_do('private_message')
-                                and self._probability_allows('private_message')
-                            )
-                            self._report(current_action="锁定高潜客户，执行 AI 私域线索破冰")
-                            stable, follow_result = self._run_feature_safely(
-                                "作者主页/关注/私信",
-                                lambda: self.runner.run_action(
-                                    FollowAuthorAction,
-                                    private_message_allowed=private_message_allowed,
-                                ),
-                            )
-                            if isinstance(follow_result, dict):
-                                if follow_result.get("followed"):
-                                    self.db.update_interaction(video_id, "follow")
-                                    self._report(executed_action="关注作者")
-                                    self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.2", "msg": "关注成功"})
-                                if follow_result.get("private_message_sent"):
-                                    self.db.update_interaction(video_id, "private_message")
-                                    self._report(executed_action="发送私信")
-                                    self.db.update_video_detail(video_id, pm_sent=1, action_event={"t": _now_str(), "phase": "B.2", "msg": "私信发送成功"})
-                                # 记录粉丝数（如返回）
-                                follower_count = follow_result.get("follower_count") or ""
-                                if follower_count:
-                                    self.db.update_video_detail(video_id, follower_count=str(follower_count))
-                            elif follow_result:
-                                self.db.update_interaction(video_id, "follow")
-                                self._report(executed_action="关注作者")
-                                self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.2", "msg": "关注成功(无私信)"})
-                            if not stable:
-                                skip_remaining_features = True
-                                self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.2", "msg": "关注/私信失败(页面不稳定)"})
-                        else:
-                            logger.info("限额/概率决策: 跳过关注/私信")
-                            self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.2", "msg": "跳过关注/私信(限额/概率)"})
-                        self._interruptible_sleep(random.uniform(1.0, 2.5))
-                    else:
-                        logger.info("已关闭功能: 作者主页/关注/私信，跳过")
-                        self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.2", "msg": "功能关闭:关注/私信"})
-
-                    # B.3 发送视频评论（功能开关为确定性指令，仍保留每日限额）
-                    if self._video_processing_timed_out(video_started_at):
-                        skip_remaining_features = True
-                    if skip_remaining_features:
-                        logger.warning("页面恢复失败，跳过当前视频剩余功能")
-                        self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.3", "msg": "跳过(页面恢复失败)"})
-                    elif self._interaction_enabled("enable_video_comment"):
-                        self._check_stop()
-                        if self.anti.can_do('comment') and self._probability_allows('comment'):
-                            self._report(current_action="AI 正在根据垂直行业知识库生成精准评论")
-                            comment_text = self.reply_agent.generate_reply(
-                                title=video_title,
-                                keyword=self.current_keyword or ""
-                            ) or ""
-
-                            if comment_text:
-                                if self.reply_agent.is_enabled():
-                                    logger.info(f"🤖 AI 生成回复: {comment_text}")
-                                self.db.save_ai_reply(
-                                    video_id,
-                                    note_title=video_title,
-                                    ai_reply=comment_text,
-                                )
-                                stable, commented = self._run_feature_safely(
-                                    "AI视频评论",
-                                    lambda: self.runner.run_action(PostCommentAction, comment_text),
-                                )
-                                if commented:
-                                    self.db.update_interaction(video_id, "comment")
-                                    self._report(executed_action="发布视频评论")
-                                    self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.3", "msg": f"评论已发布: {comment_text[:30]}"})
-                                if not stable:
-                                    skip_remaining_features = True
-                                    self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.3", "msg": "评论失败(页面不稳定)"})
-                            else:
-                                self.db.save_ai_reply(
-                                    video_id,
-                                    note_title=video_title,
-                                    ai_reply="",
-                                )
-                                logger.info("未生成可发布的回复，跳过评论环节。")
-                                self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.3", "msg": "AI未生成评论"})
-                        else:
-                            logger.info("限额/概率决策: 跳过评论")
-                            self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.3", "msg": "跳过评论(限额/概率)"})
-                    else:
-                        logger.info("已关闭功能: AI 视频评论，跳过")
-                        self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.3", "msg": "功能关闭:视频评论"})
-
-                    # FIX-08: V→C 之间增加间隔延迟，让 UI 充分 settle，避免 B.4 打开评论区时键盘残留或 UI 未就绪。
-                    # 与 B.1 后的 0.8~2.0s、B.2 后的 1.0~2.5s 保持一致。
-                    self._interruptible_sleep(random.uniform(0.8, 2.0))
-
-                    # B.4 处理评论区 + B.5 楼中楼私信评论者（B.5 合并到 _run_comment_lead_safely 内部执行）
-                    lead_result = None
-                    if self._video_processing_timed_out(video_started_at):
-                        skip_remaining_features = True
-                    if skip_remaining_features:
-                        logger.warning("页面恢复失败，跳过当前视频剩余功能")
-                        self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.4", "msg": "跳过(页面恢复失败)"})
-                    elif self._interaction_enabled("enable_comment_lead"):
-                        self._check_stop()
-                        # FIX-04 + FIX-13: B.4 与 B.3 共享 comment 配额，B.4 前必须检查配额，
-                        # 避免配额耗尽后 B.4 仍执行楼中楼回复导致超限。
-                        if self.anti.can_do('comment') and self._probability_allows('comment_lead'):
-                            self._report(current_action="正在对评论区意向线索进行精准拦截")
-                            # B.5 是否启用（影响 B.4 是否关闭评论区）
-                            enable_lead_pm = self._interaction_enabled("enable_comment_lead_pm")
-                            # B.5 限额/概率检查（在传入 _run_comment_lead_safely 之前做，避免不必要地保留评论区打开）
-                            if enable_lead_pm:
-                                if not self.anti.can_do('lead_pm'):
-                                    enable_lead_pm = False
-                                    logger.info("B.5 跳过：lead_pm 限额已满")
-                                    self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.5", "msg": "跳过(lead_pm限额)"})
-                                elif not self._probability_allows('lead_pm'):
-                                    enable_lead_pm = False
-                                    logger.info("B.5 跳过：概率决策")
-                                    self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.5", "msg": "跳过(概率)"})
-                            lead_result = self._run_comment_lead_safely(video_title, self.current_keyword or "", enable_lead_pm=enable_lead_pm, video_started_at=video_started_at)
-                            if not lead_result.get("recovered"):
-                                skip_remaining_features = True
-                                self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.4", "msg": "评论区截流失败"})
-                            else:
-                                self._report(executed_action="评论区AI截流")
-                                if lead_result.get("lead_reply_sent"):
-                                    # 兜底模式下用"已回复人数"准确计数；精准意向单条时为 1
-                                    reply_count = max(lead_result.get("lead_reply_fallback_count", 0), 1)
-                                    for _ in range(reply_count):
-                                        self.db.update_interaction(video_id, "comment")
-                                    action_msg = f"楼中楼回复已发送 ×{reply_count}" if reply_count > 1 else "楼中楼回复已发送"
-                                    self.db.update_video_detail(video_id, lead_sent=1,
-                                        intent_comment=lead_result.get("lead_comment_text", ""),
-                                        lead_reply=lead_result.get("lead_reply_text", ""),
-                                        action_event={"t": _now_str(), "phase": "B.4", "msg": action_msg})
-                                else:
-                                    self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.4", "msg": "评论区截流完成(未发送回复)"})
-                            # 记录 B.5 结果
-                            fallback_pm_count = lead_result.get("lead_pm_fallback_count", 0)
-                            if lead_result.get("lead_pm_sent"):
-                                self.db.update_interaction(video_id, "lead_pm")
-                                self._report(executed_action="楼中楼私信评论者")
-                                self.db.update_video_detail(video_id, lead_pm_sent=1, action_event={"t": _now_str(), "phase": "B.5", "msg": "楼中楼私信已发送"})
-                            elif fallback_pm_count > 0:
-                                # 兜底策略在 ProcessCommentSectionAction 内部完成的私信
-                                for _ in range(fallback_pm_count):
-                                    self.db.update_interaction(video_id, "lead_pm")
-                                self._report(executed_action=f"兜底私信评论者 ×{fallback_pm_count}")
-                                self.db.update_video_detail(video_id, lead_pm_sent=1, action_event={"t": _now_str(), "phase": "B.5", "msg": f"兜底私信已发送({fallback_pm_count}人)"})
-                            else:
-                                reason = lead_result.get("lead_pm_reason", "unknown")
-                                # lead_reply_not_sent / skipped 是正常跳过（未发现意向评论或未启用 B.5），不算失败
-                                if reason in ("skipped", "lead_reply_not_sent"):
-                                    logger.info(f"B.5 跳过: {reason}")
-                                    self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.5", "msg": f"跳过({reason})"})
-                                else:
-                                    logger.warning(f"B.5 楼中楼私信失败: {reason}")
-                                    self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.5", "msg": f"私信失败({reason})"})
-                        else:
-                            logger.info("限额/概率决策: 跳过评论区截流")
-                            self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.4", "msg": "跳过截流(comment限额/概率)"})
-                    else:
-                        logger.info("已关闭功能: 评论区 AI 截流/楼中楼回复，跳过")
-                        self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.4", "msg": "功能关闭:评论区截流"})
+                        logger.info("模式0：仅执行全局点赞，无额外互动")
 
                     # 标记本视频处理完成
-                    final_status = "error" if skip_remaining_features else "completed"
-                    self.db.update_video_detail(video_id, process_status=final_status)
+                    self.db.update_video_detail(video_id, process_status="completed" if pipeline_ok else "error")
 
             else:
                 logger.warning("无法提取当前视频信息，跳过互动环节")

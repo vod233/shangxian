@@ -7,7 +7,7 @@ ai_reply:
   model: deepseek-chat
   temperature: 1.1
   max_tokens: 120
-  persona: a_zhen
+  persona: a_qiang
   license:
     server_url: https://lcjx.yun/social-ai-credit-api
     key: saa_DTFje43GdrtsYwWtax3xi5xQ79HOhT5o

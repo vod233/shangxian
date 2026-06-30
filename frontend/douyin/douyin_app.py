@@ -697,21 +697,19 @@ def render_execution_functions():
             value=bool(config.get("enable_like", True))
         )
 
-        enable_author_follow = st.checkbox(
-            "进入作者主页，粉丝数判断成功，关注作者，私信作者",
-            value=bool(config.get("enable_author_follow", True))
-        )
+        st.markdown("</div>", unsafe_allow_html=True)
 
-        enable_video_comment = st.checkbox(
-            "AI生成评论，发布评论",
-            value=bool(config.get("enable_video_comment", True))
+        # 业务模式选择
+        st.markdown("""
+        <div class="card" style="margin-top: 16px;">
+        """, unsafe_allow_html=True)
+        business_mode = st.radio(
+            "📋 业务模式（双流水线分流）",
+            options=[1, 2],
+            format_func=lambda x: "模式1：作者私信流 — 仅执行关注 + 私信作者，不碰评论区" if x == 1 else "模式2：评论区截流 — 发评论 + 识别回复 + 楼中楼私信，不进作者主页",
+            index=0 if config.get("business_mode", 2) == 1 else 1,
+            help="模式1与模式2互斥，各跑独立流水线，避免页面状态互相污染。缺省时由功能开关自动推断。"
         )
-
-        enable_comment_lead = st.checkbox(
-            "打开评论区，AI 识别回复 + 📨 楼中楼私信评论者",
-            value=bool(config.get("enable_comment_lead", True))
-        )
-
         st.markdown("</div>", unsafe_allow_html=True)
 
         # 策略开关区：夜间静默 + 概率决策 并排展示
@@ -753,9 +751,7 @@ def render_execution_functions():
         if st.form_submit_button("💾 保存当前配置", use_container_width=True, type="primary"):
             payload = {
                 "enable_like": enable_like,
-                "enable_author_follow": enable_author_follow,
-                "enable_video_comment": enable_video_comment,
-                "enable_comment_lead": enable_comment_lead,
+                "business_mode": business_mode,
                 "night_mode_enabled": night_mode_enabled,
                 "enable_anti_detection_probability": enable_anti_detection_probability,
                 "turbo_test_mode": turbo_test_mode

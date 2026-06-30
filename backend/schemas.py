@@ -45,6 +45,7 @@ class AppConfig(BaseModel):
     enable_video_comment: bool = True
     enable_comment_lead: bool = True
     enable_comment_lead_pm: bool = True
+    business_mode: int = 2  # 1=作者私信流, 2=评论区截流
     min_followers_threshold: float = 0
     enable_private_message: bool = True
     pm_followers_threshold: float = 1

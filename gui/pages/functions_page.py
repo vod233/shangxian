@@ -3,7 +3,7 @@ from PySide6.QtWidgets import QHBoxLayout
 
 from .common import (
     BasePage, api_get, ApiWorker,
-    make_card_frame, make_primary_btn, make_checkbox, c,
+    make_card_frame, make_primary_btn, make_checkbox, make_radio_group, c,
 )
 
 
@@ -28,11 +28,6 @@ class FunctionsPage(BasePage):
         # 各功能定义：(配置字段, 显示文案, 默认值, help 文本)
         items = [
             ("enable_like", "点赞", True, ""),
-            ("enable_author_follow",
-             "进入作者主页，粉丝数判断成功，关注作者，私信作者", True, ""),
-            ("enable_video_comment", "AI生成评论，发布评论", True, ""),
-            ("enable_comment_lead", "打开评论区，AI 识别回复 + 📨 楼中楼私信评论者", True,
-             "含评论者私信：话术请在「AI员工私信话术调整」页配置"),
             ("night_mode_enabled", "🌙 夜间静默策略", True,
              "23:00-07:00 等待到早晨"),
             ("enable_anti_detection_probability", "🎲 概率决策策略（防风控）",
@@ -48,6 +43,18 @@ class FunctionsPage(BasePage):
             self._checkboxes[field] = cb
             card_layout.addWidget(cb)
         self.content_layout.addWidget(card)
+
+        # 业务模式选择
+        mode_card, mode_layout = make_card_frame("业务模式")
+        self._mode_group_box, self._mode_btn_group, self._mode_radios = make_radio_group(
+            [
+                {"value": 1, "label": "模式1：作者私信流（关注 + 私信作者）"},
+                {"value": 2, "label": "模式2：评论区截流（发评论 + 识别回复 + 楼中楼私信）"},
+            ],
+            default=2,
+        )
+        mode_layout.addWidget(self._mode_group_box)
+        self.content_layout.addWidget(mode_card)
 
         # 保存按钮
         btn_row = QHBoxLayout()
@@ -67,6 +74,12 @@ class FunctionsPage(BasePage):
                 val = self._config.get(field)
                 if isinstance(val, bool):
                     cb.setChecked(val)
+            # 加载业务模式
+            mode_val = self._config.get("business_mode", 2)
+            for rb in self._mode_radios:
+                if rb.property("value") == mode_val:
+                    rb.setChecked(True)
+                    break
         else:
             self.set_status(f"加载配置失败：{data.get('message', '')}", "danger")
 
@@ -75,6 +88,11 @@ class FunctionsPage(BasePage):
         # 收集 checkbox 状态
         for field, cb in self._checkboxes.items():
             payload[field] = cb.isChecked()
+        # 收集业务模式
+        for rb in self._mode_radios:
+            if rb.isChecked():
+                payload["business_mode"] = rb.property("value")
+                break
         self.save_btn.setEnabled(False)
         self.set_status("保存中...", "info")
         worker = ApiWorker("POST", "/config", json_body=payload,

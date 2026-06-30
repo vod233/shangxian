@@ -177,7 +177,10 @@ class FollowAuthorAction(BaseAction):
 
         # 检查粉丝数是否达到私信阈值
         pm_threshold = float(self.config.get('interaction', {}).get('pm_followers_threshold', 10))
-        if follower_count is None or follower_count <= pm_threshold:
+        if follower_count is None:
+            # FIX-06: 粉丝数提取失败时降级处理 — 记录 warning，继续发送私信
+            logger.warning(f"作者粉丝数提取失败（私信阈值 {pm_threshold}），降级策略：继续发送私信")
+        elif follower_count <= pm_threshold:
             logger.info(f"作者粉丝数({follower_count})未达到私信阈值({pm_threshold})，跳过私信")
             return False
 
