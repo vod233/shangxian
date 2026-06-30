@@ -44,7 +44,7 @@ class AppConfig(BaseModel):
     enable_author_follow: bool = True
     enable_video_comment: bool = True
     enable_comment_lead: bool = True
-    enable_comment_lead_pm: bool = False
+    enable_comment_lead_pm: bool = True
     min_followers_threshold: float = 0
     enable_private_message: bool = True
     pm_followers_threshold: float = 1

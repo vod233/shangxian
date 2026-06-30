@@ -56,7 +56,7 @@ class MessagePage(BasePage):
         )
         self.lead_pm_message_edit.setMinimumHeight(160)
         card2_layout.addWidget(self.lead_pm_message_edit)
-        self.enable_lead_pm_cb = make_checkbox("启用评论区私信", checked=False)
+        self.enable_lead_pm_cb = make_checkbox("启用评论区私信", checked=True)
         card2_layout.addWidget(self.enable_lead_pm_cb)
         cards_row.addWidget(card2)
 

@@ -325,10 +325,13 @@ class OpenCommentSectionAction(BaseAction):
         # FIX-10 + FIX-C: 打开评论区前关闭可能残留的评论输入框。
         # 注意：_find_bottom_edit_text 已严格化（visibleToUser + 屏幕底部范围），
         # 不会再误判隐藏的搜索框/广告位 EditText，避免在纯净视频页误触发 press back。
+        # FIX-KEYBOARD: 用顶部点击收起键盘替代 press("back")，避免 back 改变页面状态
+        # 导致 COMMENT_BTN_DYNAMIC 匹配不到评论按钮（实测 B.3 成功后 back 会让按钮从 accessibility tree 消失）。
         try:
             if _find_bottom_edit_text(self.d, timeout=0.5):
-                logger.info("检测到残留评论输入框，先关闭键盘再打开评论区")
-                self.d.press("back")
+                logger.info("检测到残留评论输入框，点击视频中央区域收起键盘（避免 back 影响按钮检测）")
+                w_dev, h_dev = self.d.window_size()
+                self.d.click(int(w_dev * 0.5), int(h_dev * 0.5))
                 self.human_sleep('fast', custom_range=(0.5, 1.0))
         except Exception:
             pass
@@ -373,6 +376,35 @@ class OpenCommentSectionAction(BaseAction):
                 logger.warning(f"兜底 XPath 点击异常: {exc}")
                 return False
 
+        # FIX-CMTBTN: 新版抖音评论按钮 content-desc 格式可能不带"按钮"后缀，
+        # 尝试用更宽泛的 XPath + 位置过滤（右侧底部区域的评论相关元素）
+        logger.info("尝试宽泛匹配右侧评论区域元素...")
+        try:
+            wide_nodes = self.d.xpath('//*[contains(@content-desc, "评论")]').all()
+            if not wide_nodes:
+                wide_nodes = self.d.xpath('//*[contains(@text, "评论")]').all()
+            # 过滤：取屏幕右侧 (x > 70% 宽度) 且可点击的节点
+            w_dev, h_dev = self.d.window_size()
+            right_btns = []
+            for n in wide_nodes:
+                try:
+                    b = n.info.get('bounds', {}) or {}
+                    if b.get('left', 0) >= w_dev * 0.65 and n.info.get('clickable', False):
+                        right_btns.append(n)
+                except Exception:
+                    continue
+            if right_btns:
+                right_btns.sort(key=lambda n: n.info.get('bounds', {}).get('top', 0))
+                target = right_btns[0]  # 取最上方的一个（评论区按钮通常在最上）
+                target.click()
+                self.human_sleep('normal', custom_range=(1.5, 3.0))
+                if self._comment_panel_opened():
+                    logger.info("宽泛匹配点击后评论区已打开")
+                    return True
+                logger.warning("宽泛匹配点击后评论区未打开")
+        except Exception as exc:
+            logger.warning(f"宽泛匹配异常: {exc}")
+
         # 最后坐标兜底：必须验证状态，失败返回 False，让上层 _run_comment_lead_safely 走 open_failed 分支
         w, h = self.d.window_size()
         logger.warning("XPath 兜底失败，尝试点击评论按钮常见区域坐标（安全模式）")
@@ -385,16 +417,20 @@ class OpenCommentSectionAction(BaseAction):
         return False
 
     def _comment_panel_opened(self, timeout=2.0):
-        """验证评论区面板是否真的打开，避免误判。"""
+        """验证评论区面板是否真的打开（必须看到评论区容器，避免误判）。
+        EditText 不再作为独立判定条件，因为视频页底部也有评论输入框会造成假阳性。
+        """
         deadline = time.time() + timeout
         while time.time() < deadline:
             try:
+                # 主评论区容器（新版 Douyin 可能已变更 rlp → 其他 ID）
                 if self.d(resourceId=L.COMMENT_LIST_CONTAINER).exists(timeout=0.3):
                     return True
-                if _xpath_exists(self.d, L.COMMENT_NO_MORE_TEXT, timeout=0.3):
+                # 评论卡片容器 k4x（直接检测评论卡片存在）
+                if self.d(resourceId=L.COMMENT_CARD_CONTAINER_ID).exists(timeout=0.3):
                     return True
-                # 评论区输入框出现也算打开
-                if _find_bottom_edit_text(self.d, timeout=0.3):
+                # 底部提示文本
+                if _xpath_exists(self.d, L.COMMENT_NO_MORE_TEXT, timeout=0.3):
                     return True
             except Exception:
                 pass
@@ -478,6 +514,22 @@ class ProcessCommentSectionAction(BaseAction):
         if keep_open_after_lead and self.lead_comment_node is not None:
             logger.info("keep_open_after_lead=True，保留评论区打开状态供 B.5 使用")
             return True
+
+        # === 无意向客户兜底策略：回复并私信前 N 条评论 ===
+        # 规则：评论区非空但没有命中意向关键词时，取前 5 条有效评论逐一回复+私信，
+        # 确保私信功能被客户感知。"宁愿错杀也不放过"。
+        if self.lead_comment_node is None:
+            fallback_count = self._fallback_reply_and_dm_top_comments(
+                processed_comments, ai_agent, video_title, keyword, max_count=5,
+                do_dm=keep_open_after_lead,  # 复用 task_runner 已做好的配额/概率检查
+            )
+            if fallback_count > 0:
+                # 兜底已处理（含私信导航），评论区可能已关闭；交给上层恢复
+                logger.info(f"兜底策略完成：已回复+私信 {fallback_count} 条评论")
+                # 标记供 B.4/B.5 统计：lead_reply_sent=True + lead_pm_sent_count 已在方法内设置
+                self.lead_reply_sent = True
+                self.lead_comment_text = "fallback"  # 非空标记，区分"真无意向兜底"与"有意向但失败"
+                return True
 
         logger.info("评论区处理完毕，关闭面板")
         return self._close_comment_section()
@@ -729,7 +781,121 @@ class ProcessCommentSectionAction(BaseAction):
         except Exception:
             pass
 
+        # 新版 Douyin 评论区容器可能只有 k4x 卡片，rlp 已不存在
+        try:
+            if self.d(resourceId=L.COMMENT_CARD_CONTAINER_ID).exists(timeout=0.2):
+                return True
+        except Exception:
+            pass
+
         return _xpath_exists(self.d, L.COMMENT_NO_MORE_TEXT, timeout=0.2)
+
+    def _get_visible_comment_nodes(self):
+        """获取当前屏幕可见的评论卡片内容节点（只在 k4x 容器内查找）。"""
+        xpath = f'//*[@resource-id="{L.COMMENT_CARD_CONTAINER_ID}"]//android.widget.TextView'
+        nodes = self.d.xpath(xpath).all()
+        if not nodes:
+            nodes = self.d.xpath(L.COMMENT_TEXT_XPATH).all()
+        return nodes
+
+    def _fallback_reply_and_dm_top_comments(self, processed_comments, ai_agent, video_title, keyword, max_count=5, do_dm=False):
+        """无意向客户兜底：取前 N 条有效评论，先全部回复，再逐个私信。
+        先回复后私信的顺序是因为私信会导航离开评论区导致节点引用失效。
+        do_dm 由上层 _run_comment_lead_safely 传入，已包含 enable_comment_lead_pm + lead_pm 配额 + 概率检查。
+        返回实际处理条数。
+        """
+        if not do_dm:
+            logger.info("兜底策略：私信未启用或配额/概率限制，仅回复不私信")
+        lead_pm_messages = self.config.get('interaction', {}).get('lead_pm_message_list', [])
+        if do_dm and not lead_pm_messages:
+            logger.warning("兜底私信: lead_pm_message_list 为空，仅回复不私信")
+
+        text_nodes = self._get_visible_comment_nodes()
+        if not text_nodes:
+            logger.warning("兜底策略：当前屏幕无可见评论节点")
+            return 0
+
+        # 阶段1: 收集前 N 条有效评论（节点+文本）
+        targets = []  # [(node, text), ...]
+        for node in text_nodes:
+            text = str(node.info.get('text', '') or '').strip()
+            if not text or text in processed_comments:
+                continue
+            if not self._is_reviewable_comment(text):
+                continue
+            if len(targets) >= max_count:
+                break
+            targets.append((node, text))
+            processed_comments.add(text)
+
+        if not targets:
+            logger.warning("兜底策略：当前屏幕无符合条件的评论")
+            return 0
+
+        # 阶段2: 在评论区仍打开状态下，先逐一回复所有目标评论
+        logger.info(f"兜底阶段1: 回复前 {len(targets)} 条评论")
+        for i, (node, text) in enumerate(targets):
+            deadline = getattr(self, 'deadline_ts', None)
+            if deadline is not None and time.time() > deadline:
+                logger.warning("兜底阶段1：超过单视频时间预算，提前结束回复")
+                targets = targets[:i]  # 只私信已回复的
+                break
+            logger.info(f"🎯 兜底回复 [{i + 1}/{len(targets)}]: {text[:30]}")
+            reply = ai_agent.generate_lead_reply(text, video_title=video_title, keyword=keyword)
+            if reply:
+                self._send_comment_workflow(node, reply)
+                _close_comment_input_if_open(self.d, reply)
+                self.human_sleep('fast')
+            else:
+                logger.warning(f"兜底回复 [{i + 1}]: 未能生成回复，仍尝试私信")
+
+        # 阶段3: 通过评论文本重新定位，逐一私信（每次私信后需回到评论区重新查找下一个）
+        if not do_dm or not lead_pm_messages:
+            return len(targets)
+
+        self.lead_pm_sent_count = 0
+        logger.info(f"兜底阶段2: 私信前 {len(targets)} 位评论者")
+        for i, (_, text) in enumerate(targets):
+            deadline = getattr(self, 'deadline_ts', None)
+            if deadline is not None and time.time() > deadline:
+                logger.warning("兜底阶段2：超过单视频时间预算，提前结束私信")
+                break
+
+            logger.info(f"📨 兜底私信 [{i + 1}/{len(targets)}]: {text[:30]}")
+            try:
+                # 通过文本重新定位评论节点（阶段1回复后 UI 可能已刷新）
+                refound = _refind_comment_node_by_text(self.d, text)
+                if refound is None:
+                    logger.warning(f"兜底私信 [{i + 1}]: 无法通过文本重定位节点，跳过")
+                    continue
+
+                pm_action = CommentLeadPmAction(
+                    u2_device=self.d,
+                    app_manager=self.app,
+                    config=self.config,
+                    lead_comment_node=refound,
+                    lead_comment_text=text,
+                )
+                pm_result = pm_action.perform()
+                pm_sent = isinstance(pm_result, dict) and pm_result.get("pm_sent", False)
+                if pm_sent:
+                    self.lead_pm_sent_count += 1
+                logger.info(f"兜底私信 [{i + 1}]: {'成功' if pm_sent else '失败'}")
+
+                # 从私信聊天页逐层返回：chat → profile → video(+评论区 overlay)
+                self.d.press("back")
+                self.human_sleep('normal')
+                # 验证已离开聊天页（不再有 msg_et 输入框）
+                if self.d(resourceId=L.PM_EDIT_TEXT_ID).exists(timeout=0.5):
+                    logger.warning(f"兜底私信 [{i + 1}]: back 后仍在聊天页，再按一次")
+                    self.d.press("back")
+                    self.human_sleep('fast')
+                self.d.press("back")
+                self.human_sleep('normal')
+            except Exception as exc:
+                logger.warning(f"兜底私信 [{i + 1}]: 异常: {exc}")
+
+        return len(targets)
 
     def _close_comment_section(self):
         for attempt in range(3):
@@ -745,6 +911,65 @@ class ProcessCommentSectionAction(BaseAction):
         if not closed:
             logger.warning("评论区面板关闭失败")
         return closed
+
+
+def _escape_xpath_text(text: str) -> str:
+    """为 XPath contains() 返回安全的子串（不负责引号包裹，由调用方选择引号风格）。
+    策略: 取前30字符；仅含一种引号则原样返回（调用方用另一种引号包裹）；
+    含两种引号则去引号做 contains 部分匹配；无有效字符返回空串。
+    """
+    safe = text.strip()[:30]
+    if not safe:
+        return ""
+    if '"' not in safe:
+        return safe
+    if "'" not in safe:
+        return safe
+    # 含两种引号：去掉引号做 contains 部分匹配
+    return safe.replace('"', '').replace("'", '')
+
+
+def _refind_comment_node_by_text(d, text: str):
+    """用评论文本在评论区重新定位到【真实节点】(XMLElement)，而非 XPathSelector。
+
+    FIX(高危-节点定位错误):
+    旧实现返回 `d.xpath(xpath)`(XPathSelector)，下游 `.parent` 语义不对；
+    且 uiautomator2 3.6.0 中 DeviceXPathSelector.exists 是 property，调用
+    `.exists(timeout=0.8)` 会抛 TypeError 被 `except` 吞掉，导致此函数实际恒返回 None，
+    FIX-05"按文本重定位"形同虚设。
+    这里改用 `.all()`（方法，安全），返回真实 DeviceXMLElement 并做文本择优匹配。
+    返回 XMLElement 或 None。
+    """
+    safe = _escape_xpath_text(text)
+    if not safe:
+        return None
+
+    full = text.strip()
+    xpaths = []
+    if '"' not in safe:
+        xpaths.append(f'//*[contains(@text, "{safe}")]')
+    else:
+        xpaths.append(f"//*[contains(@text, '{safe}')]")
+    short = safe[:15]
+    if short and short != safe:
+        if '"' not in short:
+            xpaths.append(f'//*[contains(@text, "{short}")]')
+        else:
+            xpaths.append(f"//*[contains(@text, '{short}')]")
+
+    for xpath in xpaths:
+        try:
+            nodes = d.xpath(xpath).all()
+        except Exception:
+            nodes = []
+        if not nodes:
+            continue
+        # 优先选择文本完整包含原评论全文的节点，避免命中片段/无关节点
+        exact = [n for n in nodes if full and full in str(n.info.get('text', '') or '')]
+        chosen = exact[0] if exact else nodes[0]
+        return chosen
+
+    return None
 
 
 class CommentLeadPmAction(BaseAction):
@@ -943,61 +1168,12 @@ class CommentLeadPmAction(BaseAction):
 
     @staticmethod
     def _escape_xpath_text(text: str) -> str:
-        """为 XPath contains() 准备安全的子串。
-        策略: 取前30字符；含双引号用单引号包裹；含两种引号则去引号用 contains 部分匹配。
-        去引号后仍无有效字符则返回空串，调用方回退到原节点。
-        """
-        safe = text.strip()[:30]
-        if not safe:
-            return ""
-        if '"' not in safe:
-            return safe
-        if "'" not in safe:
-            return safe
-        # 含两种引号：去掉引号做 contains 部分匹配
-        return safe.replace('"', '').replace("'", '')
+        """[已废弃] 请改用模块级 _escape_xpath_text(text)。"""
+        return _escape_xpath_text(text)
 
     def _refind_comment_node_by_text(self, text: str):
-        """用评论文本在评论区重新定位到【真实节点】(XMLElement)，而非 XPathSelector。
-
-        FIX(高危-节点定位错误):
-        旧实现返回 `self.d.xpath(xpath)`(XPathSelector)，下游 `.parent` 语义不对；
-        且 uiautomator2 3.6.0 中 DeviceXPathSelector.exists 是 property，调用
-        `.exists(timeout=0.8)` 会抛 TypeError 被 `except` 吞掉，导致此函数实际恒返回 None，
-        FIX-05"按文本重定位"形同虚设。
-        这里改用 `.all()`（方法，安全），返回真实 DeviceXMLElement 并做文本择优匹配。
-        返回 XMLElement 或 None。
-        """
-        safe = self._escape_xpath_text(text)
-        if not safe:
-            return None
-
-        full = text.strip()
-        xpaths = []
-        if '"' not in safe:
-            xpaths.append(f'//*[contains(@text, "{safe}")]')
-        else:
-            xpaths.append(f"//*[contains(@text, '{safe}')]")
-        short = safe[:15]
-        if short and short != safe:
-            if '"' not in short:
-                xpaths.append(f'//*[contains(@text, "{short}")]')
-            else:
-                xpaths.append(f"//*[contains(@text, '{short}')]")
-
-        for xpath in xpaths:
-            try:
-                nodes = self.d.xpath(xpath).all()
-            except Exception:
-                nodes = []
-            if not nodes:
-                continue
-            # 优先选择文本完整包含原评论全文的节点，避免命中片段/无关节点
-            exact = [n for n in nodes if full and full in str(n.info.get('text', '') or '')]
-            chosen = exact[0] if exact else nodes[0]
-            return chosen
-
-        return None
+        """[已废弃] 请改用模块级 _refind_comment_node_by_text(d, text)。"""
+        return _refind_comment_node_by_text(self.d, text)
 
     def _enter_commenter_profile(self, avatar_node):
         """点击头像进入评论者主页，并验证已进入 UserProfileActivity。"""

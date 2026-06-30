@@ -708,7 +708,7 @@ def render_execution_functions():
         )
 
         enable_comment_lead = st.checkbox(
-            "打开评论区，AI 识别自动评论，评论中回复",
+            "打开评论区，AI 识别回复 + 📨 楼中楼私信评论者",
             value=bool(config.get("enable_comment_lead", True))
         )
 
@@ -873,7 +873,7 @@ def render_private_message():
 
         enable_comment_lead_pm = st.checkbox(
             "启用评论区私信",
-            value=bool(config.get("enable_comment_lead_pm", False)),
+            value=bool(config.get("enable_comment_lead_pm", True)),
             help="在楼中楼回复成功后，进入评论者主页发送私信（依赖『评论区AI截流』已开启且成功发送回复）"
         )
 
@@ -881,7 +881,7 @@ def render_private_message():
         st.caption("• 不对评论者做粉丝数过滤")
         st.caption("• 独立限额 10 次/天")
         st.caption("• 概率 10%（防风控）")
-        st.caption("• 默认关闭，需手动开启")
+        st.caption("• 默认开启，话术为空时自动跳过")
 
         st.markdown("</div>", unsafe_allow_html=True)
 

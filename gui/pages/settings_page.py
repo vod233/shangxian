@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
 from .common import (
     BasePage, make_card_frame, make_primary_btn, make_secondary_btn,
     make_field_label, make_section_label, make_spinbox,
-    make_checkbox, c, font,
+    make_checkbox, c, font, ApiWorker,
 )
 
 
@@ -164,6 +164,36 @@ class SettingsPage(BasePage):
 
         self.content_layout.addWidget(card_sidebar)
 
+        # ============ 授权信息 ============
+        card_license, layout_license = make_card_frame("授权信息")
+
+        self.license_customer_label = QLabel("客户：--")
+        self.license_customer_label.setFont(font(13))
+        self.license_customer_label.setStyleSheet(
+            f"color: {c('text_foreground')}; background: transparent;"
+        )
+
+        self.license_balance_label = QLabel("积分余额：--")
+        self.license_balance_label.setFont(font(15, bold=True))
+
+        self.license_masked_label = QLabel("授权码：--")
+        self.license_masked_label.setFont(font(12))
+        self.license_masked_label.setStyleSheet(
+            f"color: {c('text_description')}; background: transparent;"
+        )
+
+        license_info_row = QVBoxLayout()
+        license_info_row.addWidget(self.license_customer_label)
+        license_info_row.addWidget(self.license_balance_label)
+        license_info_row.addWidget(self.license_masked_label)
+        layout_license.addLayout(license_info_row)
+
+        self.refresh_license_btn = make_secondary_btn("🔄 刷新余额")
+        self.refresh_license_btn.clicked.connect(self._on_refresh_license)
+        layout_license.addWidget(self.refresh_license_btn)
+
+        self.content_layout.addWidget(card_license)
+
         # ============ 保存按钮 ============
         btn_row = QHBoxLayout()
         btn_row.addStretch(1)
@@ -308,3 +338,57 @@ class SettingsPage(BasePage):
         self.left_col_width_spin.setValue(240)
         self.right_col_width_spin.setValue(240)
         self.set_status("已恢复默认值，点击保存以生效。", "info")
+
+    def showEvent(self, event):
+        """页面显示时自动加载授权信息。"""
+        super().showEvent(event)
+        self._load_license_info()
+
+    def _load_license_info(self):
+        """从后端获取当前授权码状态和积分余额。"""
+        if hasattr(self, '_worker') and self._worker.is_running():
+            return
+        self._worker = ApiWorker("GET", "/license/status", params={"platform": "douyin"})
+        self._worker.result_ready.connect(self._on_license_loaded)
+        self._worker.start()
+
+    def _on_license_loaded(self, data: dict):
+        """处理授权信息响应。"""
+        # 页面已销毁时不更新 UI（防止 showEvent → worker → 切页 → 回调崩溃）
+        try:
+            if not self.isVisible():
+                return
+        except RuntimeError:
+            return
+        if data.get("success") and data.get("data", {}).get("has_license"):
+            info = data["data"]
+            self.license_customer_label.setText(f"客户：{info.get('customer_name', '--')}")
+            balance = info.get("balance_credits", 0)
+            token_per = info.get("token_per_credit", 1000)
+            if balance > 0:
+                color = c("green")
+            elif balance == 0:
+                color = c("yellow")
+            else:
+                color = c("red")
+            self.license_balance_label.setText(f"积分余额：{balance} 分（≈ {balance * token_per} tokens）")
+            self.license_balance_label.setStyleSheet(
+                f"color: {color}; background: transparent;"
+            )
+            self.license_masked_label.setText(f"授权码：{info.get('license_key_masked', '--')}")
+        else:
+            self.license_customer_label.setText("客户：未授权")
+            self.license_balance_label.setText("积分余额：--")
+            self.license_balance_label.setStyleSheet(
+                f"color: {c('text_description')}; background: transparent;"
+            )
+            self.license_masked_label.setText("授权码：未配置")
+        # 恢复刷新按钮
+        self.refresh_license_btn.setText("🔄 刷新余额")
+        self.refresh_license_btn.setEnabled(True)
+
+    def _on_refresh_license(self):
+        """手动刷新授权信息。"""
+        self.refresh_license_btn.setText("⏳ 刷新中...")
+        self.refresh_license_btn.setEnabled(False)
+        self._load_license_info()

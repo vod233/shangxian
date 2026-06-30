@@ -1,8 +1,7 @@
 search:
   keywords:
-  - 冰箱
-  - 洗衣机
-  - 彩电机
+  - 苹果手机
+  - macbook
   sort_by: latest
 crawler:
   max_daily_videos: 10000
@@ -20,8 +19,8 @@ interaction:
   - 多少，价格，出
   keyword_override_ai: true
   enable_like: false
-  enable_author_follow: true
-  enable_video_comment: false
+  enable_author_follow: false
+  enable_video_comment: true
   enable_comment_lead: true
   enable_comment_lead_pm: true
   min_followers_threshold: 0.01

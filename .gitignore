@@ -17,3 +17,4 @@ data/*.db-wal
 _server_dump/
 *.env
 config/auth.json
+.env

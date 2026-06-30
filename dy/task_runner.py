@@ -398,6 +398,8 @@ class TikTokTaskFlow:
             lead_reply_sent = bool(getattr(action_instance, 'lead_reply_sent', False))
             # FIX-05: 同时读取意向评论文本，供 B.5 重新定位节点
             lead_comment_text = getattr(action_instance, 'lead_comment_text', '') or ''
+            # 兜底策略私信计数（_fallback_reply_and_dm_top_comments 内部完成的私信）
+            lead_pm_fallback_count = int(getattr(action_instance, 'lead_pm_sent_count', 0) or 0)
 
             if enable_lead_pm and lead_comment_node is not None:
                 comment_section_open = True  # keep_open_after_lead=True 时评论区仍打开
@@ -454,7 +456,7 @@ class TikTokTaskFlow:
         recovered = self._recover_to_video_page(f"{feature_name}-执行后")
         if not recovered:
             logger.warning(f"功能[{feature_name}]后恢复失败，跳过当前视频剩余功能")
-        return {"recovered": recovered, "lead_reply_sent": lead_reply_sent, "lead_pm_sent": lead_pm_sent, "lead_pm_reason": lead_pm_reason}
+        return {"recovered": recovered, "lead_reply_sent": lead_reply_sent, "lead_pm_sent": lead_pm_sent, "lead_pm_reason": lead_pm_reason, "lead_pm_fallback_count": lead_pm_fallback_count}
 
     def start(self):
         """开始执行完整的采集与互动任务"""
@@ -883,15 +885,26 @@ class TikTokTaskFlow:
                             else:
                                 self._report(executed_action="评论区AI截流")
                                 if lead_result.get("lead_reply_sent"):
-                                    self.db.update_interaction(video_id, "comment")
-                                    self.db.update_video_detail(video_id, lead_sent=1, action_event={"t": _now_str(), "phase": "B.4", "msg": "楼中楼回复已发送"})
+                                    # 兜底模式下 fallback_pm_count 即为回复条数（先全回复再全私信）
+                                    reply_count = max(lead_result.get("lead_pm_fallback_count", 0), 1)
+                                    for _ in range(reply_count):
+                                        self.db.update_interaction(video_id, "comment")
+                                    action_msg = f"楼中楼回复已发送 ×{reply_count}" if reply_count > 1 else "楼中楼回复已发送"
+                                    self.db.update_video_detail(video_id, lead_sent=1, action_event={"t": _now_str(), "phase": "B.4", "msg": action_msg})
                                 else:
                                     self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.4", "msg": "评论区截流完成(未发送回复)"})
                             # 记录 B.5 结果
+                            fallback_pm_count = lead_result.get("lead_pm_fallback_count", 0)
                             if lead_result.get("lead_pm_sent"):
                                 self.db.update_interaction(video_id, "lead_pm")
                                 self._report(executed_action="楼中楼私信评论者")
                                 self.db.update_video_detail(video_id, lead_pm_sent=1, action_event={"t": _now_str(), "phase": "B.5", "msg": "楼中楼私信已发送"})
+                            elif fallback_pm_count > 0:
+                                # 兜底策略在 ProcessCommentSectionAction 内部完成的私信
+                                for _ in range(fallback_pm_count):
+                                    self.db.update_interaction(video_id, "lead_pm")
+                                self._report(executed_action=f"兜底私信评论者 ×{fallback_pm_count}")
+                                self.db.update_video_detail(video_id, lead_pm_sent=1, action_event={"t": _now_str(), "phase": "B.5", "msg": f"兜底私信已发送({fallback_pm_count}人)"})
                             else:
                                 reason = lead_result.get("lead_pm_reason", "unknown")
                                 # lead_reply_not_sent / skipped 是正常跳过（未发现意向评论或未启用 B.5），不算失败

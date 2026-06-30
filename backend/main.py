@@ -386,7 +386,7 @@ def _load_douyin_config_for_frontend():
         "enable_author_follow": data.get("interaction", {}).get("enable_author_follow", True),
         "enable_video_comment": data.get("interaction", {}).get("enable_video_comment", True),
         "enable_comment_lead": data.get("interaction", {}).get("enable_comment_lead", True),
-        "enable_comment_lead_pm": data.get("interaction", {}).get("enable_comment_lead_pm", False),
+        "enable_comment_lead_pm": data.get("interaction", {}).get("enable_comment_lead_pm", True),
         "min_followers_threshold": data.get("interaction", {}).get("min_followers_threshold", 0),
         "enable_private_message": data.get("interaction", {}).get("enable_private_message", True),
         "pm_followers_threshold": data.get("interaction", {}).get("pm_followers_threshold", 1),
@@ -716,6 +716,35 @@ def api_save_license(req: LicenseVerifyRequest, platform: str = "douyin"):
         return {"success": False, "message": str(exc), "data": {}}
     except Exception as exc:
         return {"success": False, "message": f"保存授权码失败: {exc}", "data": {}}
+
+
+@app.get("/api/license/status", summary="获取当前授权码状态和积分余额")
+def api_license_status(platform: str = "douyin"):
+    """返回已保存授权码的当前余额信息。无需重新提交授权码。"""
+    try:
+        license_config = _get_license_config_for_platform(platform)
+        license_key = license_config.get("key", "")
+        if not license_key:
+            return {"success": True, "data": {"has_license": False}}
+        data = verify_license(
+            license_key,
+            license_config.get("server_url", DEFAULT_LICENSE_SERVER_URL),
+        )
+        return {
+            "success": True,
+            "data": {
+                "has_license": True,
+                "customer_name": data.get("customer_name", ""),
+                "balance_credits": data.get("balance_credits", 0),
+                "token_per_credit": data.get("token_per_credit", 1000),
+                "license_key_masked": mask_license_key(license_key),
+                "status": data.get("status", ""),
+            },
+        }
+    except LicenseError as exc:
+        return {"success": False, "message": str(exc), "data": {"has_license": False}}
+    except Exception as exc:
+        return {"success": False, "message": f"查询状态失败: {exc}", "data": {"has_license": False}}
 
 
 # ----------------- 接口: 账号登录 -----------------
