@@ -1,7 +1,7 @@
 search:
   keywords:
-  - 键盘
-  sort_by: latest
+  - 显卡
+  sort_by: most_liked
 crawler:
   max_daily_videos: 9999
   max_videos_per_keyword: 50
@@ -17,7 +17,7 @@ interaction:
   intent_keywords:
   - 多少，价格，出
   keyword_override_ai: true
-  enable_like: true
+  enable_like: false
   enable_author_follow: false
   enable_video_comment: false
   enable_comment_lead: false
@@ -31,7 +31,6 @@ interaction:
   lead_pm_message_list:
   - 看到你评论很有共鸣，详细聊聊
   - 你的想法很棒，可以聊聊更多吗
-  - 你的评论让我印象深刻，期待交流
 anti_detection:
   night_mode:
     enabled: false

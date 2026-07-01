@@ -458,8 +458,13 @@ class ProcessCommentSectionAction(BaseAction):
         self.lead_comment_text = ""
         self.lead_reply_text = ""  # 保存 AI 生成的回复文本，供 DB 记录
         self.lead_reply_sent = False
+        self.lead_pm_sent_count = 0  # 私信成功数（供 DB 记录）
+        self.intent_processed_count = 0  # 已处理的意向评论数
+        self.inline_pm_completed = False  # 标记内联私信是否已完成（用于跳过 B.5）
         # keep_open_after_lead=True 时，发现意向评论后不关闭评论区（供 B.5 在评论区打开状态下操作）
         keep_open_after_lead = bool(getattr(self, 'keep_open_after_lead', False))
+        # 配置：每个视频最多处理多少个意向评论（默认1，保持向后兼容）
+        max_intent_comments = int(interaction_config.get('max_intent_comments_per_video', 1) or 1)
 
         deadline = getattr(self, 'deadline_ts', None)
         while swipe_count < max_swipes and reviewed_count < max_reviews:
@@ -483,18 +488,55 @@ class ProcessCommentSectionAction(BaseAction):
             reviewed_count += reviewed_now
             logger.info(f"AI 已识别评论 {reviewed_count}/{max_reviews} 条")
 
+            # 检查是否已达到意向评论处理上限
+            if self.intent_processed_count >= max_intent_comments:
+                logger.info(f"已达到意向评论处理上限({max_intent_comments})，停止扫描")
+                break
+
+            # 守卫：楼中楼回复发送失败时（found_target=False 但 should_break=True），
+            # 必须停止扫描避免 EditText 状态污染导致后续重复失败。
+            # 注意 was_found_target 判断含在内，但 found_target=False 时会被跳过，
+            # 因此在此处独立检查 should_break。
+            if should_break and not found_target:
+                logger.warning("楼中楼回复发送失败，停止扫描避免状态污染")
+                break
+
             if found_target and lead_info:
                 # 保存意向评论节点和文本，供后续 B.5 私信评论者使用
                 self.lead_comment_node = lead_info.get("node")
                 self.lead_comment_text = lead_info.get("text", "")
                 self.lead_reply_sent = lead_info.get("sent", False)
-                logger.info("发现目标客户，完成互动，准备退出评论区")
-                break
 
-            # 守卫：识别到意向评论但发送失败时，必须停止扫描，避免 EditText 状态污染导致后续重复失败
-            if should_break:
-                logger.warning("已尝试楼中楼回复但发送失败，停止扫描避免状态污染")
-                break
+                # === 内联私信：回复成功后立即私信，然后返回评论区继续扫描 ===
+                # 条件：回复成功 + 启用私信 + 多意向评论模式（max_intent_comments > 1）
+                enable_lead_pm = bool(getattr(self, 'enable_lead_pm', False))
+                if self.lead_reply_sent and enable_lead_pm and max_intent_comments > 1:
+                    inline_pm_ok = self._try_inline_pm_for_intent(
+                        self.lead_comment_node, self.lead_comment_text,
+                    )
+                    if inline_pm_ok:
+                        self.inline_pm_completed = True
+                        self.intent_processed_count += 1
+                        # 重置 lead 状态，让后续循环不触发 B.5
+                        self.lead_comment_node = None
+                        self.lead_comment_text = ""
+                        self.lead_reply_sent = False
+                        logger.info(f"内联私信完成，已处理 {self.intent_processed_count}/{max_intent_comments} 个意向评论")
+                    else:
+                        # 内联私信失败，保留 lead 状态让 B.5 兜底
+                        logger.warning("内联私信失败，保留意向评论状态供 B.5 兜底")
+
+                # 检查是否已达到意向评论处理上限
+                if self.intent_processed_count >= max_intent_comments:
+                    logger.info(f"已达到意向评论处理上限({max_intent_comments})，停止扫描")
+                    break
+
+                # 守卫：识别到意向评论但发送失败时，必须停止扫描，避免 EditText 状态污染导致后续重复失败。
+                # 内联私信成功并已重置 lead 状态时，说明本次回复+私信完整闭环，可继续扫描下一条。
+                inline_just_completed = self.inline_pm_completed and self.lead_comment_node is None
+                if should_break and not inline_just_completed:
+                    logger.warning("已尝试楼中楼回复但发送失败，停止扫描避免状态污染")
+                    break
 
             if reviewed_count >= max_reviews:
                 logger.info("已达到 AI 评论识别上限，停止继续扫描评论区")
@@ -519,7 +561,8 @@ class ProcessCommentSectionAction(BaseAction):
         # === 无意向客户兜底（错杀保底，核心铁律 2）===
         # 评论区非空但没命中任何意向评论时立即激活：取前 N 位【真实一级路人评论者】
         # 逐人"回复 + 私信"，宁愿错杀，不能放过；可见不足 N 个时滑动加载，仍不足则有多少处理多少。
-        if self.lead_comment_node is None:
+        # 注意：已通过内联私信处理过意向评论时，不得再触发路人兜底，避免重复骚扰/私信已处理用户。
+        if self.lead_comment_node is None and self.intent_processed_count == 0:
             fallback_top_n = int(self.config.get('interaction', {}).get('fallback_top_comment_count', 5) or 5)
             fallback_count = self._fallback_reply_and_dm_top_comments(
                 ai_agent, video_title, keyword, max_count=fallback_top_n,
@@ -604,7 +647,7 @@ class ProcessCommentSectionAction(BaseAction):
         if not text:
             return False
         clean = str(text).strip()
-        if len(clean) < 4:
+        if len(clean) < 2:
             return False
         ignored = {"作者", "置顶", "回复", "展开", "查看更多回复", "赞", "分享"}
         return clean not in ignored
@@ -627,6 +670,50 @@ class ProcessCommentSectionAction(BaseAction):
             self.lead_reply_text = comment_to_send
         self.human_sleep('normal')
         return sent
+
+    def _try_inline_pm_for_intent(self, comment_node, comment_text):
+        """内联私信：回复成功后立即私信，然后返回评论区继续扫描。
+        返回 True 表示私信成功并已返回评论区；False 表示失败（保留 lead 状态供 B.5 兜底）。
+        """
+        logger.info("尝试内联私信...")
+        # 检查私信配额
+        if not self.anti.can_do('lead_pm'):
+            logger.info("内联私信：lead_pm 配额已满，跳过")
+            return False
+
+        # 复用 CommentLeadPmAction 执行私信
+        pm_action = CommentLeadPmAction(
+            u2_device=self.d,
+            app_manager=self.app,
+            config=self.config,
+            lead_comment_node=comment_node,
+            lead_comment_text=comment_text,
+            check_stop_callback=getattr(self, 'check_stop_callback', None),
+            deadline_ts=getattr(self, 'deadline_ts', None),
+        )
+        pm_sent = False
+        try:
+            pm_result = pm_action.perform()
+            if isinstance(pm_result, dict):
+                pm_sent = pm_result.get('pm_sent', False)
+        except InterruptedError:
+            raise  # 用户停止：向上传播
+        except Exception as exc:
+            logger.warning(f"内联私信异常: {exc}")
+            pm_sent = False
+
+        # 无论内联私信成功或失败，都尝试回到评论区 overlay，
+        # 避免页面停留在聊天页/主页导致外层循环或 B.5 逻辑错乱。
+        returned = self._return_from_profile_to_comments()
+        if not returned:
+            logger.warning("内联私信后未能返回评论区，页面状态可能异常")
+
+        if pm_sent:
+            logger.info("内联私信成功")
+            return True
+        else:
+            logger.warning("内联私信失败")
+            return False
 
     def _do_cs1_click(self, comment_node):
         """CS1 第一步：用坐标点击 + 短按兜底，让评论的"回复"UI 出现。

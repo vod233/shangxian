@@ -657,6 +657,7 @@ class TikTokTaskFlow:
                 check_stop_callback=self._check_stop,
                 keep_open_after_lead=enable_lead_pm,  # B.5 启用时不关闭评论区
                 deadline_ts=deadline_ts,  # FIX: 评论区扫描/楼中楼发送纳入单视频时间预算
+                enable_lead_pm=enable_lead_pm,  # 传递私信启用状态，供内联私信使用
             )
             action_instance.perform()
             # 读取意向评论节点信息
@@ -670,14 +671,26 @@ class TikTokTaskFlow:
             lead_pm_fallback_count = int(getattr(action_instance, 'lead_pm_sent_count', 0) or 0)
             # 兜底回复人数（用于准确统计楼中楼回复条数，避免用私信数反推）
             lead_reply_fallback_count = int(getattr(action_instance, 'lead_reply_fallback_count', 0) or 0)
+            # 内联私信完成标志（用于跳过 B.5）
+            inline_pm_completed = bool(getattr(action_instance, 'inline_pm_completed', False))
 
             if enable_lead_pm and lead_comment_node is not None:
                 comment_section_open = True  # keep_open_after_lead=True 时评论区仍打开
             if lead_comment_node is not None:
                 logger.info("B.4 已保存意向评论节点，可供 B.5 私信评论者使用")
 
+            # 检查内联私信是否已完成，如果完成则跳过 B.5。
+            # 注意：必须同时满足 lead_comment_node is None，防止"部分内联成功、部分失败"时
+            # 失败的 lead 被遗漏（inline_pm_completed 为 True 但当前仍有未处理 lead）。
+            if inline_pm_completed and lead_comment_node is None:
+                logger.info("内联私信已完成且当前无未处理 lead，跳过 B.5")
+                lead_pm_sent = True  # 标记私信已发送（由内联完成）
+                lead_pm_reason = "inline_pm_completed"
+                pm_executed = True  # 标记私信已执行，避免后续关闭评论区逻辑出错
+
             # B.5 楼中楼私信评论者（在评论区仍打开的状态下执行）
-            if enable_lead_pm and lead_reply_sent and lead_comment_node is not None:
+            # 条件：启用私信 + 回复已发送 + 有评论节点 + 内联私信未完成
+            elif enable_lead_pm and lead_reply_sent and lead_comment_node is not None:
                 logger.info("B.5 开始执行楼中楼私信评论者（评论区仍打开状态）")
                 pm_action = CommentLeadPmAction(
                     u2_device=self.runner.device,
@@ -841,9 +854,11 @@ class TikTokTaskFlow:
             return
         self._report(executed_action=f"搜索关键词：{keyword}")
 
-        # 2. 筛选（固定使用最新发布排序）
+        # 2. 筛选（按配置中的排序方式：latest=最新发布 / most_liked=最多点赞）
         self._check_stop()
-        sort_mode = "latest"
+        sort_mode = self.config.get('search', {}).get('sort_by', 'latest')
+        if sort_mode not in ('latest', 'most_liked'):
+            sort_mode = 'latest'
         if not self.runner.run_action(ApplyFiltersAction, sort_mode=sort_mode):
             logger.warning("筛选未成功应用，继续使用当前搜索结果")
         self._report(current_action=f"正在根据【{sort_mode}】精确洗量过滤...", executed_action="应用筛选条件")
@@ -877,7 +892,9 @@ class TikTokTaskFlow:
             self._interruptible_sleep(1)
             if not self.runner.run_action(EnterSearchAction, self.current_keyword):
                 return False
-            sort_mode = "latest"
+            sort_mode = self.config.get('search', {}).get('sort_by', 'latest')
+            if sort_mode not in ('latest', 'most_liked'):
+                sort_mode = 'latest'
             self.runner.run_action(ApplyFiltersAction, sort_mode=sort_mode)
             if not self.runner.run_action(EnterFirstVideoAction):
                 return False

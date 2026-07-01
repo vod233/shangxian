@@ -167,7 +167,14 @@ class ApplyFiltersAction(BaseAction):
             logger.warning(f"⚠️ 点击后未能确认[{option_text}]选中状态")
         return selected_confirmed
 
-    def execute(self, sort_mode: str = "latest"):
+    def execute(self, sort_mode: str = None):
+        # 兼容 BaseAction 动态属性传递：run_action(sort_mode=xxx) 会把 sort_mode
+        # setattr 成实例属性，execute 签名拿不到该值（perform 不转发 kwargs），
+        # 因此这里优先读取 self.sort_mode，回退到默认 "latest"。
+        if sort_mode is None:
+            sort_mode = getattr(self, "sort_mode", None) or "latest"
+        if sort_mode not in ("latest", "most_liked"):
+            sort_mode = "latest"
         sort_text = "最多点赞" if sort_mode == "most_liked" else "最新发布"
         logger.info(f">>> 自动化配对成功：模式[{sort_mode}] -> 点击按钮[{sort_text}] <<<")
 
