@@ -13,11 +13,12 @@ services:
     environment:
       POSTGRES_DB: ${PG_DB:-scout}
       POSTGRES_USER: ${PG_USER:-scout}
-      POSTGRES_PASSWORD: ${PG_PASSWORD:-scout123}
-      # 时区设为东八区，与业务代码一致
+      # 安全：无默认密码，必须通过环境变量 PG_PASSWORD 设置强密码
+      POSTGRES_PASSWORD: ${PG_PASSWORD:?ERROR: PG_PASSWORD must be set}
       TZ: Asia/Shanghai
     ports:
-      - "${PG_PORT:-5432}:5432"
+      # 安全：仅绑定 loopback，禁止暴露到 LAN
+      - "127.0.0.1:${PG_PORT:-5432}:5432"
     volumes:
       - pg_data:/var/lib/postgresql/data
       - ./docker/pg-init:/docker-entrypoint-initdb.d

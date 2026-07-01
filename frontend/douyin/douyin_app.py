@@ -1,3 +1,4 @@
+import os
 import streamlit as st
 import requests
 import time
@@ -5,6 +6,20 @@ import math
 import html as _html
 
 API_BASE_URL = "http://127.0.0.1:8000/api"
+
+# 本地后端共享密钥：与 backend/main.py 读取同一文件 config/.local_backend_token
+_LOCAL_TOKEN_FILE = os.path.join(
+    os.environ.get("APP_CONFIG_DIR") or os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "config"),
+    ".local_backend_token",
+)
+_session = requests.Session()
+try:
+    with open(_LOCAL_TOKEN_FILE, "r", encoding="utf-8") as _f:
+        _tok = _f.read().strip()
+        if _tok:
+            _session.headers["X-Local-Token"] = _tok
+except Exception:
+    pass
 
 
 def init_session_state():
@@ -27,7 +42,7 @@ def toggle_device(dev_id):
 
 def fetch_config():
     try:
-        resp = requests.get(f"{API_BASE_URL}/config?platform=douyin", timeout=5)
+        resp = _session.get(f"{API_BASE_URL}/config?platform=douyin", timeout=5)
         if resp.status_code == 200:
             st.session_state.config_data = resp.json().get("config", {})
     except:
@@ -36,7 +51,7 @@ def fetch_config():
 
 def fetch_devices():
     try:
-        resp = requests.get(f"{API_BASE_URL}/devices", timeout=5)
+        resp = _session.get(f"{API_BASE_URL}/devices", timeout=5)
         if resp.status_code == 200:
             return resp.json().get("devices", [])
     except:
@@ -46,7 +61,7 @@ def fetch_devices():
 
 def fetch_task_status():
     try:
-        resp = requests.get(f"{API_BASE_URL}/tasks/status", timeout=5).json()
+        resp = _session.get(f"{API_BASE_URL}/tasks/status", timeout=5).json()
         st.session_state.task_status_data = resp.get("status", {})
     except:
         st.session_state.task_status_data = {}
@@ -54,7 +69,7 @@ def fetch_task_status():
 
 def fetch_logs():
     try:
-        logs_resp = requests.get(f"{API_BASE_URL}/logs", timeout=5).json()
+        logs_resp = _session.get(f"{API_BASE_URL}/logs", timeout=5).json()
         logs = logs_resp.get("logs", [])
         return "\n".join(logs) if logs else "暂无日志输出..."
     except:
@@ -63,7 +78,7 @@ def fetch_logs():
 
 def fetch_stats():
     try:
-        resp = requests.get(f"{API_BASE_URL}/stats", timeout=5)
+        resp = _session.get(f"{API_BASE_URL}/stats", timeout=5)
         if resp.status_code == 200:
             return resp.json().get("data", {})
     except:
@@ -73,7 +88,7 @@ def fetch_stats():
 
 def fetch_details(limit=100):
     try:
-        details_resp = requests.get(f"{API_BASE_URL}/stats/details?limit={limit}", timeout=5)
+        details_resp = _session.get(f"{API_BASE_URL}/stats/details?limit={limit}", timeout=5)
         if details_resp.status_code == 200 and details_resp.json().get("success"):
             return details_resp.json().get("data", [])
     except:
@@ -113,7 +128,7 @@ def render_device_management():
         if st.button("🔍 检测 USB 设备", key="detect_usb", use_container_width=True):
             with st.spinner("正在检测 USB 设备..."):
                 try:
-                    res = requests.post(f"{API_BASE_URL}/devices/usb/detect").json()
+                    res = _session.post(f"{API_BASE_URL}/devices/usb/detect").json()
                     if res.get("success"):
                         st.success(res.get("message"))
                         for dev in res.get("devices", []):
@@ -151,7 +166,7 @@ def render_device_management():
                     else:
                         with st.spinner(f"正在尝试连接 {ip_port_input}..."):
                             try:
-                                res = requests.post(f"{API_BASE_URL}/devices/connect", json={"ip_port": ip_port_input}).json()
+                                res = _session.post(f"{API_BASE_URL}/devices/connect", json={"ip_port": ip_port_input}).json()
                                 if res.get("success"):
                                     st.success(res.get("message"))
                                     time.sleep(1)
@@ -174,7 +189,7 @@ def render_device_management():
                     else:
                         with st.spinner(f"正在尝试配对 {pair_ip_input}..."):
                             try:
-                                res = requests.post(f"{API_BASE_URL}/devices/pair", json={"ip_port": pair_ip_input, "code": pair_code_input}).json()
+                                res = _session.post(f"{API_BASE_URL}/devices/pair", json={"ip_port": pair_ip_input, "code": pair_code_input}).json()
                                 if res.get("success"):
                                     st.success(res.get("message") + "，请返回手机无线调试主界面进行连接！")
                                 else:
@@ -232,7 +247,7 @@ def render_device_management():
                 if st.button("断开员工", key=f"disconnect_{dev}", use_container_width=True):
                     with st.spinner(f"正在断开 {dev}..."):
                         try:
-                            res = requests.post(f"{API_BASE_URL}/devices/disconnect", json={"ip_port": dev}).json()
+                            res = _session.post(f"{API_BASE_URL}/devices/disconnect", json={"ip_port": dev}).json()
                             if res.get("success"):
                                 if is_controlled:
                                     toggle_device(dev)
@@ -293,7 +308,8 @@ def render_task_monitor():
     """, unsafe_allow_html=True)
 
     log_text = fetch_logs()
-    st.markdown(log_text.replace("\n", "<br>"), unsafe_allow_html=True)
+    # XSS 防护：先 HTML 转义日志内容，再将换行转为 <br>（避免日志中的 HTML/JS 被执行）
+    st.markdown(_html.escape(str(log_text)).replace("\n", "<br>"), unsafe_allow_html=True)
 
     st.markdown("</div></div>", unsafe_allow_html=True)
 
@@ -328,11 +344,11 @@ def render_search_control():
             }
             try:
                 current_config = {}
-                resp = requests.get(f"{API_BASE_URL}/config?platform=douyin")
+                resp = _session.get(f"{API_BASE_URL}/config?platform=douyin")
                 if resp.status_code == 200:
                     current_config = resp.json().get("config", {})
                 current_config.update(payload)
-                res = requests.post(f"{API_BASE_URL}/config?platform=douyin", json=current_config).json()
+                res = _session.post(f"{API_BASE_URL}/config?platform=douyin", json=current_config).json()
                 if res.get("success"):
                     st.success("配置已成功保存！")
                 else:
@@ -415,11 +431,11 @@ def render_intent_keywords():
             }
             try:
                 current_config = {}
-                resp = requests.get(f"{API_BASE_URL}/config?platform=douyin")
+                resp = _session.get(f"{API_BASE_URL}/config?platform=douyin")
                 if resp.status_code == 200:
                     current_config = resp.json().get("config", {})
                 current_config.update(payload)
-                res = requests.post(f"{API_BASE_URL}/config?platform=douyin", json=current_config).json()
+                res = _session.post(f"{API_BASE_URL}/config?platform=douyin", json=current_config).json()
                 if res.get("success"):
                     st.success("配置已成功保存！")
                 else:
@@ -501,7 +517,7 @@ def render_ai_strategy():
                 if not verify_key:
                     st.warning("请输入完整授权码后再验证。")
                 else:
-                    verify_resp = requests.post(
+                    verify_resp = _session.post(
                         f"{API_BASE_URL}/license/save?platform=douyin",
                         json={"license_key": verify_key, "license_server_url": license_server_url.strip()},
                         timeout=20,
@@ -571,11 +587,11 @@ def render_ai_strategy():
             }
             try:
                 current_config = {}
-                resp = requests.get(f"{API_BASE_URL}/config?platform=douyin")
+                resp = _session.get(f"{API_BASE_URL}/config?platform=douyin")
                 if resp.status_code == 200:
                     current_config = resp.json().get("config", {})
                 current_config.update(payload)
-                res = requests.post(f"{API_BASE_URL}/config?platform=douyin", json=current_config).json()
+                res = _session.post(f"{API_BASE_URL}/config?platform=douyin", json=current_config).json()
                 if res.get("success"):
                     st.success("配置已成功保存！")
                 else:
@@ -668,11 +684,11 @@ def render_video_settings():
             }
             try:
                 current_config = {}
-                resp = requests.get(f"{API_BASE_URL}/config?platform=douyin")
+                resp = _session.get(f"{API_BASE_URL}/config?platform=douyin")
                 if resp.status_code == 200:
                     current_config = resp.json().get("config", {})
                 current_config.update(payload)
-                res = requests.post(f"{API_BASE_URL}/config?platform=douyin", json=current_config).json()
+                res = _session.post(f"{API_BASE_URL}/config?platform=douyin", json=current_config).json()
                 if res.get("success"):
                     st.success("配置已成功保存！")
                 else:
@@ -758,11 +774,11 @@ def render_execution_functions():
             }
             try:
                 current_config = {}
-                resp = requests.get(f"{API_BASE_URL}/config?platform=douyin")
+                resp = _session.get(f"{API_BASE_URL}/config?platform=douyin")
                 if resp.status_code == 200:
                     current_config = resp.json().get("config", {})
                 current_config.update(payload)
-                res = requests.post(f"{API_BASE_URL}/config?platform=douyin", json=current_config).json()
+                res = _session.post(f"{API_BASE_URL}/config?platform=douyin", json=current_config).json()
                 if res.get("success"):
                     st.success("配置已成功保存！")
                 else:
@@ -898,11 +914,11 @@ def render_private_message():
             }
             try:
                 current_config = {}
-                resp = requests.get(f"{API_BASE_URL}/config?platform=douyin")
+                resp = _session.get(f"{API_BASE_URL}/config?platform=douyin")
                 if resp.status_code == 200:
                     current_config = resp.json().get("config", {})
                 current_config.update(payload)
-                res = requests.post(f"{API_BASE_URL}/config?platform=douyin", json=current_config).json()
+                res = _session.post(f"{API_BASE_URL}/config?platform=douyin", json=current_config).json()
                 if res.get("success"):
                     st.success("配置已成功保存！")
                 else:
@@ -939,7 +955,7 @@ def render_process_control():
 
     def action_start():
         try:
-            res = requests.post(f"{API_BASE_URL}/tasks/start", json={"devices": st.session_state.controlled_devices, "platform": "douyin"}).json()
+            res = _session.post(f"{API_BASE_URL}/tasks/start", json={"devices": st.session_state.controlled_devices, "platform": "douyin"}).json()
             if res.get("success"):
                 st.session_state.last_action_msg = res.get("message", "✅ 任务已提交！")
             else:
@@ -949,7 +965,7 @@ def render_process_control():
 
     def action_pause():
         try:
-            res = requests.post(f"{API_BASE_URL}/tasks/pause", json={"devices": st.session_state.controlled_devices, "platform": "douyin"}).json()
+            res = _session.post(f"{API_BASE_URL}/tasks/pause", json={"devices": st.session_state.controlled_devices, "platform": "douyin"}).json()
             if res.get("success"):
                 st.session_state.last_action_msg = res.get("message")
             else:
@@ -959,7 +975,7 @@ def render_process_control():
 
     def action_resume():
         try:
-            res = requests.post(f"{API_BASE_URL}/tasks/resume", json={"devices": st.session_state.controlled_devices, "platform": "douyin"}).json()
+            res = _session.post(f"{API_BASE_URL}/tasks/resume", json={"devices": st.session_state.controlled_devices, "platform": "douyin"}).json()
             if res.get("success"):
                 st.session_state.last_action_msg = res.get("message")
             else:
@@ -969,7 +985,7 @@ def render_process_control():
 
     def action_stop():
         try:
-            res = requests.post(f"{API_BASE_URL}/tasks/stop", json={"devices": st.session_state.controlled_devices, "platform": "douyin"}).json()
+            res = _session.post(f"{API_BASE_URL}/tasks/stop", json={"devices": st.session_state.controlled_devices, "platform": "douyin"}).json()
             if res.get("success"):
                 st.session_state.last_action_msg = res.get("message")
             else:

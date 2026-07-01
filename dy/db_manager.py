@@ -43,6 +43,8 @@ class SQLiteDBManager:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
                 # 创建每天的记录表
+                # UNIQUE(video_id)：在 DB 层强制去重，消除 SELECT-then-INSERT 的 TOCTOU 竞态
+                # user_id：多租户隔离列（桌面单用户默认 'local'），与 PostgreSQL RLS 对齐
                 cursor.execute(f'''
                     CREATE TABLE IF NOT EXISTS {table_name} (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -55,12 +57,13 @@ class SQLiteDBManager:
                         commented INTEGER DEFAULT 0,
                         followed INTEGER DEFAULT 0,
                         private_messaged INTEGER DEFAULT 0,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE(video_id)
                     )
                 ''')
                 # 为 video_id 创建索引，加速查询
                 cursor.execute(f'''
-                    CREATE INDEX IF NOT EXISTS idx_{table_name}_video_id 
+                    CREATE INDEX IF NOT EXISTS idx_{table_name}_video_id
                     ON {table_name} (video_id)
                 ''')
                 self._ensure_record_columns(cursor, table_name)
@@ -80,6 +83,14 @@ class SQLiteDBManager:
             cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN ai_reply TEXT DEFAULT ''")
         if "private_messaged" not in existing_columns:
             cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN private_messaged INTEGER DEFAULT 0")
+        # 多租户隔离列（桌面单用户默认 'local'），为未来多用户/迁移 PostgreSQL RLS 预留
+        if "user_id" not in existing_columns:
+            try:
+                cursor.execute(
+                    f"ALTER TABLE {table_name} ADD COLUMN user_id TEXT DEFAULT 'local'"
+                )
+            except Exception as e:
+                logger.debug(f"添加字段 user_id 失败（可能已存在）: {e}")
         # 执行过程详细字段（v2 扩展，便于前端透明展示每条视频的处理过程）
         detail_columns = {
             "video_index": "INTEGER DEFAULT 0",           # 本关键词内第几个视频
@@ -114,23 +125,20 @@ class SQLiteDBManager:
         """
         记录一个新视频
         返回 True 表示是新视频并成功插入，返回 False 表示今天已经处理过该视频
+        依赖 UNIQUE(video_id) 约束，使用 ON CONFLICT DO NOTHING 原子去重（消除 TOCTOU 竞态）
         """
         table_name = self._ensure_table()
         try:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
-                # 检查是否已存在
-                cursor.execute(f"SELECT id FROM {table_name} WHERE video_id = ?", (video_id,))
-                if cursor.fetchone():
-                    return False
-                
-                # 插入新记录
+                # 原子插入：命中 UNIQUE 约束时静默跳过，靠 rowcount 判断是否为新视频
                 cursor.execute(f'''
                     INSERT INTO {table_name} (video_id, keyword, note_title, url)
                     VALUES (?, ?, ?, ?)
+                    ON CONFLICT(video_id) DO NOTHING
                 ''', (video_id, keyword, note_title, url))
                 conn.commit()
-                return True
+                return cursor.rowcount > 0
         except Exception as e:
             logger.error(f"记录视频失败: {e}")
             return False

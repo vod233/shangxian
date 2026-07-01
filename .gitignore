@@ -17,6 +17,7 @@ data/*.db-wal
 _server_dump/
 *.env
 config/auth.json
+config/.local_backend_token
 .env
 # 敏感配置文件（含授权码、API Key 等，禁止入仓）
 dy/config/api_settings.yaml
@@ -33,3 +34,14 @@ _bak_*.sh
 # 临时数据库转储
 dump_*.xml
 .credit_server_dump.txt
+# APK 签名密钥与密码（禁止入仓）
+apk_tools/release.keystore
+apk_tools/keystore.env
+apk_tools/*.keystore
+apk_tools/*.jks
+apk_tools/*.apk.bak-align-*
+# PyArmor 混淆产物与备份（禁止入仓）
+build/obfuscate_backup/
+build/obfuscated/
+pyarmor_runtime/
+pyarmor_runtime_*/

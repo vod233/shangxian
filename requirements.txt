@@ -1,21 +1,26 @@
-adbutils
-python-dotenv
-fastapi
-jinja2
-langchain-core
-langchain-openai
-numpy<2
-openai
-opencv-python
-pandas
-pillow
-pydantic
-python-multipart
-pyyaml
-requests
-streamlit
-tiktoken
-uiautomator2
-uvicorn
+# ============================================================
+# 依赖精确版本锁定（reproducible builds）
+# 安全要求：禁止使用 >= / ~= / < 等浮动范围，避免供应链投毒与意外破坏性升级
+# 升级时需人工评审 + 全量回归测试后再更新版本号
+# ============================================================
+adbutils==2.12.0
+python-dotenv==1.2.2
+fastapi==0.137.1
+Jinja2==3.1.6
+langchain-core==1.4.8
+langchain-openai==1.3.3
+numpy==1.26.4
+openai==2.43.0
+opencv-python==4.11.0.86
+pandas==3.0.3
+pillow==12.2.0
+pydantic==2.13.4
+python-multipart==0.0.32
+PyYAML==6.0.3
+requests==2.34.2
+streamlit==1.58.0
+tiktoken==0.13.0
+uiautomator2==3.6.0
+uvicorn==0.49.0
 # PostgreSQL 后端（可选，DB_BACKEND=postgres 时需要）
-psycopg2-binary
+psycopg2-binary==2.9.12

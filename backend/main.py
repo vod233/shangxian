@@ -3,6 +3,7 @@ import os
 import json
 import yaml
 import logging
+import secrets
 import concurrent.futures
 import threading
 import time
@@ -15,7 +16,7 @@ load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file_
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, BackgroundTasks, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 
 # 确保能找到项目根目录下的模块
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -216,14 +217,70 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="抖音自动化后端 API", version="1.0.0", lifespan=lifespan)
 
-# 允许跨域请求，方便未来 Streamlit 前端调用
+# CORS 白名单：仅允许本地 Streamlit 前端，禁止通配符
+_ALLOWED_ORIGINS = os.environ.get("CORS_ALLOWED_ORIGINS", "http://localhost:8501,http://127.0.0.1:8501").split(",")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=[o.strip() for o in _ALLOWED_ORIGINS if o.strip()],
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
+    allow_headers=["Authorization", "Content-Type", "X-Local-Token"],
 )
+
+# ======================== 本地后端鉴权（X-Local-Token 共享密钥）========================
+# 防止 127.0.0.1 上其他本地进程未授权调用。Token 持久化到 config/.local_backend_token，
+# 前端 Streamlit 从同一文件读取并随每个请求附带 X-Local-Token 头。
+_LOCAL_TOKEN_FILE = os.path.join(
+    os.environ.get("APP_CONFIG_DIR") or os.path.join(PROJECT_ROOT, "config"),
+    ".local_backend_token",
+)
+
+
+def _load_or_create_local_token() -> str:
+    """读取本地共享密钥；缺失则生成 32 字节随机 token 并落盘（chmod 600）。"""
+    try:
+        with open(_LOCAL_TOKEN_FILE, "r", encoding="utf-8") as f:
+            tok = f.read().strip()
+            if tok:
+                return tok
+    except FileNotFoundError:
+        pass
+    except Exception as exc:
+        logging.warning(f"读取 .local_backend_token 失败: {exc}")
+    tok = secrets.token_urlsafe(32)
+    try:
+        os.makedirs(os.path.dirname(_LOCAL_TOKEN_FILE), exist_ok=True)
+        with open(_LOCAL_TOKEN_FILE, "w", encoding="utf-8") as f:
+            f.write(tok)
+        try:
+            os.chmod(_LOCAL_TOKEN_FILE, 0o600)
+        except OSError:
+            pass  # Windows 不支持 chmod
+    except Exception as exc:
+        logging.error(f"写入 .local_backend_token 失败: {exc}")
+    return tok
+
+
+LOCAL_BACKEND_TOKEN = _load_or_create_local_token()
+
+# 鉴权白名单：登录/注册/授权码校验等公开端点不需要 X-Local-Token
+_PUBLIC_PATHS = {"/", "/docs", "/redoc", "/openapi.json", "/health"}
+_PUBLIC_PREFIXES = ("/api/auth/", "/api/license/verify", "/api/license/save")
+
+
+@app.middleware("http")
+async def _enforce_local_token(request, call_next):
+    """强制校验 X-Local-Token 头，白名单路径放行。"""
+    path = request.url.path
+    if path in _PUBLIC_PATHS or any(path.startswith(p) for p in _PUBLIC_PREFIXES):
+        return await call_next(request)
+    token = request.headers.get("X-Local-Token", "")
+    if not token or token != LOCAL_BACKEND_TOKEN:
+        return JSONResponse(
+            status_code=401,
+            content={"success": False, "detail": "未授权：缺少或错误的 X-Local-Token"},
+        )
+    return await call_next(request)
 
 # 抖音配置路径
 DY_USER_CONFIG_PATH = os.path.join(PROJECT_ROOT, "dy", "config", "user_settings.yaml")
@@ -1032,5 +1089,9 @@ def api_clear_today_stats():
 
 if __name__ == "__main__":
     import uvicorn
-    # 不使用 reload：任务执行时数据库文件频繁变化会触发重启，导致 GUI 窗口被信号终止
-    uvicorn.run("backend.main:app", host="0.0.0.0", port=8000)
+    # 安全：仅绑定 127.0.0.1，禁止 0.0.0.0 暴露到 LAN；端口可通过环境变量调整
+    uvicorn.run(
+        "backend.main:app",
+        host=os.environ.get("BACKEND_HOST", "127.0.0.1"),
+        port=int(os.environ.get("BACKEND_PORT", "8000")),
+    )

@@ -24,6 +24,9 @@ def _get_pool():
     global _pg_pool
     if _pg_pool is None:
         from psycopg2 import pool as pg_pool_mod
+        # sslmode=require：强制加密传输，防止凭据与业务数据在网络上明文泄露
+        # 可通过 PG_SSLMODE 覆盖（如本地开发用 disable）
+        sslmode = os.environ.get("PG_SSLMODE", "require")
         _pg_pool = pg_pool_mod.ThreadedConnectionPool(
             minconn=2,
             maxconn=60,
@@ -32,6 +35,7 @@ def _get_pool():
             dbname=os.environ.get("PG_DB", "scout"),
             user=os.environ.get("PG_USER", "scout"),
             password=os.environ.get("PG_PASSWORD", "scout123"),
+            sslmode=sslmode,
         )
         logger.info(
             "PostgreSQL 连接池已初始化: %s:%s/%s",
@@ -109,7 +113,8 @@ class PostgresDBManager:
                         commented INTEGER DEFAULT 0,
                         followed INTEGER DEFAULT 0,
                         private_messaged INTEGER DEFAULT 0,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE(video_id)
                     )
                 ''')
                 cur.execute(f'''
@@ -117,9 +122,31 @@ class PostgresDBManager:
                     ON {table_name} (video_id)
                 ''')
                 self._ensure_record_columns(cur, table_name)
+                # 启用行级安全（RLS）：按 session 变量 app.current_user_id 过滤
+                # 桌面单用户场景默认 user_id='local'，应用层在连接时执行
+                # SET app.current_user_id='local' 即可；多租户时设为实际用户标识
+                self._enable_rls(cur, table_name)
             logger.info(f"已连接 PostgreSQL 并校验当日数据表: {table_name}")
         except Exception as e:
             logger.error(f"初始化 PostgreSQL 表失败: {e}")
+
+    def _enable_rls(self, cur, table_name):
+        """为当日表启用行级安全（RLS），按 user_id 隔离数据。"""
+        try:
+            cur.execute(f"ALTER TABLE {table_name} ENABLE ROW LEVEL SECURITY")
+            # FORCE 强制对所有角色（含表 owner）应用策略
+            cur.execute(f"ALTER TABLE {table_name} FORCE ROW LEVEL SECURITY")
+            # 策略：仅允许读取/写入 user_id 匹配当前会话用户标识的行
+            # current_setting('app.current_user_id', true) 缺省返回 NULL -> COALESCE 兜底 'local'
+            policy_name = f"rls_{table_name}_isolation"
+            cur.execute(f"DROP POLICY IF EXISTS {policy_name} ON {table_name}")
+            cur.execute(
+                f"CREATE POLICY {policy_name} ON {table_name} "
+                "USING (user_id = COALESCE(NULLIF(current_setting('app.current_user_id', true), ''), 'local')) "
+                "WITH CHECK (user_id = COALESCE(NULLIF(current_setting('app.current_user_id', true), ''), 'local'))"
+            )
+        except Exception as e:
+            logger.debug(f"启用 RLS 失败（可能权限不足或已存在）: {e}")
 
     def _ensure_record_columns(self, cur, table_name):
         """为历史表补齐新增字段（PostgreSQL 9.6+ 支持 ADD COLUMN IF NOT EXISTS）"""
@@ -147,6 +174,13 @@ class PostgresDBManager:
                 )
             except Exception as e:
                 logger.debug(f"添加字段 {col} 失败（可能已存在）: {e}")
+        # 多租户隔离列（桌面单用户默认 'local'），与 RLS 策略配合
+        try:
+            cur.execute(
+                f"ALTER TABLE {table_name} ADD COLUMN IF NOT EXISTS user_id TEXT DEFAULT 'local'"
+            )
+        except Exception as e:
+            logger.debug(f"添加字段 user_id 失败（可能已存在）: {e}")
 
     def _ensure_table(self):
         """确保执行操作前当天的表存在（应对跨天运行的情况）"""
@@ -163,22 +197,17 @@ class PostgresDBManager:
         """
         记录一个新视频
         返回 True 表示是新视频并成功插入，返回 False 表示今天已经处理过该视频
+        依赖 UNIQUE(video_id) 约束，使用 ON CONFLICT DO NOTHING 原子去重（消除 TOCTOU 竞态）
         """
         table_name = self._ensure_table()
         try:
             with self._get_cursor() as cur:
-                cur.execute(
-                    f"SELECT id FROM {table_name} WHERE video_id = %s",
-                    (video_id,),
-                )
-                if cur.fetchone():
-                    return False
-
                 cur.execute(f'''
                     INSERT INTO {table_name} (video_id, keyword, note_title, url)
                     VALUES (%s, %s, %s, %s)
+                    ON CONFLICT (video_id) DO NOTHING
                 ''', (video_id, keyword, note_title, url))
-                return True
+                return cur.rowcount > 0
         except Exception as e:
             logger.error(f"记录视频失败: {e}")
             return False

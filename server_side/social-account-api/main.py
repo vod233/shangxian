@@ -7,12 +7,13 @@
 """
 import os
 import re
+import hashlib
 import secrets
 import time
 import logging
 from collections import defaultdict, deque
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from dotenv import load_dotenv
@@ -35,6 +36,7 @@ MIN_PASSWORD_LEN = 6
 LOGIN_RATE_LIMIT = 5        # 同 IP 每分钟最多尝试
 LOGIN_RATE_WINDOW = 60      # 窗口 60 秒
 TOKEN_BYTES = 48            # secrets.token_urlsafe(48) ≈ 64 字符
+TOKEN_TTL_DAYS = 7          # 会话 token 有效期 7 天
 
 # 数据库后端选择：postgres（默认）或 sqlite
 DB_BACKEND = os.environ.get("ACCOUNT_DB_BACKEND", os.environ.get("DB_BACKEND", "postgres")).lower()
@@ -49,6 +51,8 @@ def _get_pg_pool():
     global _pg_pool
     if _pg_pool is None:
         from psycopg2 import pool as pg_pool_mod
+        # sslmode=require：强制加密传输，防止账号凭据明文泄露
+        sslmode = os.environ.get("PG_SSLMODE", "require")
         _pg_pool = pg_pool_mod.ThreadedConnectionPool(
             minconn=2,
             maxconn=20,
@@ -57,6 +61,7 @@ def _get_pg_pool():
             dbname=os.environ.get("PG_DB", "scout"),
             user=os.environ.get("PG_USER", "scout"),
             password=os.environ.get("PG_PASSWORD", "scout123"),
+            sslmode=sslmode,
         )
         logger.info(
             "账号服务 PostgreSQL 连接池已初始化: %s:%s/%s",
@@ -156,8 +161,24 @@ def init_db() -> None:
                     FOREIGN KEY (user_id) REFERENCES users(id)
                 );
                 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
+                CREATE TABLE IF NOT EXISTS user_devices (
+                    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id       INTEGER NOT NULL,
+                    device_serial TEXT NOT NULL,
+                    device_alias  TEXT,
+                    registered_at TEXT NOT NULL,
+                    last_active_at TEXT,
+                    FOREIGN KEY (user_id) REFERENCES users(id),
+                    UNIQUE(user_id, device_serial)
+                );
+                CREATE INDEX IF NOT EXISTS idx_user_devices_user ON user_devices(user_id);
                 """
             )
+            # 安全：清理遗留明文 token（旧版本未做哈希，expires_at 为 NULL）
+            try:
+                conn.executescript("DELETE FROM sessions WHERE expires_at IS NULL;")
+            except Exception as exc:
+                logger.warning(f"清理遗留明文 token 失败（忽略）: {exc}")
             conn.commit()
     else:
         with get_db() as conn:
@@ -184,6 +205,26 @@ def init_db() -> None:
             cur.execute('''
                 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id)
             ''')
+            cur.execute('''
+                CREATE TABLE IF NOT EXISTS user_devices (
+                    id            SERIAL PRIMARY KEY,
+                    user_id       INTEGER NOT NULL,
+                    device_serial TEXT NOT NULL,
+                    device_alias  TEXT,
+                    registered_at TEXT NOT NULL,
+                    last_active_at TEXT,
+                    FOREIGN KEY (user_id) REFERENCES users(id),
+                    UNIQUE(user_id, device_serial)
+                )
+            ''')
+            cur.execute('''
+                CREATE INDEX IF NOT EXISTS idx_user_devices_user ON user_devices(user_id)
+            ''')
+            # 安全：清理遗留明文 token
+            try:
+                cur.execute("DELETE FROM sessions WHERE expires_at IS NULL;")
+            except Exception as exc:
+                logger.warning(f"清理遗留明文 token 失败（忽略）: {exc}")
 
 
 # ======================== 限流（内存，按 IP）========================
@@ -234,6 +275,32 @@ class LoginRequest(BaseModel):
         return (v or "").strip().lower()
 
 
+class DeviceRegisterRequest(BaseModel):
+    device_serial: str
+    device_alias: str | None = None
+
+    @field_validator("device_serial")
+    @classmethod
+    def _check_serial(cls, v: str) -> str:
+        v = (v or "").strip()
+        if not v or len(v) < 4 or len(v) > 128:
+            raise ValueError("device_serial 长度需在 4-128 之间")
+        # 仅允许字母数字与常见分隔符，防止注入
+        if not re.match(r"^[A-Za-z0-9._:\-]+$", v):
+            raise ValueError("device_serial 含非法字符")
+        return v
+
+    @field_validator("device_alias")
+    @classmethod
+    def _check_alias(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        v = v.strip()
+        if len(v) > 64:
+            raise ValueError("device_alias 过长（<=64）")
+        return v or None
+
+
 # ======================== 工具函数 ========================
 def hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt(rounds=12)).decode("utf-8")
@@ -250,6 +317,17 @@ def generate_token() -> str:
     return secrets.token_urlsafe(TOKEN_BYTES)
 
 
+def _hash_token(token: str) -> str:
+    """对会话 token 做 SHA-256 哈希；DB 仅存哈希，明文 token 不落盘。"""
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _token_expiry(now_iso: str) -> str:
+    """生成 token 过期时间（ISO 字符串，now + TOKEN_TTL_DAYS）。"""
+    base = datetime.fromisoformat(now_iso) if isinstance(now_iso, str) else now_iso
+    return (base + timedelta(days=TOKEN_TTL_DAYS)).isoformat()
+
+
 def get_bearer_token(request: Request) -> str:
     auth = request.headers.get("Authorization", "")
     if not auth.startswith("Bearer "):
@@ -258,30 +336,57 @@ def get_bearer_token(request: Request) -> str:
 
 
 def get_session_user(request: Request) -> dict:
-    """校验 token 并返回用户信息字典"""
+    """校验 token 并返回用户信息字典。
+
+    安全：
+    - DB 中 token 列存的是 SHA-256 哈希，这里以哈希查询；
+    - 检查 expires_at，过期则视为已撤销；
+    - 顺便清理过期/已撤销会话（惰性回收）。
+    """
     token = get_bearer_token(request)
+    token_hash = _hash_token(token)
     with get_db() as conn:
         cur = _exec_sql(
             conn,
-            "SELECT s.token, s.user_id, s.revoked, u.email, u.created_at, u.last_login_at "
+            "SELECT s.token, s.user_id, s.revoked, s.expires_at, u.email, u.created_at, u.last_login_at "
             "FROM sessions s JOIN users u ON s.user_id = u.id "
             "WHERE s.token = ?",
-            (token,),
+            (token_hash,),
         )
         row = _fetchone_as_dict(cur)
-    if not row or row["revoked"]:
-        raise HTTPException(status_code=401, detail="登录已失效，请重新登录")
+        if not row:
+            raise HTTPException(status_code=401, detail="登录已失效，请重新登录")
+        # 过期判定
+        expired = False
+        if row.get("expires_at"):
+            try:
+                expired = datetime.fromisoformat(row["expires_at"]) < datetime.utcnow()
+            except Exception:
+                expired = True  # 解析失败视为过期
+        if row["revoked"] or expired:
+            # 惰性回收：清掉过期/已撤销会话
+            try:
+                _exec_sql(
+                    conn,
+                    "DELETE FROM sessions WHERE token = ?",
+                    (token_hash,),
+                )
+            except Exception:
+                pass
+            raise HTTPException(status_code=401, detail="登录已失效，请重新登录")
     return row
 
 
 # ======================== FastAPI ========================
 app = FastAPI(title="Social Account API", version="1.0.0")
+# CORS 白名单：仅允许 lcjx.yun 主站，禁止通配符
+_ALLOWED_ORIGINS = os.environ.get("CORS_ALLOWED_ORIGINS", "https://lcjx.yun").split(",")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=[o.strip() for o in _ALLOWED_ORIGINS if o.strip()],
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 
@@ -346,11 +451,12 @@ def register(req: RegisterRequest) -> dict[str, Any]:
             logger.error(f"注册时数据库错误: {exc}")
             raise HTTPException(status_code=500, detail="注册失败，请稍后重试")
         token = generate_token()
+        expires_at = _token_expiry(now)
         _exec_sql(
             conn,
             "INSERT INTO sessions (token, user_id, created_at, expires_at, revoked) "
-            "VALUES (?, ?, ?, NULL, 0)",
-            (token, user_id, now),
+            "VALUES (?, ?, ?, ?, 0)",
+            (_hash_token(token), user_id, now, expires_at),
         )
     return {
         "success": True,
@@ -374,11 +480,12 @@ def login(req: LoginRequest, request: Request) -> dict[str, Any]:
             raise HTTPException(status_code=401, detail="邮箱或密码错误")
         now = datetime.utcnow().isoformat()
         token = generate_token()
+        expires_at = _token_expiry(now)
         _exec_sql(
             conn,
             "INSERT INTO sessions (token, user_id, created_at, expires_at, revoked) "
-            "VALUES (?, ?, ?, NULL, 0)",
-            (token, row["id"], now),
+            "VALUES (?, ?, ?, ?, 0)",
+            (_hash_token(token), row["id"], now, expires_at),
         )
         _exec_sql(
             conn,
@@ -413,9 +520,118 @@ def logout(request: Request) -> dict[str, Any]:
         _exec_sql(
             conn,
             "UPDATE sessions SET revoked = 1 WHERE token = ?",
-            (user["token"],),
+            (_hash_token(get_bearer_token(request)),),
         )
     return {"success": True, "message": "已退出登录"}
+
+
+# ======================== 用户设备管理（BOLA 防护示范）========================
+# 防御要点：GET/DELETE 单设备时强制 WHERE user_id = ? AND device_serial = ?，
+# 防止用户A通过篡改 URL 中的 serial 访问用户B的设备（BOLA / OWASP API1）。
+
+@app.post("/auth/devices", summary="注册当前用户的设备")
+def register_device(req: DeviceRegisterRequest, request: Request) -> dict[str, Any]:
+    user = get_session_user(request)
+    now = datetime.utcnow().isoformat()
+    with get_db() as conn:
+        try:
+            _exec_sql(
+                conn,
+                "INSERT INTO user_devices (user_id, device_serial, device_alias, registered_at, last_active_at) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (user["user_id"], req.device_serial, req.device_alias, now, now),
+            )
+        except Exception as exc:
+            # 唯一约束冲突：设备已注册
+            is_duplicate = False
+            if DB_BACKEND == "sqlite":
+                import sqlite3 as _sqlite3
+                is_duplicate = isinstance(exc, _sqlite3.IntegrityError)
+            else:
+                try:
+                    from psycopg2.errors import UniqueViolation
+                    is_duplicate = isinstance(exc, UniqueViolation)
+                except ImportError:
+                    is_duplicate = "unique" in str(exc).lower() or "duplicate" in str(exc).lower()
+            if is_duplicate:
+                # 更新别名 + last_active
+                _exec_sql(
+                    conn,
+                    "UPDATE user_devices SET device_alias = ?, last_active_at = ? "
+                    "WHERE user_id = ? AND device_serial = ?",
+                    (req.device_alias, now, user["user_id"], req.device_serial),
+                )
+                return {"success": True, "message": "设备已存在，已更新别名", "data": {"device_serial": req.device_serial}}
+            logger.error(f"注册设备时数据库错误: {exc}")
+            raise HTTPException(status_code=500, detail="设备注册失败")
+    return {
+        "success": True,
+        "message": "设备注册成功",
+        "data": {"device_serial": req.device_serial, "device_alias": req.device_alias},
+    }
+
+
+@app.get("/auth/devices", summary="列出当前用户的所有设备")
+def list_devices(request: Request) -> dict[str, Any]:
+    user = get_session_user(request)
+    with get_db() as conn:
+        cur = _exec_sql(
+            conn,
+            "SELECT device_serial, device_alias, registered_at, last_active_at "
+            "FROM user_devices WHERE user_id = ? ORDER BY registered_at DESC",
+            (user["user_id"],),
+        )
+        rows = _fetchall_as_dicts(cur)
+    return {"success": True, "data": rows}
+
+
+@app.get("/auth/devices/{serial}", summary="查询单台设备（含 BOLA 校验）")
+def get_device(serial: str, request: Request) -> dict[str, Any]:
+    user = get_session_user(request)
+    # BOLA 防护：强制 user_id 与 serial 同时匹配
+    with get_db() as conn:
+        cur = _exec_sql(
+            conn,
+            "SELECT device_serial, device_alias, registered_at, last_active_at "
+            "FROM user_devices WHERE user_id = ? AND device_serial = ?",
+            (user["user_id"], serial),
+        )
+        row = _fetchone_as_dict(cur)
+    if not row:
+        # 不存在或不属于当前用户：统一返回 404，避免泄露存在性
+        raise HTTPException(status_code=404, detail="设备不存在或无权访问")
+    return {"success": True, "data": row}
+
+
+@app.delete("/auth/devices/{serial}", summary="解绑设备（含 BOLA 校验）")
+def delete_device(serial: str, request: Request) -> dict[str, Any]:
+    user = get_session_user(request)
+    # BOLA 防护：DELETE 必须带 user_id 限定
+    with get_db() as conn:
+        cur = _exec_sql(
+            conn,
+            "DELETE FROM user_devices WHERE user_id = ? AND device_serial = ?",
+            (user["user_id"], serial),
+        )
+        deleted = cur.rowcount
+    if deleted == 0:
+        raise HTTPException(status_code=404, detail="设备不存在或无权访问")
+    return {"success": True, "message": "设备已解绑", "data": {"device_serial": serial}}
+
+
+def _fetchall_as_dicts(cur) -> list[dict]:
+    """将查询结果全部转为字典列表。"""
+    rows = []
+    while True:
+        row = cur.fetchone()
+        if row is None:
+            break
+        if hasattr(row, "keys"):
+            rows.append(dict(row))
+        else:
+            cols = [desc[0] for desc in cur.description]
+            rows.append(dict(zip(cols, row)))
+    return rows
 
 
 if __name__ == "__main__":

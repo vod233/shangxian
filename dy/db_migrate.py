@@ -28,12 +28,15 @@ def _get_sqlite_path():
 
 def _get_pg_conn():
     import psycopg2
+    # sslmode=require：强制加密传输，防止凭据与业务数据明文泄露
+    sslmode = os.environ.get("PG_SSLMODE", "require")
     return psycopg2.connect(
         host=os.environ.get("PG_HOST", "127.0.0.1"),
         port=int(os.environ.get("PG_PORT", "5432")),
         dbname=os.environ.get("PG_DB", "scout"),
         user=os.environ.get("PG_USER", "scout"),
         password=os.environ.get("PG_PASSWORD", "scout123"),
+        sslmode=sslmode,
     )
 
 
@@ -107,7 +110,9 @@ def migrate_table(sqlite_path, table_name, pg_conn, dry_run=False):
             pm_sent INTEGER DEFAULT 0,
             follower_count TEXT DEFAULT '',
             error_message TEXT DEFAULT '',
-            action_log TEXT DEFAULT '[]'
+            action_log TEXT DEFAULT '[]',
+            user_id TEXT DEFAULT 'local',
+            UNIQUE(video_id)
         )
     ''')
     pg_cur.execute(f'''

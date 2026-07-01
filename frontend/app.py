@@ -9,6 +9,7 @@ if "127.0.0.1" not in _np:
 
 import streamlit as st
 import requests
+import html as _html
 from douyin.douyin_app import render_douyin_page
 
 st.set_page_config(page_title="抖音自动化群控系统", page_icon="🎵", layout="wide")
@@ -17,6 +18,20 @@ st.set_page_config(page_title="抖音自动化群控系统", page_icon="🎵", l
 API_PORT = os.environ.get("APP_API_PORT", "8000")
 API_BASE_URL = f"http://127.0.0.1:{API_PORT}/api"
 CREDIT_API_BASE = os.environ.get("APP_CREDIT_API_BASE", "https://lcjx.yun/social-ai-credit-api")
+
+# 本地后端共享密钥：与 backend/main.py 读取同一文件 config/.local_backend_token
+_LOCAL_TOKEN_FILE = os.path.join(
+    os.environ.get("APP_CONFIG_DIR") or os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config"),
+    ".local_backend_token",
+)
+_session = requests.Session()
+try:
+    with open(_LOCAL_TOKEN_FILE, "r", encoding="utf-8") as _f:
+        _tok = _f.read().strip()
+        if _tok:
+            _session.headers["X-Local-Token"] = _tok
+except Exception:
+    pass
 
 
 # ============================================================
@@ -918,7 +933,7 @@ def get_credits_balance() -> float:
         sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         from social_license import get_machine_id
         machine_id = get_machine_id()
-        resp = requests.post(
+        resp = _session.post(
             f"{CREDIT_API_BASE}/auth/verify",
             json={"machine_id": machine_id, "device_id": ""},
             headers={"Authorization": f"Bearer {key}"},
@@ -936,7 +951,7 @@ def get_credits_balance() -> float:
 def get_device_status():
     """设备状态（10s 缓存，避免每次切换页面都请求）"""
     try:
-        resp = requests.get(f"{API_BASE_URL}/devices", timeout=5)
+        resp = _session.get(f"{API_BASE_URL}/devices", timeout=5)
         if resp.status_code == 200:
             devices = resp.json().get("devices", [])
             if devices:
@@ -950,7 +965,7 @@ def get_device_status():
 def get_license_status():
     """授权状态（10s 缓存）"""
     try:
-        resp = requests.get(f"{API_BASE_URL}/config?platform=douyin", timeout=5)
+        resp = _session.get(f"{API_BASE_URL}/config?platform=douyin", timeout=5)
         if resp.status_code == 200:
             config = resp.json().get("config", {})
             ai_enabled = config.get("ai_enabled", False)
@@ -973,7 +988,7 @@ def _render_recharge_dialog():
 
     # 拉取套餐
     try:
-        plans_resp = requests.get(f"{CREDIT_API_BASE}/recharge/plans", timeout=8)
+        plans_resp = _session.get(f"{CREDIT_API_BASE}/recharge/plans", timeout=8)
         plans = plans_resp.json().get("plans", []) if plans_resp.status_code == 200 else []
     except Exception:
         plans = []
@@ -991,7 +1006,7 @@ def _render_recharge_dialog():
 
     if st.button("立即充值", key="rc_pay_btn", use_container_width=True, type="primary"):
         try:
-            resp = requests.post(
+            resp = _session.post(
                 f"{CREDIT_API_BASE}/recharge/create",
                 json={"plan_id": selected_plan["id"]},
                 headers={"Authorization": f"Bearer {license_key}"},
@@ -1018,7 +1033,7 @@ def _render_recharge_dialog():
         st.markdown("---")
         st.success("订单已创建，请点击下方按钮在新窗口完成支付")
         st.markdown(f"**订单号**：`{order_no}`")
-        st.markdown(f'<a href="{pay_url}" target="_blank" style="display:inline-block;padding:8px 16px;background:#6366F1;color:#fff;border-radius:6px;text-decoration:none;font-weight:600;">前往支付宝支付</a>', unsafe_allow_html=True)
+        st.markdown(f'<a href="{_html.escape(pay_url)}" target="_blank" style="display:inline-block;padding:8px 16px;background:#6366F1;color:#fff;border-radius:6px;text-decoration:none;font-weight:600;">前往支付宝支付</a>', unsafe_allow_html=True)
         col_a, col_b = st.columns([1, 1])
         with col_a:
             if st.button("我已支付，刷新余额", key="rc_refresh_btn", use_container_width=True):
@@ -1028,7 +1043,7 @@ def _render_recharge_dialog():
             # 轮询订单状态
             if order_no:
                 try:
-                    sresp = requests.get(
+                    sresp = _session.get(
                         f"{CREDIT_API_BASE}/recharge/orders/{order_no}",
                         headers={"Authorization": f"Bearer {license_key}"},
                         timeout=8,
@@ -1046,7 +1061,7 @@ def _render_recharge_dialog():
     st.markdown("---")
     st.markdown("**最近充值记录**")
     try:
-        oresp = requests.get(
+        oresp = _session.get(
             f"{CREDIT_API_BASE}/recharge/orders",
             headers={"Authorization": f"Bearer {license_key}"},
             timeout=8,
@@ -1058,9 +1073,9 @@ def _render_recharge_dialog():
                     status_color = "#34D399" if o["status"] == "paid" else "#FBBF24"
                     st.markdown(
                         f'<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.04);font-size:13px;color:#FFFFFF;">'
-                        f'<span style="flex:1;">{o["plan_name"]}</span>'
+                        f'<span style="flex:1;">{_html.escape(str(o["plan_name"]))}</span>'
                         f'<span style="color:{status_color};font-weight:600;margin:0 12px;">{"已支付" if o["status"]=="paid" else "待支付"}</span>'
-                        f'<span style="color:#D1D5DB;font-variant-numeric:tabular-nums;">¥{o["money"]} / +{o["credits"]}积分</span>'
+                        f'<span style="color:#D1D5DB;font-variant-numeric:tabular-nums;">¥{_html.escape(str(o["money"]))} / +{_html.escape(str(o["credits"]))}积分</span>'
                         f'</div>', unsafe_allow_html=True
                     )
             else:
@@ -1127,7 +1142,7 @@ def _render_sidebar(device_status, license_info):
             )
         if st.button("退出登录", key="sb_logout", use_container_width=True):
             try:
-                requests.post(f"{API_BASE_URL}/auth/logout", timeout=10)
+                _session.post(f"{API_BASE_URL}/auth/logout", timeout=10)
             except Exception:
                 pass
             st.session_state["account_logged_in"] = False
@@ -1208,7 +1223,7 @@ def _ensure_logged_in() -> bool:
     if st.session_state.get("account_logged_in") is True:
         return True
     try:
-        resp = requests.get(f"{API_BASE_URL}/auth/check", timeout=10)
+        resp = _session.get(f"{API_BASE_URL}/auth/check", timeout=10)
         if resp.status_code == 200:
             data = resp.json()
             if data.get("logged_in"):
@@ -1247,7 +1262,7 @@ def _render_auth_page():
                 st.markdown('<div class="auth-error">请填写邮箱和密码</div>', unsafe_allow_html=True)
             else:
                 try:
-                    resp = requests.post(f"{API_BASE_URL}/auth/login", json={
+                    resp = _session.post(f"{API_BASE_URL}/auth/login", json={
                         "email": login_email.strip(),
                         "password": login_password,
                     }, timeout=20)
@@ -1257,10 +1272,10 @@ def _render_auth_page():
                         st.session_state["account_email"] = (data.get("data") or {}).get("user", {}).get("email", "")
                         st.rerun()
                     else:
-                        st.markdown(f'<div class="auth-error">{data.get("message", "登录失败")}</div>',
+                        st.markdown(f'<div class="auth-error">{_html.escape(str(data.get("message", "登录失败")))}</div>',
                                     unsafe_allow_html=True)
                 except Exception as e:
-                    st.markdown(f'<div class="auth-error">网络错误：{e}</div>', unsafe_allow_html=True)
+                    st.markdown(f'<div class="auth-error">网络错误：{_html.escape(str(e))}</div>', unsafe_allow_html=True)
 
     # -------------------- 注册 --------------------
     with tab_register:
@@ -1279,7 +1294,7 @@ def _render_auth_page():
                 st.markdown('<div class="auth-error">两次输入的密码不一致</div>', unsafe_allow_html=True)
             else:
                 try:
-                    resp = requests.post(f"{API_BASE_URL}/auth/register", json={
+                    resp = _session.post(f"{API_BASE_URL}/auth/register", json={
                         "email": reg_email.strip(),
                         "password": reg_password,
                     }, timeout=20)
@@ -1289,10 +1304,10 @@ def _render_auth_page():
                         st.session_state["account_email"] = (data.get("data") or {}).get("user", {}).get("email", "")
                         st.rerun()
                     else:
-                        st.markdown(f'<div class="auth-error">{data.get("message", "注册失败")}</div>',
+                        st.markdown(f'<div class="auth-error">{_html.escape(str(data.get("message", "注册失败")))}</div>',
                                     unsafe_allow_html=True)
                 except Exception as e:
-                    st.markdown(f'<div class="auth-error">网络错误：{e}</div>', unsafe_allow_html=True)
+                    st.markdown(f'<div class="auth-error">网络错误：{_html.escape(str(e))}</div>', unsafe_allow_html=True)
 
     st.markdown(
         '<p class="auth-foot">注册即代表同意：账号仅用于本系统登录门禁，授权码需单独配置</p>',
