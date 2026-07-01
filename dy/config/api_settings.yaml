@@ -6,7 +6,7 @@ ai_reply:
   api_key: ''
   model: deepseek-chat
   temperature: 1.1
-  max_tokens: 150
+  max_tokens: 200
   persona: a_qiang
   license:
     server_url: https://lcjx.yun/social-ai-credit-api

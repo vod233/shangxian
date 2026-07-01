@@ -1,10 +1,12 @@
 search:
   keywords:
-  - 显卡
+  - 鼠标
+  - 键盘
+  - 电视
   sort_by: most_liked
 crawler:
   max_daily_videos: 9999
-  max_videos_per_keyword: 50
+  max_videos_per_keyword: 2
   min_video_stay: 1
   max_video_stay: 2
 comments: []
@@ -12,12 +14,12 @@ target:
   keywords: []
   reply_texts: []
 interaction:
-  max_comment_swipes: 3
-  max_ai_comment_reviews: 30
+  max_comment_swipes: 2
+  max_ai_comment_reviews: 15
   intent_keywords:
   - 多少，价格，出
   keyword_override_ai: true
-  enable_like: false
+  enable_like: true
   enable_author_follow: false
   enable_video_comment: false
   enable_comment_lead: false

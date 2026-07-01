@@ -56,6 +56,8 @@ class TikTokTaskFlow:
         # 停止标识
         self.is_stopped = False
         self.is_paused = False
+        # 日上限信号：True 表示已触达日上限，需挂起等待次日 0:00 自动恢复
+        self._daily_limit_reached = False
 
         # 状态上报回调：由后端注入，用于首页手机框动态展示
         # 签名：reporter(current_action=None, executed_action=None)
@@ -756,15 +758,13 @@ class TikTokTaskFlow:
         # 检查每日全局上限
         max_daily_videos = self.config.get('crawler', {}).get('max_daily_videos', 100)
         if stats['videos'] >= max_daily_videos:
-            logger.info(f"🛑 今日处理视频总数({stats['videos']})已达到设置的最高上限({max_daily_videos})，任务终止！")
-            self._report(current_action="已触发策略风控保护，今日作业安全闭环")
-            return
+            logger.info(f"🛑 今日处理视频总数({stats['videos']})已达到最高上限({max_daily_videos})，进入次日恢复等待")
+            self._daily_limit_reached = True
 
         # 检查每日互动限额
         if self.anti.daily_limit.check_all_limits():
-            logger.info("🛑 今日所有互动类型均已达到上限，建议休息，任务终止！")
-            self._report(current_action="达到当日安全互动阈值，执行风控自适应挂起")
-            return
+            logger.info("🛑 今日所有互动类型均已达到上限，进入次日恢复等待")
+            self._daily_limit_reached = True
 
         self._check_stop()
         # 1. 确保抖音处于可用状态
@@ -779,25 +779,56 @@ class TikTokTaskFlow:
             except Exception as e:
                 logger.warning(f"清理设备痕迹失败: {e}")
 
-        # 2. 读取关键词列表
-        # 修复：每次任务启动时重新从配置文件读取最新关键词，
-        # 而非使用初始化时缓存到内存的旧配置，确保前端保存的关键词能立即生效。
-        keywords = self._reload_search_keywords()
-
-        if not keywords:
-            logger.error("未在配置中找到 search.keywords，任务无法执行")
-            return
-
+        # 外层无限循环：跑完一轮关键词后立即开始下一轮，达到日上限则挂起等待次日 0:00 自动恢复
+        round_num = 0
         try:
-            for keyword in keywords:
+            while True:
                 self._check_stop()
-                logger.info(f"\n>>> 开始处理关键词: {keyword} <<<")
-                self._process_single_keyword(keyword)
 
-            logger.info("所有关键词任务处理完毕！")
-            self._report(current_action="目标意向词网检索任务已全部达成")
-        except KeyboardInterrupt:
-            logger.warning("用户手动停止了任务")
+                # 日上限信号触发：挂起等待次日 0:00 自动恢复
+                if self._daily_limit_reached:
+                    self._wait_until_next_day()
+                    self._daily_limit_reached = False
+                    # 次日恢复后重新检查夜间模式（0:00 后可能仍在夜间静默时段）
+                    self.anti.check_night_mode(check_callback=self._check_stop)
+                    # 长时间挂起可能导致抖音被系统杀死，重新拉起
+                    self.runner.launch_app()
+                    self._report(current_action="次日任务已自动恢复", executed_action="恢复执行")
+
+                # 每轮重新读取最新关键词（前端可能修改了配置）
+                keywords = self._reload_search_keywords()
+                if not keywords:
+                    logger.error("未在配置中找到 search.keywords，等待 60s 后重试")
+                    self._report(current_action="未配置关键词，等待 60s 重试")
+                    self._interruptible_sleep(60)
+                    continue
+
+                # 随机打乱关键词顺序，保证多设备之间执行顺序不同
+                round_num += 1
+                shuffled = list(keywords)
+                random.shuffle(shuffled)
+                logger.info(f"\n=== 第 {round_num} 轮关键词循环开始（共 {len(shuffled)} 个关键词，已随机打乱顺序）===")
+                self._report(
+                    current_action=f"第 {round_num} 轮循环：{len(shuffled)} 个关键词已随机排序",
+                    executed_action=f"开始第 {round_num} 轮关键词循环",
+                )
+
+                for keyword in shuffled:
+                    self._check_stop()
+                    logger.info(f"\n>>> 开始处理关键词: {keyword} <<<")
+                    self._process_single_keyword(keyword)
+
+                    # 单个关键词处理完后检查日上限信号，触发则跳出本轮进入次日恢复
+                    if self._daily_limit_reached:
+                        logger.info("🛑 检测到日上限信号，跳出本轮关键词循环，进入次日恢复等待")
+                        break
+
+                # 一轮跑完，无间隔立即开始下一轮（除非已触发日上限）
+                if not self._daily_limit_reached:
+                    logger.info(f"=== 第 {round_num} 轮关键词循环完成，立即开始下一轮 ===")
+                    self._report(current_action=f"第 {round_num} 轮循环完成，立即开始下一轮")
+        except InterruptedError:
+            logger.info("任务流被用户中断，退出无限循环")
             self._report(current_action="接收到人工指令，作业流安全挂起")
         except Exception as e:
             logger.error(f"任务流执行异常: {e}")
@@ -835,6 +866,27 @@ class TikTokTaskFlow:
                 if old_keyword:
                     keywords = [old_keyword]
         return keywords
+
+    def _wait_until_next_day(self):
+        """挂起任务流，循环等待到次日 0:00。
+        等待期间每 60s 调用一次 _check_stop()，保证用户手动停止可立即响应。
+        跨过 0:00 后返回，由调用方决定后续流程（DB 按当日表名统计，次日自然归零）。"""
+        logger.info("💤 进入次日恢复等待模式（任务挂起，次日 0:00 自动恢复）")
+        self._report(current_action="已达当日上限，挂起等待次日 0:00 自动恢复")
+        while True:
+            self._check_stop()  # 用户手动停止可立即响应
+            now = datetime.datetime.now()
+            tomorrow = (now + datetime.timedelta(days=1)).replace(
+                hour=0, minute=0, second=0, microsecond=0
+            )
+            wait_seconds = (tomorrow - now).total_seconds()
+            if wait_seconds <= 0:
+                logger.info("🌅 已跨越 0:00，退出次日恢复等待，重新开始任务")
+                return
+            # 每分钟醒来一次，便于响应停止信号并打印心跳
+            sleep_chunk = min(60.0, wait_seconds)
+            logger.info(f"⏳ 距次日 0:00 还有 {int(wait_seconds)}s，休眠 {int(sleep_chunk)}s...")
+            time.sleep(sleep_chunk)
 
     def _process_single_keyword(self, keyword):
         """处理单个关键词的完整流程"""
@@ -927,8 +979,9 @@ class TikTokTaskFlow:
             # 每次刷视频前检查一次全局今日上限
             stats = self.db.get_daily_stats()
             if stats['videos'] >= max_daily_videos:
-                logger.info(f"🛑 今日处理视频总数({stats['videos']})已达到最高上限({max_daily_videos})，即将退出循环！")
-                self.stop() # 触发自动结束
+                logger.info(f"🛑 今日处理视频总数({stats['videos']})已达到最高上限({max_daily_videos})，挂起等待次日 0:00 自动恢复！")
+                # 设置日上限信号，由外层 start() 进入次日恢复等待
+                self._daily_limit_reached = True
                 break
 
             video_count += 1
