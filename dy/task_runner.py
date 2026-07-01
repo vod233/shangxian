@@ -519,7 +519,7 @@ class TikTokTaskFlow:
             self._check_stop()
             self._report(current_action="AI 正在根据垂直行业知识库生成精准评论")
             if self.reply_agent.is_enabled():
-                logger.info(f"🤖 AI 生成回复: {comment_text}")
+                logger.info(f"🤖 [{self.reply_agent.get_persona()}] AI 生成回复: {comment_text}")
             self.db.save_ai_reply(video_id, note_title=video_title, ai_reply=comment_text)
             try:
                 commented = self.runner.run_action(PostCommentAction, comment_text)

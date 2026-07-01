@@ -87,11 +87,6 @@ class DYReplyAgent:
     """根据标题生成合规的抖音评论回复。"""
 
     _BANNED_PATTERNS = [
-        re.compile(r"(微信|vx|v信|威信|加我|联系我|私信我|私聊我|主页|进群)", re.IGNORECASE),
-        re.compile(r"(http[s]?://|www\.|douyin\.com|v\.douyin\.com)", re.IGNORECASE),
-        re.compile(r"(QQ|qq|电话|手机号|微信号|二维码)"),
-        re.compile(r"\d{7,}"),
-        re.compile(r"(最便宜|保证|包过|稳赚|返利|代购|招代理|兼职|刷单)"),
         re.compile(r"(政治|色情|赌博|毒品|辱骂|仇恨|暴力)"),
     ]
 
@@ -112,6 +107,14 @@ class DYReplyAgent:
         persona_block = _PERSONA_PROMPTS.get(persona, _PERSONA_PROMPTS["a_zhen"])
         return persona_block[scene]
 
+    # 人格 key → 中文显示名映射
+    _PERSONA_DISPLAY = {"a_zhen": "阿珍", "a_qiang": "阿强"}
+
+    def get_persona(self) -> str:
+        """返回当前生效人格的中文显示名，用于日志标记。"""
+        persona = self.ai_config.get("persona", "a_zhen")
+        return self._PERSONA_DISPLAY.get(persona, persona)
+
     def is_enabled(self) -> bool:
         return bool(self.ai_config.get("enabled", True))
 
@@ -126,7 +129,7 @@ class DYReplyAgent:
             return None
 
         for attempt in range(2):
-            candidate = self._call_model(clean_title, keyword, strict_retry=attempt > 0)
+            candidate = self._call_model(clean_title, keyword)
             candidate = self._sanitize_reply(candidate)
             if self._is_valid_reply(candidate):
                 return candidate
@@ -188,7 +191,7 @@ class DYReplyAgent:
             return self._build_lead_fallback(clean_comment)
 
         for attempt in range(2):
-            candidate = self._call_lead_reply_model(clean_comment, video_title, keyword, strict_retry=attempt > 0)
+            candidate = self._call_lead_reply_model(clean_comment, video_title, keyword)
             candidate = self._sanitize_lead_reply(candidate)
             if self._is_valid_lead_reply(candidate):
                 return candidate
@@ -199,7 +202,7 @@ class DYReplyAgent:
 
         return None
 
-    def _call_model(self, title: str, keyword: str, strict_retry: bool = False) -> Optional[str]:
+    def _call_model(self, title: str, keyword: str) -> Optional[str]:
         # mode=local 时强制走本地 LangChain，让 persona prompt 真正生效
         if self.ai_config.get("mode", "cloud") == "local":
             base_url = os.environ.get("DEEPSEEK_BASE_URL") or (self.ai_config.get("base_url") or "").strip()
@@ -214,7 +217,7 @@ class DYReplyAgent:
                 logger.error(f"LangChain 依赖不可用，无法调用 AI 回复接口。{LANGCHAIN_IMPORT_ERROR or ''}")
                 return None
 
-            return self._call_langchain(title, keyword, base_url, api_key, model, strict_retry)
+            return self._call_langchain(title, keyword, base_url, api_key, model)
 
         # mode=cloud 走云端 API
         if self.cloud_ai.enabled():
@@ -258,13 +261,13 @@ class DYReplyAgent:
             timeout=int(self.ai_config.get("timeout", 60)),
         )
 
-    def _call_langchain(self, title: str, keyword: str, base_url: str, api_key: str, model: str, strict_retry: bool) -> Optional[str]:
+    def _call_langchain(self, title: str, keyword: str, base_url: str, api_key: str, model: str) -> Optional[str]:
         # 使用信号量限制并发，避免 API 速率限制
         with _ai_api_semaphore:
             try:
                 llm = self._create_llm(base_url, api_key, model)
                 messages = [
-                    SystemMessage(content=self._system_prompt(strict_retry)),
+                    SystemMessage(content=self._system_prompt()),
                     HumanMessage(content=self._human_prompt(title, keyword)),
                 ]
                 response = llm.invoke(messages)
@@ -274,18 +277,20 @@ class DYReplyAgent:
                 return None
 
     def _call_intent_model(self, comment_text: str, video_title: str, keyword: str, custom_keywords: Optional[list] = None) -> Optional[bool]:
-        if self.cloud_ai.enabled():
-            try:
-                data = self.cloud_ai.post("/ai/check-intent-comment", {
-                    "keyword": keyword,
-                    "title": video_title,
-                    "comment_text": comment_text,
-                    "custom_keywords": custom_keywords or [],
-                })
-                return bool(data.get("intent"))
-            except LicenseError as exc:
-                logger.error(f"云端 AI 判断评论意向失败: {exc}")
-                return None
+        # 内部测试版：local 模式下全部走本地 DeepSeek，跳过云端
+        if self.ai_config.get("mode", "cloud") != "local":
+            if self.cloud_ai.enabled():
+                try:
+                    data = self.cloud_ai.post("/ai/check-intent-comment", {
+                        "keyword": keyword,
+                        "title": video_title,
+                        "comment_text": comment_text,
+                        "custom_keywords": custom_keywords or [],
+                    })
+                    return bool(data.get("intent"))
+                except LicenseError as exc:
+                    logger.error(f"云端 AI 判断评论意向失败: {exc}")
+                    return None
 
         model_config = self._get_model_config()
         if not model_config:
@@ -362,7 +367,7 @@ class DYReplyAgent:
                 logger.error(f"AI 判断评论意向失败: {exc}")
                 return None
 
-    def _call_lead_reply_model(self, comment_text: str, video_title: str, keyword: str, strict_retry: bool = False) -> Optional[str]:
+    def _call_lead_reply_model(self, comment_text: str, video_title: str, keyword: str) -> Optional[str]:
         # mode=local 时强制走本地 LangChain，让 persona prompt 真正生效
         if self.ai_config.get("mode", "cloud") == "local":
             model_config = self._get_model_config()
@@ -370,13 +375,12 @@ class DYReplyAgent:
                 return None
 
             base_url, api_key, model = model_config
-            retry_line = "上一条结果太像营销，请改成更克制、更像真人顺手回复。" if strict_retry else ""
             # 使用信号量限制并发，避免 API 速率限制
             with _ai_api_semaphore:
                 try:
                     llm = self._create_llm(base_url, api_key, model, max_tokens=80)
                     messages = [
-                        SystemMessage(content=self._get_persona_prompt("lead_reply") + retry_line),
+                        SystemMessage(content=self._get_persona_prompt("lead_reply")),
                     HumanMessage(content=(
                             f"视频标题：{video_title or '未提供'}\n"
                             f"搜索关键词：{keyword or '未提供'}\n"
@@ -406,9 +410,8 @@ class DYReplyAgent:
 
         return None
 
-    def _system_prompt(self, strict_retry: bool) -> str:
-        retry_line = "如果第一次结果像营销话术，请改写得更像普通用户自然留言。" if strict_retry else ""
-        return self._get_persona_prompt("video_comment") + retry_line
+    def _system_prompt(self) -> str:
+        return self._get_persona_prompt("video_comment")
 
     def _human_prompt(self, title: str, keyword: str) -> str:
         keyword_text = keyword or "未提供"
@@ -493,14 +496,7 @@ class DYReplyAgent:
             return False
         if "\n" in text or "\r" in text:
             return False
-        banned_patterns = [
-            re.compile(r"(微信|vx|v信|威信|加我|联系我|私信|私聊|进群)", re.IGNORECASE),
-            re.compile(r"(http[s]?://|www\.|douyin\.com|v\.douyin\.com)", re.IGNORECASE),
-            re.compile(r"(QQ|qq|电话|手机号|微信号|二维码)"),
-            re.compile(r"\d{7,}"),
-            re.compile(r"(保证|包过|稳赚|返利|刷单)"),
-        ]
-        return not any(pattern.search(text) for pattern in banned_patterns)
+        return True
 
     def _local_intent_guess(self, text: str, custom_keywords: list = None) -> bool:
         custom_keywords = custom_keywords or []
