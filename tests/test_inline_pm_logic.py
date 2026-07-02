@@ -106,7 +106,8 @@ class MockedProcessCommentSectionAction(ProcessCommentSectionAction):
     # ── Phase A ──────────────────────────────────────────────
     def _collect_intent_comments(self, processed_comments, ai_agent, video_title,
                                   keyword, remaining_reviews, custom_keywords=None,
-                                  max_to_collect=1):
+                                  max_to_collect=1, self_nick="",
+                                  skip_first_comment=False):
         items = []
         reviewed = 0
         for idx, text in enumerate(self.comments):
@@ -654,6 +655,257 @@ class TestMvpTwoPhase(unittest.TestCase):
         phase_b_lines = [l for l in metrics_lines if 'Phase B' in l]
         self.assertGreaterEqual(len(phase_b_lines), 1,
             "应包含 Phase B 回复成功/失败指标")
+
+    # ═══════════════════════════════════════════════════════════════
+    # 回归测试 — 自己的评论不能作为意向评论
+    # ═══════════════════════════════════════════════════════════════
+
+    # ── 18. 自己的评论被 _collect_intent_comments 排除 ──
+    @patch('dy.actions.commenting._xpath_exists', return_value=False)
+    def test_self_comment_excluded_from_intent_collection(self, _mock_xp):
+        """自己的评论不应被 _collect_intent_comments 收集为意向评论。
+
+        复现条件：
+        - B.3 先发了自己的评论（如"有兴趣私信我"）
+        - B.4 Phase A 扫描时自己的评论仍在列表中
+        - 自己的评论可能命中意向关键词（如"私信"）
+        - 期望：自己的评论被 self_nickname 过滤排除
+        """
+        config = {
+            "interaction": {
+                "self_nickname": "我的账号",
+                "max_comment_swipes": 2,
+                "max_ai_comment_reviews": 20,
+                "max_intent_comments_per_video": 3,
+                "fallback_top_comment_count": 5,
+            }
+        }
+
+        # 使用真实 _collect_intent_comments，仅 mock 设备依赖
+        class RealCollectAction(ProcessCommentSectionAction):
+            """保留真实 _collect_intent_comments，仅 mock 设备层。"""
+            def __init__(self):
+                self.d = FakeDevice()
+                self.app = None
+                self.config = config
+                self.video_title = "测试视频"
+                self.keyword = "测试"
+                self._card_elem_cache = None
+
+            def _get_comment_author_from_node(self, node):
+                return getattr(node, '_test_author', '')
+
+            def _get_card_elem_from_text_node(self, node):
+                return getattr(node, '_test_card_elem', None)
+
+            def _card_is_pinned_or_author(self, card_elem):
+                return bool(card_elem)
+
+            def _guard(self):
+                pass
+
+        action = RealCollectAction()
+
+        # 构造评论节点：第 0 条 = 自己的评论，第 1 条 = 真实意向评论
+        self_node = FakeNode(text="有兴趣私信我了解")
+        self_node._test_author = "我的账号"
+        self_node._test_card_elem = {"badge": "作者"}  # 带"作者"标记
+
+        other_node = FakeNode(text="怎么买 多少钱")
+        other_node._test_author = "路人甲"
+        other_node._test_card_elem = None
+
+        # Mock xpath 返回这两个节点
+        original_xpath = action.d.xpath
+
+        class PatchedDevice(FakeDevice):
+            def xpath(self_d, xp):
+                sel = FakeXPathSelector(self_d, xp)
+                if 'k4x' in xp or 'COMMENT_CARD' in xp or 'TextView' in xp:
+                    sel._all = [self_node, other_node]
+                return sel
+
+        action.d = PatchedDevice()
+
+        # Mock AI agent
+        ai = MagicMock()
+        ai.is_intent_comment.return_value = True
+        ai.generate_lead_reply.return_value = "请查看主页了解详情"
+
+        items, reviewed = action._collect_intent_comments(
+            set(), ai, "视频标题", "关键词", 20, [], 3
+        )
+
+        # 断言：自己的评论被排除，只收集到路人甲的评论
+        self.assertEqual(len(items), 1,
+            f"应排除自己的评论，实际收集了 {len(items)} 条: {[i['text'] for i in items]}")
+        self.assertEqual(items[0]["text"], "怎么买 多少钱")
+        self.assertEqual(items[0]["author"], "路人甲")
+        self.assertGreaterEqual(reviewed, 1, "至少路人甲的评论被评审过（自己的评论在评审前就被排除）")
+
+    # ── 19. Phase B 兜底自过滤：即使 Phase A 漏过，Phase B 也要拦截 ──
+    @patch('dy.actions.commenting._refind_comment_node_by_text')
+    def test_phase_b_defensive_filter_blocks_own_comment(self, mock_refind):
+        """Phase B 在回复前检查 item.author == self_nick，拦截自己的评论。
+        模拟 Phase A 自过滤失效（self_nick=""），Phase B 仍能兜底拦截。
+        """
+        config = self._base_config(max_intent=3)
+        # 不配置 self_nickname → Phase A 自过滤不生效
+        # 但 Phase B 兜底过滤应该拦截
+
+        class ActionBypassPhaseA(MockedProcessCommentSectionAction):
+            """模拟 Phase A 自过滤被绕过的场景。"""
+            def _collect_intent_comments(self, processed_comments, ai_agent, video_title,
+                                          keyword, remaining_reviews, custom_keywords=None,
+                                          max_to_collect=1, self_nick="",
+                                          skip_first_comment=False):
+                # 模拟 Phase A Bug：自己的评论被收集了
+                items = []
+                for idx, text in enumerate(self.comments):
+                    author = f"user_{idx}"
+                    # 故意把 idx=0 标记为 self（即使 Phase A 没过滤掉）
+                    if idx == 0:
+                        author = "我的账号"  # 模拟自己的账号名
+                    if idx in self.intent_indices:
+                        items.append({
+                            "text": text,
+                            "author": author,
+                            "reply_text": f"回复: {text}",
+                        })
+                        if len(items) >= max_to_collect:
+                            break
+                return items, len(self.comments)
+
+        # Mock _resolve_self_nickname 返回 "我的账号"
+        class ActionWithSelfNick(ActionBypassPhaseA):
+            def _resolve_self_nickname(self):
+                return "我的账号"
+
+        action = ActionWithSelfNick(
+            config,
+            comments=["我的主评（自己发的）", "路人-想买"],
+            intent_indices=[0, 1],  # 自己的评论被 AI 判为意向
+            reply_success=True,
+        )
+        mock_refind.return_value = FakeNode(text="mock")
+        action.keep_open_after_lead = True
+        action.execute()
+
+        # 自己的评论(id=0)被 Phase B 拦截，只回复了路人的评论
+        self.assertEqual(action.intent_processed_count, 1,
+            "Phase B 应拦截自己的评论，只处理路人评论")
+        self.assertEqual(action.lead_comment_text, "路人-想买",
+            "lead 应指向路人评论，而非自己的评论")
+
+    # ── 20. _resolve_self_nickname 从 config 读取 ──
+    def test_resolve_self_nickname_from_config(self):
+        """_resolve_self_nickname 优先从 interaction.self_nickname 读取。"""
+        config = {"interaction": {"self_nickname": "测试账号123"}}
+        action = MockedProcessCommentSectionAction(config, comments=[], intent_indices=[])
+        nick = action._resolve_self_nickname()
+        self.assertEqual(nick, "测试账号123")
+
+    # ── 21. _resolve_self_nickname 返回空字符串（config + UI 都无） ──
+    def test_resolve_self_nickname_returns_empty(self):
+        """_resolve_self_nickname 无 config 且 UI 检测失败时返回 ""。"""
+        config = {"interaction": {}}  # 无 self_nickname
+        action = MockedProcessCommentSectionAction(config, comments=[], intent_indices=[])
+        nick = action._resolve_self_nickname()
+        self.assertEqual(nick, "")
+
+
+class TestPhase2Resilience(unittest.TestCase):
+    """Phase 2 多私信循环容错性 — 单条恢复失败不应放弃后续意向评论。"""
+
+    @patch('dy.task_runner.CommentLeadPmAction')
+    @patch('dy.task_runner.ProcessCommentSectionAction')
+    @patch('dy.task_runner.OpenCommentSectionAction')
+    def test_recovery_failure_continues_loop(self, mock_open_action, mock_process_action, mock_pm_class):
+        """Phase 2: 第 2 条私信恢复失败时，第 3 条仍应被执行。
+
+        复现场景：
+        - intent_items = [评论1, 评论2, 评论3]
+        - 评论1 私信成功 → 返回评论区正常
+        - 评论2 私信失败 (pm_btn_not_found) → 返回评论区失败 → 重置恢复也失败
+        - 期望: 评论3 仍然被尝试（而非 break 丢弃）
+        """
+        import dy.task_runner as tr
+
+        intent_items = [
+            {"text": "意向评论1"},
+            {"text": "意向评论2"},
+            {"text": "意向评论3"},
+        ]
+
+        # Mock ProcessCommentSectionAction: succeed B.4, provide intent_items
+        mock_action_inst = MagicMock()
+        mock_action_inst.lead_reply_sent = True
+        mock_action_inst.lead_comment_text = "comment1"
+        mock_action_inst.lead_reply_text = "reply1"
+        mock_action_inst.lead_comment_node = "node"
+        mock_action_inst.intent_items = intent_items
+        mock_action_inst.inline_pm_completed = False
+        mock_action_inst.lead_pm_sent_count = 0
+        mock_action_inst.lead_reply_fallback_count = 0
+        mock_action_inst._return_from_profile_to_comments = MagicMock(return_value=False)
+        mock_action_inst._comment_panel_open = MagicMock(return_value=False)
+        mock_action_inst.perform = MagicMock(return_value=True)
+        mock_process_action.return_value = mock_action_inst
+
+        # Mock CommentLeadPmAction: item 1 fails, others succeed
+        pm_instances = []
+        for i in range(3):
+            inst = MagicMock()
+            if i == 1:
+                inst.perform.return_value = {"pm_sent": False, "reason": "pm_btn_not_found"}
+            else:
+                inst.perform.return_value = {"pm_sent": True, "reason": "ok"}
+            pm_instances.append(inst)
+        mock_pm_class.side_effect = pm_instances
+
+        # OpenCommentSectionAction: fail (to trigger recovery failure)
+        mock_open_action.return_value.perform = MagicMock(return_value=False)
+        mock_open_action_instance = MagicMock()
+        mock_open_action.return_value = mock_open_action_instance
+
+        # Build minimal TikTokTaskFlow
+        tf = tr.TikTokTaskFlow.__new__(tr.TikTokTaskFlow)
+        tf.is_stopped = False
+        tf.is_paused = False
+        tf.config = {
+            "interaction": {
+                "lead_pm_message_list": ["test msg"],
+                "max_intent_comments_per_video": 3,
+                "fallback_top_comment_count": 5,
+            },
+            "crawler": {"max_seconds_per_video": 90},
+        }
+        tf.runner = MagicMock()
+        tf.runner.device = MagicMock()
+        tf.runner.app_mgr = MagicMock()
+        tf.runner.run_action = MagicMock(return_value=False)  # OpenCommentSectionAction fails
+        tf._check_stop = MagicMock()
+        tf._recover_to_video_page = MagicMock(return_value=True)
+        tf._dismiss_video_context_menu_if_present = MagicMock()
+        tf._resource_exists = MagicMock(return_value=False)
+        tf._detect_page_state = MagicMock(return_value="video_page")
+        tf.db = MagicMock()
+        tf.reply_agent = MagicMock()
+        tf.anti = MagicMock()
+
+        # Execute
+        tr.TikTokTaskFlow._run_comment_lead_safely(
+            tf, "title", "keyword",
+            enable_lead_pm=True,
+            video_started_at=None,
+            already_open=True,
+        )
+
+        # Assert: all 3 PM actions were attempted
+        call_count = sum(1 for inst in pm_instances if inst.perform.called)
+        self.assertEqual(call_count, 3,
+            f"Phase 2 应处理全部 3 条意向评论，实际只调用了 {call_count} 条"
+            f" 的 perform()。如果 break → 第 3 条丢失。")
 
 
 if __name__ == "__main__":

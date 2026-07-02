@@ -749,8 +749,8 @@ class TikTokTaskFlow:
                                 logger.warning("B.5 返回评论区失败，执行重置恢复")
                                 self._recover_to_video_page("B.5-重置恢复", max_back=5)
                                 if not self.runner.run_action(OpenCommentSectionAction):
-                                    logger.warning("B.5 重置恢复失败，放弃剩余私信")
-                                    break
+                                    logger.warning("B.5 重置恢复失败，跳过当前评论者，继续下一条")
+                                    continue
 
                 lead_pm_sent = lead_pm_success_count > 0
                 lead_pm_reason = "multi_pm_ok" if lead_pm_sent else "multi_pm_all_failed"

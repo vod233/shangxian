@@ -459,6 +459,12 @@ class ProcessCommentSectionAction(BaseAction):
         custom_keywords = interaction_config.get('intent_keywords', [])
         processed_comments = set()
 
+        # 解析当前账号昵称（用于过滤自己的评论）
+        self_nick = self._resolve_self_nickname()
+        if not self_nick:
+            logger.warning("⚠️ 未配置 self_nickname 且无法自动检测，可能对自己的评论执行回复+私信！"
+                           "请在 interaction.self_nickname 中配置当前账号昵称。")
+
         # 保存意向评论信息（供 B.5 楼中楼私信评论者复用）
         self.lead_comment_node = None
         self.lead_comment_text = ""
@@ -470,6 +476,8 @@ class ProcessCommentSectionAction(BaseAction):
         self.intent_items = []  # Phase 2: 暴露给 task_runner 做多私信循环
         keep_open_after_lead = bool(getattr(self, 'keep_open_after_lead', False))
         max_intent_comments = int(interaction_config.get('max_intent_comments_per_video', 1) or 1)
+        # 跳过第一个评论卡片（通常是 B.3 自己刚发的主评），避免把自己评论当意向
+        skip_first_comment = bool(interaction_config.get('skip_first_comment_in_intent_scan', True))
 
         deadline = getattr(self, 'deadline_ts', None)
 
@@ -497,6 +505,8 @@ class ProcessCommentSectionAction(BaseAction):
                 max_reviews - reviewed_count,
                 custom_keywords,
                 max_to_collect=max_intent_comments - len(intent_items),
+                self_nick=self_nick,
+                skip_first_comment=skip_first_comment,
             )
             reviewed_count += reviewed_now
             intent_items.extend(new_items)
@@ -546,6 +556,14 @@ class ProcessCommentSectionAction(BaseAction):
 
             text = item["text"]
             reply = item["reply_text"]
+
+            # Phase B 兜底自过滤：即使 Phase A 自过滤失效（如 self_nick 未配置），
+            # 此处仍拦截自己的评论，防止楼中楼回复自己 + 后续 B.5 私信自己。
+            item_author = item.get("author", "")
+            if self_nick and item_author and item_author == self_nick:
+                logger.warning(f"Phase B 自过滤拦截: 跳过自己的评论 [{i+1}]: {text[:30]}")
+                continue
+
             if not reply:
                 logger.warning(f"意向评论 [{i+1}/{len(intent_items)}] 无回复文本，跳过: {text[:30]}")
                 continue
@@ -653,6 +671,37 @@ class ProcessCommentSectionAction(BaseAction):
                     break
         return found_target, reviewed_count, should_break, lead_info
 
+    def _resolve_self_nickname(self):
+        """解析当前账号昵称，用于过滤自己的评论。
+
+        优先级：① interaction.self_nickname 配置 → ② UI 自动检测 → ③ 返回 ""。
+        返回空字符串时，self-filter 不生效，但会输出 warning。
+        """
+        # ① 配置优先
+        nick = str(self.config.get('interaction', {}).get('self_nickname', '') or '').strip()
+        if nick:
+            return nick
+
+        # ② UI 自动检测：评论区打开时，底部输入区域附近通常有当前用户名
+        try:
+            # 尝试常见 resource-id 模式
+            for hint_id in ('com.ss.android.ugc.aweme:id/title',
+                            'com.ss.android.ugc.aweme:id/nickname',
+                            'com.ss.android.ugc.aweme:id/username'):
+                try:
+                    el = self.d(resourceId=hint_id)
+                    if el.exists(timeout=0.3):
+                        detected = str(el.info.get('text', '') or '').strip()
+                        if detected and len(detected) >= 2:
+                            logger.info(f"自动检测到当前账号昵称: {detected}")
+                            return detected
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        return ""
+
     def _get_comment_author_from_node(self, node):
         """从评论 content 节点反查同卡片内的用户名（resource-id 以 /title 结尾）。
         沿底层 lxml 向上找到 k4x 卡片容器，在该子树内提取 title 文本。
@@ -692,12 +741,13 @@ class ProcessCommentSectionAction(BaseAction):
         ignored = {"作者", "置顶", "回复", "展开", "查看更多回复", "赞", "分享"}
         return clean not in ignored
 
-    def _collect_intent_comments(self, processed_comments, ai_agent, video_title, keyword, remaining_reviews, custom_keywords=None, max_to_collect=1):
+    def _collect_intent_comments(self, processed_comments, ai_agent, video_title, keyword, remaining_reviews, custom_keywords=None, max_to_collect=1, self_nick="", skip_first_comment=False):
         """Phase A 纯扫描收集：识别意向评论并预生成回复文本，但不发送。
 
         与 _process_current_screen_comments 的关键区别：
         - 命中意向后**不 break**，继续扫描同屏剩余评论
         - 仅调用 AI 生成回复文本，不执行任何 UI 操作（不点击、不输入、不离开评论区）
+        - skip_first_comment=True 时跳过评论区第一个卡片（通常是 B.3 自己刚发的评论）
         返回 (items: list[dict], reviewed_count: int)
         """
         logger.info("正在扫描当前屏幕，收集意向评论...")
@@ -710,7 +760,24 @@ class ProcessCommentSectionAction(BaseAction):
         items = []
         reviewed_count = 0
 
+        # skip_first_comment: 跳过第一个 k4x 评论卡片（B.3 刚发的主评）
+        first_card_elem = None
+        if skip_first_comment:
+            for node in text_nodes:
+                card = self._get_card_elem_from_text_node(node)
+                if card is not None:
+                    first_card_elem = card
+                    break
+
         for node in text_nodes:
+            if len(items) >= max_to_collect:
+                break
+
+            # 跳过第一张卡片的全部文本节点
+            if first_card_elem is not None:
+                card = self._get_card_elem_from_text_node(node)
+                if card is first_card_elem:
+                    continue
             if len(items) >= max_to_collect:
                 break
 
@@ -725,12 +792,25 @@ class ProcessCommentSectionAction(BaseAction):
 
             if not self._is_reviewable_comment(text):
                 continue
+
+            # ── 排除自己的评论 ──
+            # 与 _collect_top_level_targets 保持一致：自己的 B.3 评论不能被当作意向评论，
+            # 否则 Phase B 会在自己评论下发楼中楼、B.5 会给自己发私信。
+            # self_nick 由 execute() 层解析后传入，保证配置为空时也有兜底检测。
+            author = self._get_comment_author_from_node(node)
+            if self_nick and author and author == self_nick:
+                continue  # 排除自己的评论
+
+            # ── 排除"作者"/"置顶"评论卡片 ──
+            card_elem = self._get_card_elem_from_text_node(node)
+            if card_elem is not None and self._card_is_pinned_or_author(card_elem):
+                continue
+
             reviewed_count += 1
 
             if ai_agent.is_intent_comment(text, video_title=video_title, keyword=keyword, custom_keywords=custom_keywords):
                 logger.info(f"🎯 AI 识别到意向评论: {text}")
                 reply = ai_agent.generate_lead_reply(text, video_title=video_title, keyword=keyword)
-                author = self._get_comment_author_from_node(node)
                 items.append({
                     "text": text,
                     "author": author,
@@ -1062,6 +1142,7 @@ class ProcessCommentSectionAction(BaseAction):
         return False
 
     @staticmethod
+    @staticmethod
     def _card_is_pinned_or_author(card_elem):
         """卡片是否为'置顶'或'作者'评论（需排除）。"""
         try:
@@ -1073,6 +1154,21 @@ class ProcessCommentSectionAction(BaseAction):
         except Exception:
             pass
         return False
+
+    @staticmethod
+    def _get_card_elem_from_text_node(node):
+        """从评论文本节点沿 lxml 向上查找评论卡片 k4x 元素；找不到返回 None。"""
+        elem = getattr(node, 'elem', None)
+        hops = 0
+        while elem is not None and hops < 6:
+            try:
+                if elem.attrib.get('resource-id', '') == L.COMMENT_CARD_CONTAINER_ID:
+                    return elem
+                elem = elem.getparent()
+            except Exception:
+                return None
+            hops += 1
+        return None
 
     def _collect_top_level_targets(self, max_count=5, max_load_swipes=1):
         """收集前 N 位【一级真实路人评论者】(核心铁律 2)。
