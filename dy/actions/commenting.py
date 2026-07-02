@@ -438,9 +438,17 @@ class OpenCommentSectionAction(BaseAction):
         return False
 
 class ProcessCommentSectionAction(BaseAction):
-    """处理评论区内容逻辑 (滑动并解析评论)"""
+    """处理评论区内容逻辑 (滑动并解析评论)
+
+    MVP 两阶段架构（v2）：
+      Phase A — 纯扫描收集：遍历评论区，识别所有意向评论并预生成回复文本，
+                 全程不离开评论区（0 次 UI 导航跳转）。
+      Phase B — 逐条回复：对收集到的意向评论，用文本重定位后逐一发送楼中楼回复，
+                 全程仍在评论区内部闭环。
+      私信（B.5）由外部 _run_comment_lead_safely 对第一条成功回复执行，保持向后兼容。
+    """
     def execute(self):
-        logger.info("开始处理评论区内容...")
+        logger.info("开始处理评论区内容 (MVP 两阶段架构)...")
         ai_agent = DYReplyAgent(self.config)
         video_title = getattr(self, 'video_title', "")
         keyword = getattr(self, 'keyword', "")
@@ -450,96 +458,57 @@ class ProcessCommentSectionAction(BaseAction):
         max_reviews = int(interaction_config.get('max_ai_comment_reviews', 20))
         custom_keywords = interaction_config.get('intent_keywords', [])
         processed_comments = set()
-        swipe_count = 0
-        reviewed_count = 0
 
         # 保存意向评论信息（供 B.5 楼中楼私信评论者复用）
         self.lead_comment_node = None
         self.lead_comment_text = ""
-        self.lead_reply_text = ""  # 保存 AI 生成的回复文本，供 DB 记录
+        self.lead_reply_text = ""
         self.lead_reply_sent = False
-        self.lead_pm_sent_count = 0  # 私信成功数（供 DB 记录）
-        self.intent_processed_count = 0  # 已处理的意向评论数
-        self.inline_pm_completed = False  # 标记内联私信是否已完成（用于跳过 B.5）
-        # keep_open_after_lead=True 时，发现意向评论后不关闭评论区（供 B.5 在评论区打开状态下操作）
+        self.lead_pm_sent_count = 0
+        self.intent_processed_count = 0
+        self.inline_pm_completed = False  # MVP 不使用内联私信，始终为 False
+        self.intent_items = []  # Phase 2: 暴露给 task_runner 做多私信循环
         keep_open_after_lead = bool(getattr(self, 'keep_open_after_lead', False))
-        # 配置：每个视频最多处理多少个意向评论（默认1，保持向后兼容）
         max_intent_comments = int(interaction_config.get('max_intent_comments_per_video', 1) or 1)
 
         deadline = getattr(self, 'deadline_ts', None)
+
+        # ═══════════════════════════════════════════════════════════
+        # Phase A：扫描评论区，收集所有意向评论（纯收集，不发送回复）
+        # ═══════════════════════════════════════════════════════════
+        t_phase_a = time.time()
+        intent_items = []  # [{text, author, reply_text}, ...]
+        swipe_count = 0
+        reviewed_count = 0
+
         while swipe_count < max_swipes and reviewed_count < max_reviews:
             if hasattr(self, 'check_stop_callback'):
                 self.check_stop_callback()
 
-            # FIX(单视频卡死): 评论区扫描循环纳入单视频时间预算，超时立即收尾，
-            # 不再让最耗时的楼中楼/私信链路游离在 max_seconds_per_video 之外。
             if deadline is not None and time.time() > deadline:
-                logger.warning("评论区扫描已超过单视频时间预算，停止扫描")
+                logger.warning("Phase A 扫描已超过单视频时间预算，停止收集")
                 break
 
-            found_target, reviewed_now, should_break, lead_info = self._process_current_screen_comments(
+            new_items, reviewed_now = self._collect_intent_comments(
                 processed_comments,
                 ai_agent,
                 video_title,
                 keyword,
                 max_reviews - reviewed_count,
                 custom_keywords,
+                max_to_collect=max_intent_comments - len(intent_items),
             )
             reviewed_count += reviewed_now
-            logger.info(f"AI 已识别评论 {reviewed_count}/{max_reviews} 条")
+            intent_items.extend(new_items)
+            logger.info(f"AI 已识别评论 {reviewed_count}/{max_reviews} 条，"
+                        f"已收集意向评论 {len(intent_items)}/{max_intent_comments}")
 
-            # 检查是否已达到意向评论处理上限
-            if self.intent_processed_count >= max_intent_comments:
-                logger.info(f"已达到意向评论处理上限({max_intent_comments})，停止扫描")
+            if len(intent_items) >= max_intent_comments:
+                logger.info(f"已达到意向评论收集上限({max_intent_comments})，停止扫描")
                 break
-
-            # 守卫：楼中楼回复发送失败时（found_target=False 但 should_break=True），
-            # 必须停止扫描避免 EditText 状态污染导致后续重复失败。
-            # 注意 was_found_target 判断含在内，但 found_target=False 时会被跳过，
-            # 因此在此处独立检查 should_break。
-            if should_break and not found_target:
-                logger.warning("楼中楼回复发送失败，停止扫描避免状态污染")
-                break
-
-            if found_target and lead_info:
-                # 保存意向评论节点和文本，供后续 B.5 私信评论者使用
-                self.lead_comment_node = lead_info.get("node")
-                self.lead_comment_text = lead_info.get("text", "")
-                self.lead_reply_sent = lead_info.get("sent", False)
-
-                # === 内联私信：回复成功后立即私信，然后返回评论区继续扫描 ===
-                # 条件：回复成功 + 启用私信 + 多意向评论模式（max_intent_comments > 1）
-                enable_lead_pm = bool(getattr(self, 'enable_lead_pm', False))
-                if self.lead_reply_sent and enable_lead_pm and max_intent_comments > 1:
-                    inline_pm_ok = self._try_inline_pm_for_intent(
-                        self.lead_comment_node, self.lead_comment_text,
-                    )
-                    if inline_pm_ok:
-                        self.inline_pm_completed = True
-                        self.intent_processed_count += 1
-                        # 重置 lead 状态，让后续循环不触发 B.5
-                        self.lead_comment_node = None
-                        self.lead_comment_text = ""
-                        self.lead_reply_sent = False
-                        logger.info(f"内联私信完成，已处理 {self.intent_processed_count}/{max_intent_comments} 个意向评论")
-                    else:
-                        # 内联私信失败，保留 lead 状态让 B.5 兜底
-                        logger.warning("内联私信失败，保留意向评论状态供 B.5 兜底")
-
-                # 检查是否已达到意向评论处理上限
-                if self.intent_processed_count >= max_intent_comments:
-                    logger.info(f"已达到意向评论处理上限({max_intent_comments})，停止扫描")
-                    break
-
-                # 守卫：识别到意向评论但发送失败时，必须停止扫描，避免 EditText 状态污染导致后续重复失败。
-                # 内联私信成功并已重置 lead 状态时，说明本次回复+私信完整闭环，可继续扫描下一条。
-                inline_just_completed = self.inline_pm_completed and self.lead_comment_node is None
-                if should_break and not inline_just_completed:
-                    logger.warning("已尝试楼中楼回复但发送失败，停止扫描避免状态污染")
-                    break
 
             if reviewed_count >= max_reviews:
-                logger.info("已达到 AI 评论识别上限，停止继续扫描评论区")
+                logger.info("已达到 AI 评论识别上限，停止扫描")
                 break
 
             if _xpath_exists(self.d, L.COMMENT_NO_MORE_TEXT):
@@ -547,36 +516,100 @@ class ProcessCommentSectionAction(BaseAction):
                 break
 
             if not self._swipe_up_comments():
-                logger.warning("滑动评论区失败")
+                logger.warning("滑动评论区失败，停止扫描")
                 break
 
             swipe_count += 1
             HumanSleep.sleep(custom_range=(1.0, 2.0))
 
-        # keep_open_after_lead=True 且已发现意向评论时，保留评论区打开状态（供 B.5 使用）
+        # 暴露收集结果供 Phase 2 多私信循环使用
+        self.intent_items = intent_items
+        logger.info(f"[metrics] Phase A 收集耗时={time.time()-t_phase_a:.1f}s "
+                    f"扫描={reviewed_count}条 收集={len(intent_items)}条")
+
+        # ═══════════════════════════════════════════════════════════
+        # Phase B：逐条回复收集到的意向评论（全程评论区内部闭环）
+        # ═══════════════════════════════════════════════════════════
+        t_phase_b = time.time()
+        intent_processed = 0
+        first_success_node = None
+        first_success_text = ""
+        first_success_reply = ""
+
+        for i, item in enumerate(intent_items):
+            try:
+                self._guard()
+            except TimeoutError:
+                logger.warning(f"Phase B 单视频超时，提前结束"
+                               f"（已回复 {intent_processed}/{len(intent_items)}）")
+                break
+
+            text = item["text"]
+            reply = item["reply_text"]
+            if not reply:
+                logger.warning(f"意向评论 [{i+1}/{len(intent_items)}] 无回复文本，跳过: {text[:30]}")
+                continue
+
+            logger.info(f"🎯 回复意向评论 [{i+1}/{len(intent_items)}]: {text[:30]}")
+
+            node = _refind_comment_node_by_text(self.d, text, author=item.get("author", ""))
+            if node is None:
+                logger.warning(f"意向评论 [{i+1}] 节点不可见（可能已滑走），跳过: {text[:30]}")
+                continue
+
+            sent = self._send_comment_workflow(node, reply)
+            _close_comment_input_if_open(self.d, reply)
+            self._scroll_to_reveal_top()
+            self.human_sleep('normal')
+
+            if sent:
+                intent_processed += 1
+                if first_success_node is None:
+                    first_success_node = node
+                    first_success_text = text
+                    first_success_reply = reply
+                logger.info(f"意向评论 [{i+1}] 回复成功")
+            else:
+                logger.warning(f"意向评论 [{i+1}] 回复发送失败")
+
+        self.intent_processed_count = intent_processed
+        logger.info(f"[metrics] Phase B 回复耗时={time.time()-t_phase_b:.1f}s "
+                    f"成功={intent_processed}/{len(intent_items) if intent_items else 0}")
+
+        # Phase 3: 回复完成后统一滑动评论区回顶部，为 Phase 2 私信提供一致起始位置
+        if intent_items:
+            self._scroll_comments_to_top()
+
+        # 设置 B.5 私信所需状态（仅当至少有一条回复成功时）
+        if first_success_node is not None:
+            self.lead_comment_node = first_success_node
+            self.lead_comment_text = first_success_text
+            self.lead_reply_text = first_success_reply
+            self.lead_reply_sent = True
+        # 全部回复失败时 lead_* 保持 None/False，触发 fallback（与旧代码一致）
+
+        # keep_open_after_lead=True 且有成功回复时，保留评论区供 B.5 使用
         if keep_open_after_lead and self.lead_comment_node is not None:
             logger.info("keep_open_after_lead=True，保留评论区打开状态供 B.5 使用")
             return True
 
         # === 无意向客户兜底（错杀保底，核心铁律 2）===
-        # 评论区非空但没命中任何意向评论时立即激活：取前 N 位【真实一级路人评论者】
-        # 逐人"回复 + 私信"，宁愿错杀，不能放过；可见不足 N 个时滑动加载，仍不足则有多少处理多少。
-        # 注意：已通过内联私信处理过意向评论时，不得再触发路人兜底，避免重复骚扰/私信已处理用户。
         if self.lead_comment_node is None and self.intent_processed_count == 0:
             fallback_top_n = int(self.config.get('interaction', {}).get('fallback_top_comment_count', 5) or 5)
             fallback_count = self._fallback_reply_and_dm_top_comments(
                 ai_agent, video_title, keyword, max_count=fallback_top_n,
-                do_dm=keep_open_after_lead,  # 复用 task_runner 已做好的 enable_lead_pm + 配额 + 概率检查
+                do_dm=keep_open_after_lead,
             )
             if fallback_count > 0:
                 logger.info(f"兜底策略完成：已处理 {fallback_count} 位路人评论者")
                 self.lead_reply_sent = True
-                self.lead_comment_text = "fallback"  # 非空标记，区分"真无意向兜底"与"有意向但失败"
+                self.lead_comment_text = "fallback"
                 return True
 
         logger.info("评论区处理完毕，关闭面板")
         return self._close_comment_section()
 
+    # [DEPRECATED — MVP Phase A/B replaces this. Kept for reference; not called by execute().]
     def _process_current_screen_comments(self, processed_comments, ai_agent, video_title, keyword, remaining_reviews, custom_keywords=None):
         logger.info("正在解析当前屏幕可见评论...")
         # FIX-XPATH: 只匹配评论卡片容器(k4x)内的 TextView，而非全页面 //android.widget.TextView。
@@ -620,27 +653,34 @@ class ProcessCommentSectionAction(BaseAction):
                     break
         return found_target, reviewed_count, should_break, lead_info
 
+    def _get_comment_author_from_node(self, node):
+        """从评论 content 节点反查同卡片内的用户名（resource-id 以 /title 结尾）。
+        沿底层 lxml 向上找到 k4x 卡片容器，在该子树内提取 title 文本。
+        """
+        try:
+            elem = getattr(node, 'elem', None)
+            hops = 0
+            while elem is not None and hops < 6:
+                rid = elem.attrib.get('resource-id', '') if hasattr(elem, 'attrib') else ''
+                if rid == L.COMMENT_CARD_CONTAINER_ID:
+                    for sub in elem.iter():
+                        sub_rid = sub.attrib.get('resource-id', '') if hasattr(sub, 'attrib') else ''
+                        if sub_rid.endswith('/title'):
+                            return str(sub.attrib.get('text', '') or '').strip()
+                    break
+                elem = elem.getparent() if hasattr(elem, 'getparent') else None
+                hops += 1
+        except Exception:
+            pass
+        return ""
+
     def _comment_dedup_key(self, node, text):
         """构造评论去重键：优先 (同卡片用户名 + 文本)，回退到纯文本。
 
         抖音评论卡片 k4x 内，username 节点(resource-id=title) 与评论 content 是兄弟节点。
         借助底层 lxml 在同卡片子树内取 title 文本即可区分"不同用户的相同短句"。
         """
-        author = ""
-        try:
-            elem = getattr(node, 'elem', None)
-            hops = 0
-            while elem is not None and hops < 6:
-                if elem.attrib.get('resource-id', '') == L.COMMENT_CARD_CONTAINER_ID:
-                    for sub in elem.iter():
-                        if sub.attrib.get('resource-id', '').endswith('/title'):
-                            author = str(sub.attrib.get('text', '') or '').strip()
-                            break
-                    break
-                elem = elem.getparent()
-                hops += 1
-        except Exception:
-            author = ""
+        author = self._get_comment_author_from_node(node)
         return f"{author}{text}" if author else text
 
     def _is_reviewable_comment(self, text):
@@ -651,6 +691,66 @@ class ProcessCommentSectionAction(BaseAction):
             return False
         ignored = {"作者", "置顶", "回复", "展开", "查看更多回复", "赞", "分享"}
         return clean not in ignored
+
+    def _collect_intent_comments(self, processed_comments, ai_agent, video_title, keyword, remaining_reviews, custom_keywords=None, max_to_collect=1):
+        """Phase A 纯扫描收集：识别意向评论并预生成回复文本，但不发送。
+
+        与 _process_current_screen_comments 的关键区别：
+        - 命中意向后**不 break**，继续扫描同屏剩余评论
+        - 仅调用 AI 生成回复文本，不执行任何 UI 操作（不点击、不输入、不离开评论区）
+        返回 (items: list[dict], reviewed_count: int)
+        """
+        logger.info("正在扫描当前屏幕，收集意向评论...")
+        xpath = f'//*[@resource-id="{L.COMMENT_CARD_CONTAINER_ID}"]//android.widget.TextView'
+        text_nodes = self.d.xpath(xpath).all()
+        if not text_nodes:
+            text_nodes = self.d.xpath(L.COMMENT_TEXT_XPATH).all()
+        custom_keywords = custom_keywords or []
+
+        items = []
+        reviewed_count = 0
+
+        for node in text_nodes:
+            if len(items) >= max_to_collect:
+                break
+
+            text = node.info.get('text', '')
+            if not text:
+                continue
+
+            dedup_key = self._comment_dedup_key(node, text)
+            if dedup_key in processed_comments:
+                continue
+            processed_comments.add(dedup_key)
+
+            if not self._is_reviewable_comment(text):
+                continue
+            reviewed_count += 1
+
+            if ai_agent.is_intent_comment(text, video_title=video_title, keyword=keyword, custom_keywords=custom_keywords):
+                logger.info(f"🎯 AI 识别到意向评论: {text}")
+                reply = ai_agent.generate_lead_reply(text, video_title=video_title, keyword=keyword)
+                author = self._get_comment_author_from_node(node)
+                items.append({
+                    "text": text,
+                    "author": author,
+                    "reply_text": reply or "",
+                })
+
+            # 每条评论的 AI 判断后做 stop/deadline 检查，保证"停止"即时响应。
+            # 修复 review 中指出的"仅 swipe 之间检查"的粒度不足问题。
+            # 注意：TimeoutError 在此捕获而非上抛——即使超时，已收集的 intent_items
+            # 仍需保留给 Phase B 和 fallback，避免整个视频零互动。
+            try:
+                self._guard()
+            except TimeoutError:
+                logger.warning("Phase A 单视频超时，停止收集（已收集的意向评论将保留）")
+                break
+
+            if reviewed_count >= remaining_reviews:
+                break
+
+        return items, reviewed_count
 
     def _interact_with_potential_customer(self, comment_node, comment_text, ai_agent, video_title, keyword):
         comment_to_send = ai_agent.generate_lead_reply(
@@ -801,7 +901,10 @@ class ProcessCommentSectionAction(BaseAction):
         )
 
     def _guard(self):
-        """统一的停止 + 单视频超时守卫；任一触发即抛 InterruptedError/超时中断。"""
+        """停止 + 单视频超时守卫。
+        - check_stop_callback 可能抛 InterruptedError（用户手动停止）
+        - deadline_ts 超时抛 TimeoutError（单视频时间预算耗尽）
+        """
         cb = getattr(self, 'check_stop_callback', None)
         if cb is not None:
             cb()
@@ -885,6 +988,24 @@ class ProcessCommentSectionAction(BaseAction):
         except Exception as e:
             logger.debug(f"下滑复位异常: {e}")
             return False
+
+    def _scroll_comments_to_top(self, max_swipes=6):
+        """Phase B 完成后统一滑动评论区回顶部，为 Phase 2 私信提供一致起始位置。
+        与 _swipe_up_comments（向下翻）方向相反：手指从上部滑向下部，让内容回滚到顶部。
+        """
+        for i in range(max_swipes):
+            try:
+                w, h = self.d.window_size()
+                # 手指从 25% 高度滑到 60% → 内容向下滚动，顶部内容可见
+                self.human_swipe_curve(
+                    w // 2 + random.randint(-15, 15), int(h * 0.25),
+                    w // 2 + random.randint(-15, 15), int(h * 0.60),
+                    duration=random.uniform(0.10, 0.18),
+                )
+                self.human_sleep('fast', custom_range=(0.3, 0.5))
+            except Exception as e:
+                logger.debug(f"评论区回顶异常: {e}")
+                break
 
     def _comment_panel_open(self):
         try:
@@ -1154,7 +1275,7 @@ def _escape_xpath_text(text: str) -> str:
     return safe.replace('"', '').replace("'", '')
 
 
-def _refind_comment_node_by_text(d, text: str):
+def _refind_comment_node_by_text(d, text: str, author: str = ""):
     """用评论文本在评论区重新定位到【真实节点】(XMLElement)，而非 XPathSelector。
 
     FIX(高危-节点定位错误):
@@ -1164,6 +1285,9 @@ def _refind_comment_node_by_text(d, text: str):
     FIX-05"按文本重定位"形同虚设。
     这里改用 `.all()`（方法，安全），返回真实 DeviceXMLElement 并做文本择优匹配。
     返回 XMLElement 或 None。
+
+    Phase 3: author 参数启用卡片级交叉验证——找到候选 text 节点后，
+    沿 lxml 向上找 k4x 卡片并提取 /title，与预期 author 比对，不匹配则跳过。
     """
     safe = _escape_xpath_text(text)
     if not safe:
@@ -1189,12 +1313,43 @@ def _refind_comment_node_by_text(d, text: str):
             nodes = []
         if not nodes:
             continue
+
+        # Phase 3: author 交叉验证——在卡片级比对作者名
+        if author:
+            nodes = [n for n in nodes if _node_matches_author(n, author)]
+            if not nodes:
+                continue
+
         # 优先选择文本完整包含原评论全文的节点，避免命中片段/无关节点
         exact = [n for n in nodes if full and full in str(n.info.get('text', '') or '')]
         chosen = exact[0] if exact else nodes[0]
         return chosen
 
     return None
+
+
+def _node_matches_author(node, expected_author: str) -> bool:
+    """验证节点所在 k4x 评论卡片的作者名是否与预期一致。
+    沿 lxml 向上找到 k4x 容器，在子树内提取 resource-id 以 /title 结尾的文本。
+    无法验证时返回 True（保守：不过滤，避免因 UI 差异导致漏掉合法节点）。
+    """
+    try:
+        elem = getattr(node, 'elem', None)
+        hops = 0
+        while elem is not None and hops < 6:
+            rid = elem.attrib.get('resource-id', '') if hasattr(elem, 'attrib') else ''
+            if rid == L.COMMENT_CARD_CONTAINER_ID:
+                for sub in elem.iter():
+                    sub_rid = sub.attrib.get('resource-id', '') if hasattr(sub, 'attrib') else ''
+                    if sub_rid.endswith('/title'):
+                        actual = str(sub.attrib.get('text', '') or '').strip()
+                        return actual == expected_author
+                break
+            elem = elem.getparent() if hasattr(elem, 'getparent') else None
+            hops += 1
+    except Exception:
+        pass
+    return True  # 无法验证时不滤除
 
 
 class CommentLeadPmAction(BaseAction):
@@ -1215,12 +1370,18 @@ class CommentLeadPmAction(BaseAction):
     def execute(self):
         # 从 self 读取 lead_comment_node（由 run_action 通过 kwargs setattr）
         lead_comment_node = getattr(self, 'lead_comment_node', None)
-        if lead_comment_node is None:
-            logger.warning("B.5 未提供意向评论节点，跳过楼中楼私信")
+        lead_comment_text = getattr(self, 'lead_comment_text', '') or ''
+
+        # 守卫：两者都为空才跳过。Phase 2 多私信循环会传 node=None + text=评论文本，
+        # 此时依赖 _find_avatar_from_comment_node 内部的文本重定位来找到节点。
+        if lead_comment_node is None and not lead_comment_text:
+            logger.warning("B.5 未提供意向评论节点且无评论文本，跳过楼中楼私信")
             return {"pm_sent": False, "reason": "no_lead_node"}
 
         self._guard()
         # ① 从意向评论节点反查头像节点（同一 k4x 父容器下的 avatar）
+        # 当 lead_comment_node 为 None 时，_find_avatar_from_comment_node 内部
+        # 会通过 lead_comment_text 做文本重定位来找到节点（Phase 2 路径）。
         avatar_node = self._find_avatar_from_comment_node(lead_comment_node)
         if avatar_node is None:
             logger.warning("B.5 未能从意向评论节点反查到头像，跳过私信")

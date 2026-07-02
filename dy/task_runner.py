@@ -567,10 +567,15 @@ class TikTokTaskFlow:
                 self.db.update_video_detail(video_id, action_event={"t": _now_str(), "phase": "B.4", "msg": "评论区截流完成(未发送回复)"})
 
             fallback_pm_count = lead_result.get("lead_pm_fallback_count", 0)
+            pm_success_count = lead_result.get("lead_pm_success_count", 0)
             if lead_result.get("lead_pm_sent"):
-                self.db.update_interaction(video_id, "lead_pm")
-                self._report(executed_action="楼中楼私信评论者")
-                self.db.update_video_detail(video_id, lead_pm_sent=1, action_event={"t": _now_str(), "phase": "B.5", "msg": "楼中楼私信已发送"})
+                pm_total = max(pm_success_count, 1)  # Phase 2 多条 或 向后兼容单条
+                for _ in range(pm_total):
+                    self.db.update_interaction(video_id, "lead_pm")
+                pm_msg = f"楼中楼私信已发送 ×{pm_total}" if pm_total > 1 else "楼中楼私信已发送"
+                self._report(executed_action=pm_msg)
+                self.db.update_video_detail(video_id, lead_pm_sent=pm_total,
+                    action_event={"t": _now_str(), "phase": "B.5", "msg": pm_msg})
             elif fallback_pm_count > 0:
                 for _ in range(fallback_pm_count):
                     self.db.update_interaction(video_id, "lead_pm")
@@ -624,6 +629,7 @@ class TikTokTaskFlow:
 
         lead_reply_sent = False
         lead_pm_sent = False
+        lead_pm_success_count = 0  # Phase 2: 多私信成功计数
         lead_pm_reason = "skipped"
         comment_section_open = False  # 跟踪评论区是否仍打开（B.5 需要在此状态下执行）
         pm_executed = False  # FIX-02: 标记 B.5 是否执行过，决定关闭评论区的方式
@@ -675,35 +681,94 @@ class TikTokTaskFlow:
             lead_reply_fallback_count = int(getattr(action_instance, 'lead_reply_fallback_count', 0) or 0)
             # 内联私信完成标志（用于跳过 B.5）
             inline_pm_completed = bool(getattr(action_instance, 'inline_pm_completed', False))
+            # Phase 2: 读取收集到的意向评论列表，供多私信循环使用
+            intent_items = getattr(action_instance, 'intent_items', None)
 
             if enable_lead_pm and lead_comment_node is not None:
                 comment_section_open = True  # keep_open_after_lead=True 时评论区仍打开
             if lead_comment_node is not None:
                 logger.info("B.4 已保存意向评论节点，可供 B.5 私信评论者使用")
 
-            # 检查内联私信是否已完成，如果完成则跳过 B.5。
-            # 注意：必须同时满足 lead_comment_node is None，防止"部分内联成功、部分失败"时
-            # 失败的 lead 被遗漏（inline_pm_completed 为 True 但当前仍有未处理 lead）。
+            # 检查内联私信是否已完成（MVP 不使用，但保留兼容）
             if inline_pm_completed and lead_comment_node is None:
                 logger.info("内联私信已完成且当前无未处理 lead，跳过 B.5")
-                lead_pm_sent = True  # 标记私信已发送（由内联完成）
+                lead_pm_sent = True
                 lead_pm_reason = "inline_pm_completed"
-                pm_executed = True  # 标记私信已执行，避免后续关闭评论区逻辑出错
+                pm_executed = True
 
-            # B.5 楼中楼私信评论者（在评论区仍打开的状态下执行）
-            # 条件：启用私信 + 回复已发送 + 有评论节点 + 内联私信未完成
+            # ═══════════════════════════════════════════════════════════
+            # Phase 2：多私信循环 — 遍历 intent_items 逐条 PM + 恢复
+            # ═══════════════════════════════════════════════════════════
+            elif enable_lead_pm and lead_reply_sent and intent_items and len(intent_items) > 0:
+                logger.info(f"B.5 Phase 2 多私信循环：{len(intent_items)} 条意向评论")
+                comment_section_open = True
+                pm_executed = True
+                lead_pm_success_count = 0
+
+                for i, item in enumerate(intent_items):
+                    self._check_stop()
+                    if deadline_ts is not None and time.time() > deadline_ts:
+                        logger.warning(f"B.5 多私信超时（{lead_pm_success_count}/{len(intent_items)}）")
+                        break
+
+                    text = item.get("text", "")
+                    if not text:
+                        continue
+
+                    logger.info(f"B.5 私信 [{i+1}/{len(intent_items)}]: {text[:30]}")
+
+                    pm_action = CommentLeadPmAction(
+                        u2_device=self.runner.device,
+                        app_manager=self.runner.app_mgr,
+                        config=self.config,
+                        lead_comment_node=None,       # 由文本重定位，不依赖旧节点
+                        lead_comment_text=text,
+                        check_stop_callback=self._check_stop,
+                        deadline_ts=deadline_ts,
+                    )
+                    try:
+                        pm_result = pm_action.perform()
+                    except Exception as exc:
+                        logger.error(f"B.5 私信 [{i+1}] 异常: {exc}")
+                        pm_result = {"pm_sent": False, "reason": "exception"}
+
+                    if isinstance(pm_result, dict) and pm_result.get("pm_sent"):
+                        lead_pm_success_count += 1
+                        logger.info(f"B.5 私信 [{i+1}] 成功")
+                    else:
+                        reason = pm_result.get("reason", "unknown") if isinstance(pm_result, dict) else str(pm_result)
+                        logger.warning(f"B.5 私信 [{i+1}] 失败: {reason}")
+
+                    # 返回评论区供下一条私信（最后一条由统一清理处理）
+                    if i < len(intent_items) - 1:
+                        returned = action_instance._return_from_profile_to_comments(max_back=4)
+                        if not returned:
+                            # _comment_panel_open 内部已检查 card_container + list_container，
+                            # 使用 action_instance.d 确保与评论区操作同一 device 引用
+                            if not action_instance._comment_panel_open():
+                                logger.warning("B.5 返回评论区失败，执行重置恢复")
+                                self._recover_to_video_page("B.5-重置恢复", max_back=5)
+                                if not self.runner.run_action(OpenCommentSectionAction):
+                                    logger.warning("B.5 重置恢复失败，放弃剩余私信")
+                                    break
+
+                lead_pm_sent = lead_pm_success_count > 0
+                lead_pm_reason = "multi_pm_ok" if lead_pm_sent else "multi_pm_all_failed"
+
+            # [DEPRECATED] 向后兼容：单条私信（MVP 下 intent_items 总被填充，此分支不再触发。
+            # 保留以防止 future 回归到旧的内联私信路径。Phase 2 稳定后可移除。）
             elif enable_lead_pm and lead_reply_sent and lead_comment_node is not None:
-                logger.info("B.5 开始执行楼中楼私信评论者（评论区仍打开状态）")
+                logger.info("B.5 单条私信（向后兼容路径）")
                 pm_action = CommentLeadPmAction(
                     u2_device=self.runner.device,
                     app_manager=self.runner.app_mgr,
                     config=self.config,
                     lead_comment_node=lead_comment_node,
-                    lead_comment_text=lead_comment_text,  # FIX-05: 传文本以便重新定位节点
-                    check_stop_callback=self._check_stop,  # FIX: 停止指令可即时打断 B.5
-                    deadline_ts=deadline_ts,               # FIX: B.5 纳入单视频时间预算
+                    lead_comment_text=lead_comment_text,
+                    check_stop_callback=self._check_stop,
+                    deadline_ts=deadline_ts,
                 )
-                pm_executed = True  # FIX-02: 标记 B.5 已执行
+                pm_executed = True
                 try:
                     pm_result = pm_action.perform()
                 except Exception as exc:
@@ -712,7 +777,8 @@ class TikTokTaskFlow:
                 if isinstance(pm_result, dict):
                     lead_pm_sent = pm_result.get("pm_sent", False)
                     lead_pm_reason = pm_result.get("reason", "unknown")
-                comment_section_open = True  # B.5 可能修改了页面状态，需要关闭评论区
+                lead_pm_success_count = 1 if lead_pm_sent else 0
+                comment_section_open = True
             elif enable_lead_pm and not lead_reply_sent:
                 lead_pm_reason = "lead_reply_not_sent"
         except InterruptedError:
@@ -741,7 +807,7 @@ class TikTokTaskFlow:
         recovered = self._recover_to_video_page(f"{feature_name}-执行后")
         if not recovered:
             logger.warning(f"功能[{feature_name}]后恢复失败，跳过当前视频剩余功能")
-        return {"recovered": recovered, "lead_reply_sent": lead_reply_sent, "lead_pm_sent": lead_pm_sent, "lead_pm_reason": lead_pm_reason, "lead_pm_fallback_count": lead_pm_fallback_count, "lead_reply_fallback_count": lead_reply_fallback_count, "lead_comment_text": lead_comment_text, "lead_reply_text": lead_reply_text}
+        return {"recovered": recovered, "lead_reply_sent": lead_reply_sent, "lead_pm_sent": lead_pm_sent, "lead_pm_reason": lead_pm_reason, "lead_pm_fallback_count": lead_pm_fallback_count, "lead_reply_fallback_count": lead_reply_fallback_count, "lead_comment_text": lead_comment_text, "lead_reply_text": lead_reply_text, "lead_pm_success_count": lead_pm_success_count}
 
     def start(self):
         """开始执行完整的采集与互动任务"""

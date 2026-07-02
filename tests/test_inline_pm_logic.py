@@ -1,7 +1,10 @@
 """
-内联私信（inline PM）逻辑单元测试
-目标：验证 ProcessCommentSectionAction.execute 在默认配置和 max_intent_comments>1 时的状态流转，
-以及 task_runner 中 B.5 的跳过逻辑，不依赖真实 Android 设备。
+MVP 两阶段架构单元测试（Phase A 扫描收集 + Phase B 逐条回复）
+目标：验证 ProcessCommentSectionAction.execute 在 MVP 改造后：
+  1) 默认 max_intent=1 时向后兼容（reply → lead → B.5）
+  2) max_intent>1 时先收集全部再全部回复，0 次离开评论区
+  3) 回复失败时不中断后续回复
+  4) 无意向评论时正确触发兜底
 """
 import sys
 import os
@@ -11,6 +14,11 @@ from unittest.mock import MagicMock, patch, call
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from dy.actions.commenting import ProcessCommentSectionAction
+
+
+# ── Phase 3 helpers for testing ────────────────────────────
+# These are module-level functions imported for unit testing
+from dy.actions.commenting import _refind_comment_node_by_text, _escape_xpath_text
 
 
 class FakeNode:
@@ -83,56 +91,53 @@ class FakeSelector:
 
 
 class MockedProcessCommentSectionAction(ProcessCommentSectionAction):
-    """
-    重载与 UI/AI 相关的真实调用，仅保留核心状态机。
-    """
-    def __init__(self, config, comments=None, intent_indices=None, pm_success=True, pm_return_ok=True, pm_results=None):
+    """重载 Phase A/B 核心方法，仅保留状态机。"""
+
+    def __init__(self, config, comments=None, intent_indices=None, reply_success=True):
         self.d = FakeDevice()
         self.app = None
         self.config = config
         self.comments = comments or []
-        # 哪些索引的评论会被 AI 判为意向评论
         self.intent_indices = set(intent_indices or [])
-        # 模拟私信成功/失败：支持单一布尔值或按调用次数的列表
-        self.pm_results = pm_results
-        self.pm_success = pm_success
-        self.pm_return_ok = pm_return_ok
-        self._pm_called_count = 0
+        self.reply_success = reply_success
+        self._swipe_count_internal = 0
         self._closed = False
 
-    def _process_current_screen_comments(self, processed_comments, ai_agent, video_title, keyword, remaining_reviews, custom_keywords=None):
+    # ── Phase A ──────────────────────────────────────────────
+    def _collect_intent_comments(self, processed_comments, ai_agent, video_title,
+                                  keyword, remaining_reviews, custom_keywords=None,
+                                  max_to_collect=1):
+        items = []
+        reviewed = 0
         for idx, text in enumerate(self.comments):
-            if idx in processed_comments:
+            author = f"user_{idx}"
+            dedup_key = f"{author}\x01{text}" if author else text
+            if dedup_key in processed_comments:
                 continue
-            processed_comments.add(idx)
+            processed_comments.add(dedup_key)
+            reviewed += 1
             if idx in self.intent_indices:
-                node = FakeNode(text=text)
-                sent = True  # 模拟回复成功
-                return True, idx + 1, True, {"node": node, "text": text, "sent": sent}
-            if idx >= remaining_reviews - 1:
+                items.append({
+                    "text": text,
+                    "author": author,
+                    "reply_text": f"回复: {text}",
+                })
+                if len(items) >= max_to_collect:
+                    break
+            if reviewed >= remaining_reviews:
                 break
-        return False, len(self.comments), False, None
+        return items, reviewed
 
+    # ── Phase B ──────────────────────────────────────────────
+    def _send_comment_workflow(self, comment_node, text):
+        return self.reply_success
+
+    # ── Scrolling / UI ───────────────────────────────────────
     def _swipe_up_comments(self):
-        # 允许一次滑动，让第二条意向评论有机会被扫描到
-        if getattr(self, '_swipe_count', 0) < 1:
-            self._swipe_count = getattr(self, '_swipe_count', 0) + 1
+        if self._swipe_count_internal < 1:
+            self._swipe_count_internal += 1
             return True
         return False
-
-    def _try_inline_pm_for_intent(self, comment_node, comment_text):
-        self._pm_called_count += 1
-        if self.pm_results is not None:
-            idx = self._pm_called_count - 1
-            if idx < len(self.pm_results):
-                return self.pm_results[idx]
-            return False
-        if self.pm_success:
-            return True
-        return False
-
-    def _return_from_profile_to_comments(self, max_back=3):
-        return self.pm_return_ok
 
     def _close_comment_section(self):
         self._closed = True
@@ -141,126 +146,184 @@ class MockedProcessCommentSectionAction(ProcessCommentSectionAction):
     def _comment_panel_open(self):
         return not self._closed
 
+    # ── Guard override: no-op (no real deadline in tests) ───
+    def _guard(self):
+        pass
 
-class TestInlinePMLogic(unittest.TestCase):
-    def _base_config(self, max_intent=1, enable_lead_pm=True):
+    def human_sleep(self, sleep_type='normal', custom_range=None):
+        pass  # no-op in tests
+
+
+def _make_fake_node_for(text):
+    """Return a FakeNode if text is in comments list, else None."""
+    def _finder(d, t):
+        return FakeNode(text=t)
+    return _finder
+
+
+class TestMvpTwoPhase(unittest.TestCase):
+    def _base_config(self, max_intent=1):
         return {
             "interaction": {
                 "max_comment_swipes": 2,
                 "max_ai_comment_reviews": 20,
                 "max_intent_comments_per_video": max_intent,
-                "enable_comment_lead_pm": enable_lead_pm,
                 "fallback_top_comment_count": 5,
                 "lead_pm_message_list": ["你好"],
             }
         }
 
-    def test_default_config_no_inline_pm(self):
-        """默认 max_intent=1 不应触发内联私信，保留 lead 状态给 B.5。"""
-        config = self._base_config(max_intent=1, enable_lead_pm=True)
+    # ── 1. 默认 max_intent=1：向后兼容，回复第一条 → B.5 私信第一条 ──
+    @patch('dy.actions.commenting._refind_comment_node_by_text')
+    def test_default_max_intent_1(self, mock_refind):
+        """max_intent=1 收集 1 条 → 回复 1 条 → lead 指向第一条，供 B.5。"""
+        config = self._base_config(max_intent=1)
         action = MockedProcessCommentSectionAction(
             config,
             comments=["这条评论想买"],
             intent_indices=[0],
-            pm_success=True,
+            reply_success=True,
         )
-        action.enable_lead_pm = True
+        mock_refind.return_value = FakeNode(text="这条评论想买")
         action.keep_open_after_lead = True
         result = action.execute()
 
-        self.assertEqual(action._pm_called_count, 0, "默认配置不应调用内联私信")
-        self.assertIsNotNone(action.lead_comment_node, "应保留 lead 节点给 B.5")
         self.assertTrue(action.lead_reply_sent)
-        self.assertFalse(action.inline_pm_completed)
-        self.assertTrue(result)
-
-    def test_multi_intent_inline_pm_twice_and_skip_b5(self):
-        """max_intent=2 且有两条意向评论，应触发 2 次内联私信并跳过 B.5。"""
-        config = self._base_config(max_intent=2, enable_lead_pm=True)
-        action = MockedProcessCommentSectionAction(
-            config,
-            comments=["想买", "怎么买", "路人评论"],
-            intent_indices=[0, 1],
-            pm_success=True,
-        )
-        action.enable_lead_pm = True
-        action.keep_open_after_lead = True
-        result = action.execute()
-
-        self.assertEqual(action._pm_called_count, 2, "应调用 2 次内联私信")
-        self.assertEqual(action.intent_processed_count, 2)
-        self.assertTrue(action.inline_pm_completed)
-        self.assertIsNone(action.lead_comment_node, "内联完成后应重置 lead 节点")
-        self.assertTrue(result)
-
-    def test_multi_intent_but_pm_disabled(self):
-        """max_intent>1 但私信未启用，不应触发内联私信。"""
-        config = self._base_config(max_intent=2, enable_lead_pm=False)
-        action = MockedProcessCommentSectionAction(
-            config,
-            comments=["想买", "怎么买"],
-            intent_indices=[0, 1],
-            pm_success=True,
-        )
-        action.enable_lead_pm = False
-        action.keep_open_after_lead = False
-        result = action.execute()
-
-        self.assertEqual(action._pm_called_count, 0, "私信未启用时不应调用内联私信")
-        self.assertEqual(action.intent_processed_count, 0)
-        self.assertFalse(action.inline_pm_completed)
-        # 找到第一条意向后 should_break=True 会停止扫描
         self.assertIsNotNone(action.lead_comment_node)
-
-    def test_inline_pm_failure_returns_to_comments(self):
-        """内联私信失败后应返回评论区并保留 lead 给 B.5 兜底。"""
-        config = self._base_config(max_intent=2, enable_lead_pm=True)
-        action = MockedProcessCommentSectionAction(
-            config,
-            comments=["想买"],
-            intent_indices=[0],
-            pm_success=False,
-            pm_return_ok=True,
-        )
-        action.enable_lead_pm = True
-        action.keep_open_after_lead = True
-        result = action.execute()
-
-        self.assertEqual(action._pm_called_count, 1)
-        self.assertFalse(action.inline_pm_completed)
-        self.assertIsNotNone(action.lead_comment_node, "失败后应保留 lead 节点给 B.5")
+        self.assertEqual(action.lead_comment_text, "这条评论想买")
+        self.assertEqual(action.lead_reply_text, "回复: 这条评论想买")
+        self.assertEqual(action.intent_processed_count, 1)
+        self.assertFalse(action.inline_pm_completed)  # MVP 不使用内联私信
         self.assertTrue(result)
 
-    def test_no_intent_fallback_triggered(self):
-        """无意向评论时应触发路人兜底。"""
-        config = self._base_config(max_intent=1, enable_lead_pm=True)
+    # ── 2. max_intent>1：收集全部意向 → 全部回复 ──
+    @patch('dy.actions.commenting._refind_comment_node_by_text')
+    def test_multi_intent_collects_and_replies_all(self, mock_refind):
+        """max_intent=3 扫描收集 3 条 → 逐条回复 3 条。"""
+        config = self._base_config(max_intent=3)
+        action = MockedProcessCommentSectionAction(
+            config,
+            comments=["想买", "怎么买", "价格多少", "路人评论"],
+            intent_indices=[0, 1, 2],
+            reply_success=True,
+        )
+        mock_refind.return_value = FakeNode(text="mock")
+        action.keep_open_after_lead = True
+        action.execute()
 
-        # 需要模拟 _fallback_reply_and_dm_top_comments
+        self.assertEqual(action.intent_processed_count, 3)
+        self.assertTrue(action.lead_reply_sent)
+        # lead 指向第一条成功回复
+        self.assertEqual(action.lead_comment_text, "想买")
+
+    # ── 3. max_intent>1：lead 始终指向第一条成功回复 ──
+    @patch('dy.actions.commenting._refind_comment_node_by_text')
+    def test_first_lead_preserved_for_b5(self, mock_refind):
+        """多条意向回复中，lead_* 来自第一条成功回复。"""
+        config = self._base_config(max_intent=3)
+        action = MockedProcessCommentSectionAction(
+            config,
+            comments=["A-comment", "B-comment", "C-comment"],
+            intent_indices=[0, 1, 2],
+            reply_success=True,
+        )
+        mock_refind.return_value = FakeNode(text="mock")
+        action.keep_open_after_lead = True
+        action.execute()
+
+        self.assertEqual(action.lead_comment_text, "A-comment")
+        self.assertEqual(action.lead_reply_text, "回复: A-comment")
+        self.assertEqual(action.intent_processed_count, 3)
+
+    # ── 4. 部分回复失败：失败的跳过，成功的继续，lead 取第一条成功 ──
+    @patch('dy.actions.commenting._refind_comment_node_by_text')
+    def test_reply_failure_skips_and_continues(self, mock_refind):
+        """第一条回复失败、第二条成功时，lead 来自第二条。"""
+        config = self._base_config(max_intent=3)
+        # reply_success=False → 所有回复都失败
+        # 我们需要更精细的控制。改为子类重写 _send_comment_workflow
+        class ActionWithSelectiveFail(MockedProcessCommentSectionAction):
+            def _send_comment_workflow(self, node, text):
+                # 第一条失败，其余成功
+                if "first-fail" in text:
+                    return False
+                return True
+
+        action = ActionWithSelectiveFail(
+            config,
+            comments=["first-fail-item", "second-ok-item", "third-ok-item"],
+            intent_indices=[0, 1, 2],
+        )
+        mock_refind.return_value = FakeNode(text="mock")
+        action.keep_open_after_lead = True
+        action.execute()
+
+        # 第一条失败，第二条和第三条成功 → lead 来自第二条
+        self.assertEqual(action.intent_processed_count, 2)
+        self.assertEqual(action.lead_comment_text, "second-ok-item")
+        self.assertTrue(action.lead_reply_sent)
+
+    # ── 5. 全部回复失败：lead 为 None → 触发兜底 ──
+    @patch('dy.actions.commenting._refind_comment_node_by_text')
+    def test_all_replies_fail_fallback_triggers(self, mock_refind):
+        """全部意图回复都失败 → lead_comment_node=None → 兜底。"""
+        config = self._base_config(max_intent=2)
+
         fallback_called = {"called": False}
 
-        class ActionWithFallback(MockedProcessCommentSectionAction):
+        class ActionAllFail(MockedProcessCommentSectionAction):
+            def _send_comment_workflow(self, node, text):
+                return False
+
+            def _fallback_reply_and_dm_top_comments(self, ai_agent, video_title, keyword, max_count=5, do_dm=False):
+                fallback_called["called"] = True
+                self.lead_reply_fallback_count = 1
+                return 1
+
+        action = ActionAllFail(
+            config,
+            comments=["买一个", "怎么卖"],
+            intent_indices=[0, 1],
+        )
+        mock_refind.return_value = FakeNode(text="mock")
+        action.keep_open_after_lead = True
+        action.execute()
+
+        self.assertEqual(action.intent_processed_count, 0)
+        self.assertIsNone(action.lead_comment_node)
+        self.assertTrue(fallback_called["called"])
+
+    # ── 6. 无意向评论 → 兜底 ──
+    def test_no_intent_triggers_fallback(self):
+        """评论列表中无意向评论 → 兜底触发。"""
+        config = self._base_config(max_intent=2)
+
+        fallback_called = {"called": False}
+
+        class ActionNoIntent(MockedProcessCommentSectionAction):
             def _fallback_reply_and_dm_top_comments(self, ai_agent, video_title, keyword, max_count=5, do_dm=False):
                 fallback_called["called"] = True
                 fallback_called["do_dm"] = do_dm
                 self.lead_reply_fallback_count = 1
                 return 1
 
-        action = ActionWithFallback(
+        action = ActionNoIntent(
             config,
-            comments=["路人评论1", "路人评论2"],
-            intent_indices=[],
+            comments=["路人1", "路人2"],
+            intent_indices=[],  # 无意向
         )
-        action.enable_lead_pm = True
         action.keep_open_after_lead = True
-        result = action.execute()
+        action.execute()
 
-        self.assertTrue(fallback_called["called"], "无意向评论时应触发兜底")
-        self.assertTrue(fallback_called["do_dm"], "私信启用时兜底应发私信")
+        self.assertTrue(fallback_called["called"])
+        self.assertTrue(fallback_called["do_dm"])
         self.assertEqual(action.lead_comment_text, "fallback")
 
-    def test_no_fallback_after_inline_pm(self):
-        """内联私信成功后不应再触发路人兜底。"""
-        config = self._base_config(max_intent=2, enable_lead_pm=True)
+    # ── 7. 有意向评论并成功回复 → 不触发兜底 ──
+    @patch('dy.actions.commenting._refind_comment_node_by_text')
+    def test_no_fallback_after_successful_replies(self, mock_refind):
+        """收集并回复意向后，不应触发兜底。"""
+        config = self._base_config(max_intent=2)
 
         fallback_called = {"called": False}
 
@@ -271,35 +334,326 @@ class TestInlinePMLogic(unittest.TestCase):
 
         action = ActionWithFallback(
             config,
-            comments=["想买", "怎么买", "路人评论"],
+            comments=["想买", "怎么买"],
             intent_indices=[0, 1],
-            pm_success=True,
         )
-        action.enable_lead_pm = True
+        mock_refind.return_value = FakeNode(text="mock")
         action.keep_open_after_lead = True
-        result = action.execute()
+        action.execute()
 
-        self.assertFalse(fallback_called["called"], "内联成功后不应触发路人兜底")
+        self.assertFalse(fallback_called["called"])
         self.assertEqual(action.intent_processed_count, 2)
 
-    def test_partial_inline_pm_failure_keeps_lead_for_b5(self):
-        """第一条内联成功、第二条失败时，应保留第二条 lead 供 B.5 兜底。"""
-        config = self._base_config(max_intent=2, enable_lead_pm=True)
+    # ── 8. 文本重定位失败 → 跳过该条，继续后续 ──
+    @patch('dy.actions.commenting._refind_comment_node_by_text')
+    def test_node_not_found_skipped(self, mock_refind):
+        """_refind_comment_node_by_text 返回 None → 跳过，后续继续。"""
+        config = self._base_config(max_intent=3)
+
+        # 第一条找不到节点，第二、三条正常
+        call_count = [0]
+
+        def selective_refind(d, text, author=""):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return None  # 第一条找不到
+            return FakeNode(text=text)
+
+        mock_refind.side_effect = selective_refind
+
         action = MockedProcessCommentSectionAction(
+            config,
+            comments=["消失的评论", "可见评论B", "可见评论C"],
+            intent_indices=[0, 1, 2],
+            reply_success=True,
+        )
+        action.keep_open_after_lead = True
+        action.execute()
+
+        # 第一条跳过（节点不可见），第二条和第三条成功
+        self.assertEqual(action.intent_processed_count, 2)
+        # lead 来自第一条成功回复（即第二条）
+        self.assertEqual(action.lead_comment_text, "可见评论B")
+
+    # ── 9. max_intent=1 + 回复失败 → lead_* 全空 → 兜底 ──
+    @patch('dy.actions.commenting._refind_comment_node_by_text')
+    def test_max_intent_1_reply_failure(self, mock_refind):
+        """max_intent=1 回复失败 → lead 为空 → 兜底。"""
+        config = self._base_config(max_intent=1)
+
+        fallback_called = {"called": False}
+
+        class ActionFail(MockedProcessCommentSectionAction):
+            def _send_comment_workflow(self, node, text):
+                return False
+
+            def _fallback_reply_and_dm_top_comments(self, ai_agent, video_title, keyword, max_count=5, do_dm=False):
+                fallback_called["called"] = True
+                self.lead_reply_fallback_count = 1
+                return 1
+
+        action = ActionFail(
+            config,
+            comments=["想买"],
+            intent_indices=[0],
+        )
+        mock_refind.return_value = FakeNode(text="想买")
+        action.keep_open_after_lead = True
+        action.execute()
+
+        self.assertEqual(action.intent_processed_count, 0)
+        self.assertIsNone(action.lead_comment_node)
+        self.assertTrue(action.lead_reply_sent)  # fallback 触发后会置为 True
+        self.assertTrue(fallback_called["called"])
+
+    # ── 10. 停止检查粒度：_collect_intent_comments 每条意向后应过 _guard() ──
+    @patch('dy.actions.commenting.DYReplyAgent')
+    @patch('dy.actions.commenting._refind_comment_node_by_text')
+    def test_stop_check_granularity_in_collect(self, mock_refind, MockAgent):
+        """真实 _collect_intent_comments 在每条评论后必须调用 _guard()。
+        直接继承 ProcessCommentSectionAction（不经过 MockedProcessCommentSectionAction），
+        以确保使用真实的 _collect_intent_comments 实现。
+        """
+        config = self._base_config(max_intent=3)
+
+        # Mock AI agent：所有评论都判为意向
+        mock_ai = MagicMock()
+        mock_ai.is_intent_comment.return_value = True
+        mock_ai.generate_lead_reply.return_value = "回复文本"
+        MockAgent.return_value = mock_ai
+
+        guard_calls = []
+
+        class ActionRealCollect(ProcessCommentSectionAction):
+            """直接继承真实类，使用真实的 _collect_intent_comments。"""
+            def __init__(self):
+                self.d = FakeDevice()
+                self.app = None
+                self.config = config
+                self._closed = False
+
+            def _guard(self):
+                guard_calls.append("guard")
+
+            def _send_comment_workflow(self, node, text):
+                return True
+
+            def _swipe_up_comments(self):
+                return False  # 不需要滑动
+
+            def _close_comment_section(self):
+                self._closed = True
+                return True
+
+            def _comment_panel_open(self):
+                return not self._closed
+
+            def human_sleep(self, *args, **kwargs):
+                pass
+
+        action = ActionRealCollect()
+        action.keep_open_after_lead = True
+        mock_refind.return_value = FakeNode(text="mock")
+
+        # 构造 FakeNode 列表模拟 xpath.all()
+        fake_nodes = [FakeNode(text=f"想买{i}") for i in range(5)]
+
+        class FakeXPathWithNodes:
+            def __init__(self, nodes):
+                self._nodes = nodes
+            def all(self):
+                return self._nodes
+
+        action.d.xpath = MagicMock(return_value=FakeXPathWithNodes(fake_nodes))
+
+        action.execute()
+
+        # 5 条评论，max_intent=3 → 收集 3 条，每条之后调 _guard()
+        # 加上 Phase B 的 _guard() 调用，总数应 ≥ 3
+        self.assertGreaterEqual(
+            len(guard_calls), 3,
+            f"_collect_intent_comments 应在每条评论的 AI 判断后调用 _guard()，"
+            f"实际调用 {len(guard_calls)} 次"
+        )
+
+    # ── 11. processed_comments 使用字符串去重键格式 ──
+    def test_processed_comments_use_string_dedup_keys(self):
+        """验证 mock 的 processed_comments 使用与真实代码一致的 f"{author}\\x01{text}" 格式。"""
+        config = self._base_config(max_intent=3)
+
+        action = MockedProcessCommentSectionAction(
+            config,
+            comments=["想买", "怎么买", "路人"],
+            intent_indices=[0, 1],
+            reply_success=True,
+        )
+        action.keep_open_after_lead = True
+
+        with patch('dy.actions.commenting._refind_comment_node_by_text',
+                   return_value=FakeNode(text="mock")):
+            action.execute()
+
+        # Mock 的 _collect_intent_comments 现在使用字符串去重键
+        # 验证（间接：通过 execute 不抛异常间接确认键格式正确）
+        self.assertEqual(action.intent_processed_count, 2,
+            "使用字符串去重键不应影响意向评论收集和回复的正确性")
+
+    # ═══════════════════════════════════════════════════════════════
+    # Phase 2 tests — intent_items 暴露 + 多私信循环
+    # ═══════════════════════════════════════════════════════════════
+
+    # ── 12. intent_items 暴露给 task_runner ──
+    @patch('dy.actions.commenting._refind_comment_node_by_text')
+    def test_intent_items_exposed_after_execute(self, mock_refind):
+        """execute() 完成后 self.intent_items 应包含所有收集到的意向评论。"""
+        config = self._base_config(max_intent=3)
+        action = MockedProcessCommentSectionAction(
+            config,
+            comments=["A-想买", "B-怎么买", "C-价格多少", "路人"],
+            intent_indices=[0, 1, 2],
+            reply_success=True,
+        )
+        mock_refind.return_value = FakeNode(text="mock")
+        action.keep_open_after_lead = True
+        action.execute()
+
+        items = getattr(action, 'intent_items', None)
+        self.assertIsNotNone(items, "execute() 应设置 self.intent_items 供 task_runner 使用")
+        self.assertEqual(len(items), 3)
+        self.assertEqual(items[0]["text"], "A-想买")
+        self.assertEqual(items[1]["text"], "B-怎么买")
+        self.assertEqual(items[2]["text"], "C-价格多少")
+        # 验证每条包含必要字段
+        for item in items:
+            self.assertIn("text", item)
+            self.assertIn("author", item)
+            self.assertIn("reply_text", item)
+
+    # ── 13. intent_items 为空列表（无意向评论） ──
+    def test_intent_items_empty_when_no_intents(self):
+        """无意向评论时 intent_items 应为空列表，非 None。"""
+        config = self._base_config(max_intent=3)
+
+        fallback_called = {"called": False}
+
+        class ActionNoIntents(MockedProcessCommentSectionAction):
+            def _fallback_reply_and_dm_top_comments(self, *args, **kwargs):
+                fallback_called["called"] = True
+                self.lead_reply_fallback_count = 1
+                return 1
+
+        action = ActionNoIntents(
+            config,
+            comments=["路人1", "路人2"],
+            intent_indices=[],  # 无意向
+        )
+        action.keep_open_after_lead = True
+        action.execute()
+
+        items = getattr(action, 'intent_items', None)
+        self.assertIsNotNone(items, "即使无意向，intent_items 也应为空列表（非 None）")
+        self.assertEqual(len(items), 0)
+        self.assertTrue(fallback_called["called"])
+
+    # ── 14. intent_items 在回复失败后仍保留 ──
+    @patch('dy.actions.commenting._refind_comment_node_by_text')
+    def test_intent_items_preserved_after_reply_failure(self, mock_refind):
+        """即使部分或全部回复失败，intent_items 仍保留完整收集列表。"""
+        config = self._base_config(max_intent=3)
+
+        class ActionSomeFail(MockedProcessCommentSectionAction):
+            def _send_comment_workflow(self, node, text):
+                # 第一条失败，其余成功
+                return "A" not in text
+
+        action = ActionSomeFail(
+            config,
+            comments=["A-失败", "B-成功", "C-成功"],
+            intent_indices=[0, 1, 2],
+        )
+        mock_refind.return_value = FakeNode(text="mock")
+        action.keep_open_after_lead = True
+        action.execute()
+
+        items = getattr(action, 'intent_items', None)
+        self.assertIsNotNone(items)
+        # 收集到的 3 条应全部保留，不受回复成败影响
+        self.assertEqual(len(items), 3)
+        self.assertEqual(action.intent_processed_count, 2)
+
+    # ═══════════════════════════════════════════════════════════════
+    # Phase 3 tests — 文本重定位精度增强 + 全链路可观测
+    # ═══════════════════════════════════════════════════════════════
+
+    # ── 15. _refind_comment_node_by_text 添加 author 参数 ──
+    def test_refind_by_text_accepts_author_parameter(self):
+        """_refind_comment_node_by_text 应接受可选 author 参数用于交叉验证。"""
+        import inspect
+        sig = inspect.signature(_refind_comment_node_by_text)
+        params = list(sig.parameters.keys())
+        self.assertIn("author", params,
+            f"_refind_comment_node_by_text 应支持 author 参数用于卡片级验证，"
+            f"当前参数: {params}")
+
+    # ── 16. Phase B 完成后滚动评论区到顶部 ──
+    @patch('dy.actions.commenting._refind_comment_node_by_text')
+    def test_phase_b_scrolls_comments_to_top(self, mock_refind):
+        """Phase B 回复完成后应统一滑动评论区回顶部，为 Phase 2 私信提供一致起始位置。"""
+        config = self._base_config(max_intent=2)
+
+        scroll_calls = []
+
+        class ActionTrackScroll(MockedProcessCommentSectionAction):
+            def _scroll_comments_to_top(self):
+                scroll_calls.append("scrolled")
+
+        action = ActionTrackScroll(
             config,
             comments=["想买", "怎么买"],
             intent_indices=[0, 1],
-            pm_results=[True, False],  # 第一次成功，第二次失败
+            reply_success=True,
         )
-        action.enable_lead_pm = True
+        mock_refind.return_value = FakeNode(text="mock")
         action.keep_open_after_lead = True
-        result = action.execute()
+        action.execute()
 
-        self.assertEqual(action._pm_called_count, 2)
-        self.assertEqual(action.intent_processed_count, 1)
-        self.assertTrue(action.inline_pm_completed)
-        self.assertIsNotNone(action.lead_comment_node, "第二次失败的 lead 节点应保留给 B.5")
-        self.assertEqual(action.lead_comment_text, "怎么买")
+        self.assertGreaterEqual(len(scroll_calls), 1,
+            "Phase B 完成后应调用 _scroll_comments_to_top() 复位评论区位置")
+
+    # ── 17. 全链路可观测：Phase A/B 耗时日志 ──
+    @patch('dy.actions.commenting._refind_comment_node_by_text')
+    def test_metrics_timing_logged(self, mock_refind):
+        """各阶段应输出 [metrics] 耗时和成功率日志。"""
+        config = self._base_config(max_intent=2)
+
+        import logging
+        from dy.actions.commenting import ProcessCommentSectionAction as PCA
+
+        action = MockedProcessCommentSectionAction(
+            config,
+            comments=["A-想买", "B-怎么买"],
+            intent_indices=[0, 1],
+            reply_success=True,
+        )
+        mock_refind.return_value = FakeNode(text="mock")
+        action.keep_open_after_lead = True
+
+        with self.assertLogs(logger='dy.actions.commenting', level='INFO') as log_ctx:
+            action.execute()
+
+        # 检查 [metrics] 日志行
+        metrics_lines = [r for r in log_ctx.output if '[metrics]' in r]
+        self.assertGreaterEqual(len(metrics_lines), 2,
+            f"应至少输出 Phase A 和 Phase B 的 [metrics] 日志，"
+            f"实际 metrics 行数: {len(metrics_lines)}")
+        # 验证 Phase A 指标
+        phase_a_lines = [l for l in metrics_lines if 'Phase A' in l]
+        self.assertGreaterEqual(len(phase_a_lines), 1,
+            "应包含 Phase A 收集耗时和数量指标")
+        # 验证 Phase B 指标
+        phase_b_lines = [l for l in metrics_lines if 'Phase B' in l]
+        self.assertGreaterEqual(len(phase_b_lines), 1,
+            "应包含 Phase B 回复成功/失败指标")
 
 
 if __name__ == "__main__":
