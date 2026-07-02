@@ -460,6 +460,13 @@ class ProcessCommentSectionAction(BaseAction):
         self.lead_reply_sent = False
         # keep_open_after_lead=True 时，发现意向评论后不关闭评论区（供 B.5 在评论区打开状态下操作）
         keep_open_after_lead = bool(getattr(self, 'keep_open_after_lead', False))
+<<<<<<< Updated upstream
+=======
+        # 配置：每个视频最多处理多少个意向评论（默认等于识别上限 max_reviews，扫描多少处理多少）
+        max_intent_comments = int(interaction_config.get('max_intent_comments_per_video', max_reviews) or max_reviews)
+        self_nick = str(interaction_config.get('self_nickname', '') or '').strip()
+        logger.info(f"[intent_config] max_reviews={max_reviews} max_intent_comments={max_intent_comments} enable_lead_pm={bool(getattr(self, 'enable_lead_pm', False))} self_nickname={self_nick}")
+>>>>>>> Stashed changes
 
         deadline = getattr(self, 'deadline_ts', None)
         while swipe_count < max_swipes and reviewed_count < max_reviews:
@@ -479,6 +486,7 @@ class ProcessCommentSectionAction(BaseAction):
                 keyword,
                 max_reviews - reviewed_count,
                 custom_keywords,
+                self_nick,
             )
             reviewed_count += reviewed_now
             logger.info(f"AI 已识别评论 {reviewed_count}/{max_reviews} 条")
@@ -534,7 +542,7 @@ class ProcessCommentSectionAction(BaseAction):
         logger.info("评论区处理完毕，关闭面板")
         return self._close_comment_section()
 
-    def _process_current_screen_comments(self, processed_comments, ai_agent, video_title, keyword, remaining_reviews, custom_keywords=None):
+    def _process_current_screen_comments(self, processed_comments, ai_agent, video_title, keyword, remaining_reviews, custom_keywords=None, self_nick=""):
         logger.info("正在解析当前屏幕可见评论...")
         # FIX-XPATH: 只匹配评论卡片容器(k4x)内的 TextView，而非全页面 //android.widget.TextView。
         # 全页面匹配会捕获用户名、时间戳、点赞数、导航栏等大量非评论节点，
@@ -560,6 +568,11 @@ class ProcessCommentSectionAction(BaseAction):
             dedup_key = self._comment_dedup_key(node, text)
             if dedup_key not in processed_comments:
                 processed_comments.add(dedup_key)
+                # FIX(回复自己): 排除当前账号自己的评论，避免在自己的主评下回复和私信自己
+                author = self._extract_comment_author(node)
+                if self_nick and author and author == self_nick:
+                    logger.info(f"跳过自己的评论: {text[:30]}")
+                    continue
                 if not self._is_reviewable_comment(text):
                     continue
                 reviewed_count += 1
@@ -577,11 +590,11 @@ class ProcessCommentSectionAction(BaseAction):
                     break
         return found_target, reviewed_count, should_break, lead_info
 
-    def _comment_dedup_key(self, node, text):
-        """构造评论去重键：优先 (同卡片用户名 + 文本)，回退到纯文本。
+    def _extract_comment_author(self, node):
+        """从评论节点提取评论者用户名。
 
         抖音评论卡片 k4x 内，username 节点(resource-id=title) 与评论 content 是兄弟节点。
-        借助底层 lxml 在同卡片子树内取 title 文本即可区分"不同用户的相同短句"。
+        沿底层 lxml 向上找到该评论所属的 k4x 卡片，再在卡片内取 title 文本。
         """
         author = ""
         try:
@@ -598,6 +611,15 @@ class ProcessCommentSectionAction(BaseAction):
                 hops += 1
         except Exception:
             author = ""
+        return author
+
+    def _comment_dedup_key(self, node, text):
+        """构造评论去重键：优先 (同卡片用户名 + 文本)，回退到纯文本。
+
+        抖音评论卡片 k4x 内，username 节点(resource-id=title) 与评论 content 是兄弟节点。
+        借助底层 lxml 在同卡片子树内取 title 文本即可区分"不同用户的相同短句"。
+        """
+        author = self._extract_comment_author(node)
         return f"{author}{text}" if author else text
 
     def _is_reviewable_comment(self, text):

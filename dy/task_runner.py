@@ -248,7 +248,12 @@ class TikTokTaskFlow:
                 if any(marker in ui_xml for marker in ("粉丝", "获赞", "作品")):
                     return "profile_page"
 
-                if "首页" in ui_xml or "搜索" in ui_xml:
+                has_video_features = (
+                    bool(re.search(r'content-desc="[^"]*分享[^"]*按钮[^"]*"', ui_xml)) or
+                    bool(re.search(r'content-desc="[^"]*评论[^"]*按钮[^"]*"', ui_xml)) or
+                    "视频" in ui_xml
+                )
+                if (not has_video_features) and ("首页" in ui_xml or "搜索" in ui_xml):
                     return "home_or_search"
 
             menu_markers = ("不感兴趣", "倍速", "清屏播放", "识别图片", "添加至稍后再看")

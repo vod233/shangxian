@@ -627,18 +627,32 @@ class FollowAuthorAction(BaseAction):
         """确认当前是抖音全屏视频页（4 特征评分 ≥3，避免在作者主页误判）。
         特征：分享按钮 + 评论按钮 + 底部导航栏(首页/消息/我) + 视频容器。
         作者主页不含底部导航栏，因此可有效区分视频页与作者主页。
+        统一与 task_runner.py 实现，使用正则匹配 content-desc 属性。
         """
         try:
-            share_nodes = self.d.xpath(L.SHARE_BTN_DYNAMIC).all()
-            comment_nodes = self.d.xpath(L.COMMENT_BTN_DYNAMIC).all()
-            has_share = len(share_nodes) > 0
-            has_comment = len(comment_nodes) > 0
-            has_bottom_nav = any(
-                self.d(descriptionContains=label).exists(timeout=0.2)
-                for label in ("首页", "朋友", "消息", "我")
-            )
-            has_video_container = self.d(description="视频").exists(timeout=0.2)
-            score = sum(1 for present in (has_share, has_comment, has_bottom_nav, has_video_container) if present)
+            ui_xml = self.d.dump_hierarchy(compressed=True) or ""
+            if ui_xml:
+                features = {
+                    "share": bool(re.search(r'content-desc="[^"]*分享[^"]*按钮[^"]*"', ui_xml)),
+                    "comment": bool(re.search(r'content-desc="[^"]*评论[^"]*按钮[^"]*"', ui_xml)),
+                    "bottom_nav": all(label in ui_xml for label in ("首页", "消息", "我")),
+                    "video_container": "视频" in ui_xml,
+                }
+                score = sum(1 for present in features.values() if present)
+                logger.debug(f"视频页特征: {features}, score={score}")
+                return score >= 3
+
+            features = {
+                "share": len(self.d.xpath(L.SHARE_BTN_DYNAMIC).all()) > 0,
+                "comment": len(self.d.xpath(L.COMMENT_BTN_DYNAMIC).all()) > 0,
+                "bottom_nav": any(
+                    self.d(descriptionContains=label).exists(timeout=0.2)
+                    for label in ("首页", "朋友", "消息", "我")
+                ),
+                "video_container": self.d(description="视频").exists(timeout=0.2),
+            }
+            score = sum(1 for present in features.values() if present)
+            logger.debug(f"视频页特征: {features}, score={score}")
             return score >= 3
         except Exception as exc:
             logger.debug(f"识别视频页失败: {exc}")
