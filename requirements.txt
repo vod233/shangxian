@@ -1,0 +1,21 @@
+adbutils
+python-dotenv
+fastapi
+jinja2
+langchain-core
+langchain-openai
+numpy<2
+openai
+opencv-python
+pandas
+pillow
+pydantic
+python-multipart
+pyyaml
+requests
+streamlit
+tiktoken
+uiautomator2
+uvicorn
+# PostgreSQL 后端（必需，统一使用 PostgreSQL）
+psycopg2-binary

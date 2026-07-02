@@ -1,0 +1,24 @@
+# Git filter-repo 替换规则文件
+# 格式: 原始值==>替换值
+
+# DeepSeek API Key
+sk-38922203e64643f89e33b53cfc74db5f==>sk-REDACTED-ROTATED
+
+# 旧 License Key
+saa_DTFje43GdrtsYwWtax3xi5xQ79HOhT5o==>saa-REDACTED-ROTATED
+
+# 旧 ADMIN_TOKEN
+adm_N6utsCVXqZ2N_a3NWZUsvQMctaoJPKAWOcVbthUaRJM==>adm-REDACTED-ROTATED
+
+# 旧 machine_id
+saam_066a2714863342ad8d3e80cd1f5ac702==>saam-REDACTED
+saam_ba645ea850724fbe9a22c18fef7970ac==>saam-REDACTED
+
+# RunningHub API Key
+7c7c9f57d741429f8ce1e8f7796d263e==>rh-REDACTED-ROTATED
+
+# 默认 PG 密码
+scout123==>pg-pwd-REDACTED
+
+# 旧 SSH 密码
+dt!/L9*5?YXTA==>ssh-pwd-REDACTED

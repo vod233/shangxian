@@ -1,0 +1,35 @@
+{
+    "app_name": "千伴AI员工",
+    "version": "v2.0.0",
+    "copyright": "千伴AI员工 · 智能获客中控台",
+    "year": 2026,
+    "theme_name": "default",
+    "custom_title_bar": true,
+    "startup_size": [
+        1394,
+        715
+    ],
+    "minimum_size": [
+        960,
+        540
+    ],
+    "lef_menu_size": {
+        "minimum": 50,
+        "maximum": 237
+    },
+    "left_menu_content_margins": 3,
+    "left_column_size": {
+        "minimum": 0,
+        "maximum": 240
+    },
+    "right_column_size": {
+        "minimum": 0,
+        "maximum": 240
+    },
+    "time_animation": 280,
+    "font": {
+        "family": "Microsoft YaHei UI",
+        "title_size": 13,
+        "text_size": 12
+    }
+}
