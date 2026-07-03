@@ -10,6 +10,24 @@ from ..anti_detection import HumanSleep
 logger = logging.getLogger(__name__)
 
 
+def compute_scroll_to_reveal_top(window_height: int, distance_px: int = 250):
+    """计算 _scroll_to_reveal_top 的滑动起止坐标。
+
+    返回 (sx, sy, ex, ey)：
+        sx, sy: 滑动起点（屏幕中央水平位置距顶部 45% 处）
+        ex, ey: 滑动终点（水平同 x，垂直向上 distance_px，即手指上滑）
+
+    Android 坐标：(0,0) 左上角，y 越大越靠下。
+    手指从下往上滑（sy > ey）→ 内容向下滚动 → 顶部内容重新可见。
+    """
+    w = window_height
+    sy = int(w * 0.45)
+    ey = sy - distance_px  # 手指向上滑
+    if ey < 0:
+        ey = 10  # 保留 10px 边距
+    return 0, sy, 0, ey
+
+
 def _bounds_bottom(node):
     return node.info.get("bounds", {}).get("bottom", 0)
 
@@ -24,19 +42,46 @@ def _click_node_center(d, node):
     d.click(x, y)
 
 
+def _info_visible_enabled(info):
+    """从 info 字典判断节点是否可见且可用（纯函数，CS4 策略前置判断）。
+
+    FIX-C: uiautomator2 的 info 字典键名是 `visibleToUser`（驼峰），不是 `visible`。
+    可见性缺失时默认 False（安全失败），避免误判隐藏节点为可见。
+    """
+    visible = info.get("visibleToUser", info.get("visible", False))
+    enabled = info.get("enabled", False)
+    return bool(visible) and bool(enabled)
+
+
 def _is_visible_enabled(node):
-    """严格判断节点是否真正可见且可用。
+    """严格判断节点是否真正可见且可用（委托给 _info_visible_enabled）。
 
     FIX-C: uiautomator2 的 info 字典键名是 `visibleToUser`（驼峰），不是 `visible`。
     原代码 `info.get("visible", True)` 总是命中默认值 True，导致隐藏的 EditText
     被误判为可见，进而触发 FIX-10 的 press back 误关闭评论区。
     可见性缺失时默认 False（安全失败），避免误判。
     """
-    info = node.info
-    # 优先 visibleToUser；老版本兼容 visible；缺失时默认 False
-    visible = info.get("visibleToUser", info.get("visible", False))
-    enabled = info.get("enabled", False)
-    return bool(visible) and bool(enabled)
+    return _info_visible_enabled(node.info)
+
+
+def _pick_send_button_from_infos(infos):
+    """从 info 字典列表中按策略选择发送按钮（纯函数，FIX-F4 锁定回退逻辑）。
+
+    策略1(strict): clickable=true + visible+enabled → 取最底部
+    策略3(loose):  visible+enabled（忽略 clickable）→ 取最底部
+    返回 (策略名, info) 或 (None, None)。
+    REVIEW: 防御 None 元素（节点失效时 info 可能为 None）。
+    """
+    def _bottom(i):
+        return i.get("bounds", {}).get("bottom", 0)
+    valid = [i for i in infos if i]
+    strict = [i for i in valid if i.get("clickable", False) and _info_visible_enabled(i)]
+    if strict:
+        return ("strict", max(strict, key=_bottom))
+    loose = [i for i in valid if _info_visible_enabled(i)]
+    if loose:
+        return ("loose", max(loose, key=_bottom))
+    return (None, None)
 
 
 def _is_in_bottom_half(d, node, min_top_ratio=0.3):
@@ -53,6 +98,120 @@ def _is_in_bottom_half(d, node, min_top_ratio=0.3):
         return top >= int(screen_h * min_top_ratio)
     except Exception:
         return True  # 无法判断时不阻断，但 _is_visible_enabled 已严格化
+
+
+# ── self_nickname 选择：纯函数，便于测试 ──
+# FIX-F1+: 支持"万/亿"单位（原 ^\d+\s*条评论$ 漏掉"1.9万条评论"）
+_COMMENT_COUNT_LABEL_RE = re.compile(r'^\d+(?:\.\d+)?\s*[万亿]?\s*条评论$')
+
+
+def _should_rollback_fallback(results, threshold=3):
+    """判定兜底处理是否需要回滚重收集（纯函数，FIX-F2+）。
+
+    results: 每条目标的处理结果列表，dict 含 'skipped' 或 'handled' 键。
+    threshold: 连续滑走次数阈值，默认 3。
+
+    规则：连续 threshold 条滑走时触发回滚（而非总数判定），
+    避免中途成功后误触发。空结果不回滚。
+    """
+    if not results:
+        return False
+    consecutive = 0
+    for r in results:
+        if r.get("skipped"):
+            consecutive += 1
+            if consecutive >= threshold:
+                return True
+        else:
+            consecutive = 0
+    return False
+
+
+# ── FIX-F8: 评论节点噪音判定（纯函数）──
+# 抖音评论卡片(k4x)内 TextView 无差别抓取会混入非评论节点：
+# 日期/地区/点赞数/@提及/原过滤集合（作者/置顶等）
+_COMMENT_DATE_RE = re.compile(r'^\d{4}-\d{1,2}-\d{1,2}$')
+_COMMENT_NUMBER_RE = re.compile(r'^\d+(?:\.\d+)?[万亿]?$')
+_COMMENT_IGNORED_KEYWORDS = frozenset({"作者", "置顶", "回复", "展开", "查看更多回复", "赞", "分享"})
+
+
+def _is_comment_noise(text):
+    """判定文本是否是评论卡片内的非评论噪音（纯函数，FIX-F8）。
+
+    噪音类型：日期、地区(·前缀)、纯数字(点赞数)、@提及、原过滤关键词。
+    返回 True 表示应跳过，不送 AI 判定。
+    """
+    if not text:
+        return True
+    t = str(text).strip()
+    if not t:
+        return True
+    if t in _COMMENT_IGNORED_KEYWORDS:
+        return True
+    if _COMMENT_DATE_RE.match(t):
+        return True
+    if _COMMENT_NUMBER_RE.match(t):
+        return True
+    if t.startswith("·"):
+        return True
+    if t.startswith("@") and len(t) <= 12:
+        return True
+    return False
+
+
+def _is_comment_count_label(text):
+    """判断文本是否是抖音评论区的「X条评论」计数标识（而非账号昵称）。
+
+    抖音评论区中 id/title 同时匹配评论数标识与账号昵称，
+    此函数用于过滤掉计数标识，避免 self-filter 失效。
+    """
+    if not text:
+        return False
+    return bool(_COMMENT_COUNT_LABEL_RE.match(str(text).strip()))
+
+
+def _select_self_nickname(candidates, config_nick=""):
+    """从 UI 候选文本中选择当前账号昵称（deep module）。
+
+    candidates: UI 中 id/title 等节点的文本列表（按出现顺序）
+    config_nick: 配置中指定的昵称（优先级最高，非空则直接返回）
+
+    返回：选定的昵称，或 "" 表示未检测到（此时 self-filter 不生效，会输出 warning）。
+    规则：跳过评论数计数标识（"X条评论"）与过短文本（长度<2）。
+    """
+    nick = str(config_nick or '').strip()
+    if nick:
+        return nick
+    for text in candidates:
+        clean = str(text or '').strip()
+        if len(clean) >= 2 and not _is_comment_count_label(clean):
+            return clean
+    return ""
+
+
+def _filter_out_main_comment(targets, main_comment_text=""):
+    """从兜底目标列表中排除当前视频刚发送的主评（防止 self-reply，FIX-F7）。
+
+    targets: [{'text':..., 'author':...}, ...]
+    main_comment_text: 当前视频刚发送的主评文本（可能为空）
+
+    返回新列表（不修改输入）。文本完全匹配或任一方为另一方前缀时排除，
+    以兼容 UI 截断（v13 实测 B.5 重定位时文本被截断）。
+    独立于 self_nickname，确保即使 self_nickname 失效也不处理自己。
+    """
+    if not main_comment_text:
+        return list(targets)
+    main = str(main_comment_text).strip()
+    if not main:
+        return list(targets)
+    result = []
+    for tgt in targets:
+        t = str(tgt.get('text', '') or '').strip()
+        # 空目标文本保留（过滤逻辑只针对主评匹配，空文本由其他规则处理）
+        if t and (t == main or main.startswith(t) or t.startswith(main)):
+            continue
+        result.append(tgt)
+    return result
 
 
 def _xpath_exists(d, xpath, timeout=0.1):
@@ -88,27 +247,30 @@ def _find_bottom_edit_text(d, timeout=3):
 
 
 def _find_clickable_send_button(d):
-    # 策略1：标准 XPath（视频页主路径，要求 clickable=true）
+    # FIX-F4: 用纯函数判断策略，但保持原策略优先级 1(strict)→2(resource-id)→3(loose)→4(坐标)
     send_nodes = d.xpath(L.COMMENT_SEND_BTN_XPATH).all()
-    candidates = [
-        node for node in send_nodes
-        if node.info.get("clickable", False) and _is_visible_enabled(node)
-    ]
-    if candidates:
-        return sorted(candidates, key=_bounds_bottom)[-1]
+    infos = [node.info for node in send_nodes]
+    strategy, _ = _pick_send_button_from_infos(infos)
 
-    # 策略2：resource-id 列表
+    # 策略1(strict): xpath 中 clickable=true + visible+enabled
+    if strategy == "strict":
+        candidates = [n for n in send_nodes if n.info.get("clickable", False) and _is_visible_enabled(n)]
+        if candidates:
+            return sorted(candidates, key=_bounds_bottom)[-1]
+
+    # 策略2: resource-id 列表 clickable=true（必须在 loose 之前，优先级高于宽松）
     for resource_id in L.COMMENT_SEND_BTN_IDS:
         btn = d(resourceId=resource_id)
         if btn.exists(timeout=0.3):
             if btn.info.get("clickable", False) and _is_visible_enabled(btn):
                 return btn
 
-    # 策略3：楼中楼专用 — 放宽 clickable 限制（抖音楼中楼发送按钮可能 clickable=false 但可点）
-    loose_candidates = [node for node in send_nodes if _is_visible_enabled(node)]
-    if loose_candidates:
+    # 策略3(loose): xpath 中放宽 clickable（抖音楼中楼发送按钮可能 clickable=false 但可点）
+    if strategy == "loose":
         logger.info("[CS4]使用宽松策略定位楼中楼发送按钮")
-        return sorted(loose_candidates, key=_bounds_bottom)[-1]
+        loose_candidates = [n for n in send_nodes if _is_visible_enabled(n)]
+        if loose_candidates:
+            return sorted(loose_candidates, key=_bounds_bottom)[-1]
 
     # 策略4：楼中楼坐标兜底 — EditText 右边界往左 60px
     edit_text = _find_bottom_edit_text(d, timeout=0.5)
@@ -676,15 +838,20 @@ class ProcessCommentSectionAction(BaseAction):
 
         优先级：① interaction.self_nickname 配置 → ② UI 自动检测 → ③ 返回 ""。
         返回空字符串时，self-filter 不生效，但会输出 warning。
+
+        FIX-F1: 原实现取首个 id/title 匹配节点的 text，但评论区中该节点
+        在评论数>=2 时是"X条评论"计数标识，导致 self_nickname 被误检为
+        "3376条评论"等，self-filter 失效。现通过 _is_comment_count_label 过滤。
         """
         # ① 配置优先
-        nick = str(self.config.get('interaction', {}).get('self_nickname', '') or '').strip()
-        if nick:
-            return nick
+        config_nick = str(self.config.get('interaction', {}).get('self_nickname', '') or '').strip()
+        if config_nick:
+            return config_nick
 
         # ② UI 自动检测：评论区打开时，底部输入区域附近通常有当前用户名
         try:
-            # 尝试常见 resource-id 模式
+            # 收集所有 hint_id 的首个匹配文本作为候选
+            candidates = []
             for hint_id in ('com.ss.android.ugc.aweme:id/title',
                             'com.ss.android.ugc.aweme:id/nickname',
                             'com.ss.android.ugc.aweme:id/username'):
@@ -692,11 +859,15 @@ class ProcessCommentSectionAction(BaseAction):
                     el = self.d(resourceId=hint_id)
                     if el.exists(timeout=0.3):
                         detected = str(el.info.get('text', '') or '').strip()
-                        if detected and len(detected) >= 2:
-                            logger.info(f"自动检测到当前账号昵称: {detected}")
-                            return detected
+                        if detected:
+                            candidates.append(detected)
                 except Exception:
                     pass
+            # 用纯函数过滤掉评论数计数标识
+            selected = _select_self_nickname(candidates)
+            if selected:
+                logger.info(f"自动检测到当前账号昵称: {selected}")
+                return selected
         except Exception:
             pass
 
@@ -738,8 +909,10 @@ class ProcessCommentSectionAction(BaseAction):
         clean = str(text).strip()
         if len(clean) < 2:
             return False
-        ignored = {"作者", "置顶", "回复", "展开", "查看更多回复", "赞", "分享"}
-        return clean not in ignored
+        # FIX-F8: 用纯函数统一过滤噪音（日期/地区/点赞数/@提及/原过滤集合）
+        if _is_comment_noise(clean):
+            return False
+        return True
 
     def _collect_intent_comments(self, processed_comments, ai_agent, video_title, keyword, remaining_reviews, custom_keywords=None, max_to_collect=1, self_nick="", skip_first_comment=False):
         """Phase A 纯扫描收集：识别意向评论并预生成回复文本，但不发送。
@@ -1047,17 +1220,19 @@ class ProcessCommentSectionAction(BaseAction):
             return False
 
     def _scroll_to_reveal_top(self, distance_px=250):
-        """轻量下滑复位：楼中楼回复后评论区因内容插入自动上滚，评论者头像被推到屏幕顶端。
-        在评论区区域内往下轻滑一段，把顶部内容拉回来让头像重新可见。
-        Android 自然滚动：手指从上部滑向下部（DOWN swipe）→ 内容下移 → 顶部内容可见。
+        """轻量上滑复位：楼中楼回复后评论区因内容插入自动上滚，评论者头像被推到屏幕顶端。
+        在评论区区域内往上轻滑一段，让内容向下滚动，把顶部内容拉回可见区域。
+        Android 自然滚动：手指从下部滑向上部（UP swipe）→ 内容下移 → 顶部内容可见。
+
+        注：此处提取了纯函数 compute_scroll_to_reveal_top 供单元测试。
         """
         try:
             w, h = self.d.window_size()
-            # 评论区上部区域往下滑：手指从 45% 滑到 45%+distance
+            # 评论区上部区域往上滑：手指从 45% 滑到 45%-distance（手指向上）
             sy = int(h * 0.45)
-            ey = int(h * 0.45) + distance_px
-            if ey > h:
-                ey = h - 10
+            ey = sy - distance_px  # 手指向上滑 → 内容向下滚动 → 顶部可见
+            if ey < 0:
+                ey = 10
             self.human_swipe_curve(
                 w // 2 + random.randint(-20, 20), sy,
                 w // 2 + random.randint(-20, 20), ey,
@@ -1232,6 +1407,14 @@ class ProcessCommentSectionAction(BaseAction):
         返回实际处理（已回复）人数；私信成功数记于 self.lead_pm_sent_count。
         """
         targets = self._collect_top_level_targets(max_count=max_count, max_load_swipes=1)
+        # FIX-F7: 排除当前视频刚发送的主评，防止 self-reply + 私信自己
+        main_comment = str(getattr(self, 'last_main_comment', '') or '')
+        if main_comment:
+            before = len(targets)
+            targets = _filter_out_main_comment(targets, main_comment)
+            filtered = before - len(targets)
+            if filtered > 0:
+                logger.info(f"兜底过滤：排除当前视频主评 {filtered} 条（防止处理自己）")
         if not targets:
             logger.warning("兜底策略：评论区无可处理的一级路人评论，跳过兜底")
             return 0
@@ -1247,7 +1430,12 @@ class ProcessCommentSectionAction(BaseAction):
                     f"（{'回复+私信' if do_dm else '仅回复'}，有多少处理多少）")
         self.lead_pm_sent_count = 0
         self.lead_reply_fallback_count = 0
-        for i, tgt in enumerate(targets):
+        # FIX-F2+: 累计滑走结果，连续达到阈值时回滚重收集（最多1次，避免无限循环）
+        handle_results = []
+        rolled_back = False
+        i = 0
+        while i < len(targets):
+            tgt = targets[i]
             text = tgt['text']
             # 核心铁律 3：每处理一个人前熔断检查。停止 -> InterruptedError 上抛终止任务；
             # 单视频超时 -> 捕获后优雅退出，不继续。
@@ -1261,12 +1449,36 @@ class ProcessCommentSectionAction(BaseAction):
                 # 首条评论常被面板标题遮挡导致坐标点击失效，先轻滑复位
                 self._scroll_to_reveal_top(distance_px=120)
             try:
-                if self._fallback_handle_one(text, ai_agent, video_title, keyword, do_dm, lead_pm_messages):
+                handled = self._fallback_handle_one(text, ai_agent, video_title, keyword, do_dm, lead_pm_messages)
+                if handled:
                     self.lead_reply_fallback_count += 1
+                    handle_results.append({"text": text, "handled": True})
+                else:
+                    handle_results.append({"text": text, "skipped": True})
             except TimeoutError:
                 logger.warning(f"兜底：处理第 {i + 1} 人时单视频超时，提前结束")
                 break
             # InterruptedError（用户停止）不在此捕获，向上传播，立即终止整条链路
+
+            # FIX-F2+: 连续滑走达阈值时，回滚评论区到顶部并重新收集一次
+            if not rolled_back and _should_rollback_fallback(handle_results, threshold=3):
+                logger.warning(f"兜底：连续 3 条评论滑走，回滚评论区并重新收集目标")
+                self._scroll_to_reveal_top()
+                HumanSleep.sleep(custom_range=(0.8, 1.2))
+                fresh = self._collect_top_level_targets(max_count=max_count, max_load_swipes=0)
+                if main_comment:
+                    fresh = _filter_out_main_comment(fresh, main_comment)
+                if fresh:
+                    logger.info(f"兜底回滚：重新收集到 {len(fresh)} 条目标，继续处理")
+                    targets = fresh
+                    handle_results = []
+                    rolled_back = True
+                    i = 0
+                    continue
+                else:
+                    logger.warning("兜底回滚：重新收集为空，结束兜底")
+                    break
+            i += 1
 
         logger.info(f"兜底完成：已处理 {self.lead_reply_fallback_count} 位，私信成功 {self.lead_pm_sent_count} 位")
         return self.lead_reply_fallback_count
@@ -1371,6 +1583,30 @@ def _escape_xpath_text(text: str) -> str:
     return safe.replace('"', '').replace("'", '')
 
 
+def _build_refind_xpaths(text: str):
+    """用评论文本构建用于重定位的 xpath 列表（纯函数，FIX-F2 锁定逻辑）。
+
+    返回 xpath 字符串列表，按优先级排序（全文匹配优先，前缀兜底）。
+    空文本返回空列表（调用方据此返回 None，触发跳过）。
+    含双引号的文本用单引号包裹，反之亦然。
+    """
+    safe = _escape_xpath_text(text)
+    if not safe:
+        return []
+    xpaths = []
+    if '"' not in safe:
+        xpaths.append(f'//*[contains(@text, "{safe}")]')
+    else:
+        xpaths.append(f"//*[contains(@text, '{safe}')]")
+    short = safe[:15]
+    if short and short != safe:
+        if '"' not in short:
+            xpaths.append(f'//*[contains(@text, "{short}")]')
+        else:
+            xpaths.append(f"//*[contains(@text, '{short}')]")
+    return xpaths
+
+
 def _refind_comment_node_by_text(d, text: str, author: str = ""):
     """用评论文本在评论区重新定位到【真实节点】(XMLElement)，而非 XPathSelector。
 
@@ -1385,23 +1621,11 @@ def _refind_comment_node_by_text(d, text: str, author: str = ""):
     Phase 3: author 参数启用卡片级交叉验证——找到候选 text 节点后，
     沿 lxml 向上找 k4x 卡片并提取 /title，与预期 author 比对，不匹配则跳过。
     """
-    safe = _escape_xpath_text(text)
-    if not safe:
+    xpaths = _build_refind_xpaths(text)
+    if not xpaths:
         return None
 
     full = text.strip()
-    xpaths = []
-    if '"' not in safe:
-        xpaths.append(f'//*[contains(@text, "{safe}")]')
-    else:
-        xpaths.append(f"//*[contains(@text, '{safe}')]")
-    short = safe[:15]
-    if short and short != safe:
-        if '"' not in short:
-            xpaths.append(f'//*[contains(@text, "{short}")]')
-        else:
-            xpaths.append(f"//*[contains(@text, '{short}')]")
-
     for xpath in xpaths:
         try:
             nodes = d.xpath(xpath).all()

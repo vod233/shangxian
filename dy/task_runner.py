@@ -12,7 +12,7 @@ from .actions.navigation import (
     EnterFirstVideoAction, SwipeNextVideoAction, ResetToSearchAction
 )
 from .actions.interaction import (
-    DoubleClickLikeAction, FollowAuthorAction, GetCurrentVideoLinkAction
+    SingleClickLikeAction, FollowAuthorAction, GetCurrentVideoLinkAction
 )
 from .actions.commenting import (
     PostCommentAction, OpenCommentSectionAction, ProcessCommentSectionAction, CommentLeadPmAction
@@ -28,6 +28,34 @@ logger = logging.getLogger(__name__)
 def _now_str():
     """当前时间字符串，用于 action_event 时间戳"""
     return datetime.datetime.now().strftime("%H:%M:%S")
+
+
+def resolve_business_mode_conflicts(
+    mode: int,
+    enable_author_follow: bool = True,
+    enable_video_comment: bool = True,
+    enable_comment_lead: bool = True,
+) -> list:
+    """检查 business_mode 与 enable_* 开关的配置冲突。
+
+    当 business_mode 暗示某个功能应启用但用户显式关闭时，返回冲突列表。
+    空列表 = 无冲突。
+
+    业务规则：
+    - mode=1 隐含启用 author_follow，与 enable_author_follow=false 冲突
+    - mode=2 隐含启用 video_comment 和 comment_lead，与对应 false 冲突
+    - mode=0 或未设置时无隐含启用，不产生冲突
+    """
+    conflicts = []
+    if mode == 1 and not enable_author_follow:
+        conflicts.append("business_mode=1 隐含启用作者关注/私信，与 enable_author_follow=false 冲突")
+    elif mode == 2:
+        if not enable_video_comment:
+            conflicts.append("business_mode=2 隐含启用视频评论，与 enable_video_comment=false 冲突")
+        if not enable_comment_lead:
+            conflicts.append("business_mode=2 隐含启用评论区截流，与 enable_comment_lead=false 冲突")
+    return conflicts
+
 
 class TikTokTaskFlow:
     """
@@ -375,7 +403,7 @@ class TikTokTaskFlow:
         self._report(current_action="执行 AI 智能算法加权互动")
         stable, liked = self._run_feature_safely(
             "点赞",
-            lambda: self.runner.run_action(DoubleClickLikeAction),
+            lambda: self.runner.run_action(SingleClickLikeAction),
         )
         if liked:
             self.db.update_interaction(video_id, "like")
@@ -551,6 +579,7 @@ class TikTokTaskFlow:
                 enable_lead_pm=enable_lead_pm,
                 video_started_at=video_started_at,
                 already_open=True,
+                main_comment_text=comment_text,
             )
             self._report(executed_action="评论区AI截流")
             # DB 记录
@@ -607,7 +636,7 @@ class TikTokTaskFlow:
             self._reset_and_reenter_video_flow(f"{mode_label}-恢复失败")
         return recovered
 
-    def _run_comment_lead_safely(self, video_title, keyword, enable_lead_pm=False, video_started_at=None, already_open=False):
+    def _run_comment_lead_safely(self, video_title, keyword, enable_lead_pm=False, video_started_at=None, already_open=False, main_comment_text=""):
         """评论区截流 + 楼中楼私信评论者（B.4 + B.5）。
         当 enable_lead_pm=True 时，B.4 发现意向评论后不关闭评论区，直接在评论区打开状态下执行 B.5。
         返回 dict: {"recovered": bool, "lead_reply_sent": bool, "lead_pm_sent": bool, "lead_pm_reason": str}
@@ -666,6 +695,7 @@ class TikTokTaskFlow:
                 keep_open_after_lead=enable_lead_pm,  # B.5 启用时不关闭评论区
                 deadline_ts=deadline_ts,  # FIX: 评论区扫描/楼中楼发送纳入单视频时间预算
                 enable_lead_pm=enable_lead_pm,  # 传递私信启用状态，供内联私信使用
+                last_main_comment=main_comment_text,  # FIX-F7: 兜底过滤自己主评
             )
             action_instance.perform()
             # 读取意向评论节点信息

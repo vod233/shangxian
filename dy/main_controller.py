@@ -10,7 +10,7 @@ from .actions.navigation import (
     EnterFirstVideoAction, SwipeNextVideoAction, ResetToSearchAction
 )
 from .actions.interaction import (
-    DoubleClickLikeAction, FollowAuthorAction, GetCurrentVideoLinkAction
+    SingleClickLikeAction, FollowAuthorAction, GetCurrentVideoLinkAction
 )
 from .actions.commenting import (
     PostCommentAction, OpenCommentSectionAction, ProcessCommentSectionAction

@@ -18,6 +18,42 @@ def _bounds_bottom(node):
     return _node_bounds(node).get('bottom', 0)
 
 
+# ── FIX-F6+: 私信软封禁分类与全局降级判定（纯函数，便于测试）──
+# 软封禁信号：隐私设置/操作频繁/稍后再试 — 反复出现说明账号被抖音限流，需全局降级
+# 硬失败：被拉黑/发送失败 — 与对方相关，不影响其他私信目标
+_PM_SOFT_BAN_MARKERS = ("隐私设置", "操作频繁", "稍后再试")
+_PM_HARD_FAIL_MARKERS = ("无法发送消息", "发送失败", "消息发送失败", "对方拒收", "被对方拉黑")
+
+
+def _classify_pm_failure(text):
+    """分类私信失败提示（纯函数，FIX-F6+）。
+
+    返回：
+      "soft_ban"   — 软封禁（隐私设置/频繁/稍后），需累计触发全局降级
+      "hard_fail"  — 硬失败（拉黑/拒收），与对方相关，不触发全局降级
+      "no_failure" — 非失败提示
+    """
+    if not text:
+        return "no_failure"
+    t = str(text)
+    if any(m in t for m in _PM_SOFT_BAN_MARKERS):
+        return "soft_ban"
+    if any(m in t for m in _PM_HARD_FAIL_MARKERS):
+        return "hard_fail"
+    return "no_failure"
+
+
+def _should_global_cooldown_pm(soft_ban_count, threshold=3):
+    """判定是否应触发私信全局降级（纯函数，FIX-F6+）。
+
+    soft_ban_count: 累计软封禁失败次数
+    threshold: 触发阈值，默认 3（避免单次抖动误触发）
+
+    规则：软封禁次数 >= threshold 时返回 True，提示上层暂停私信功能。
+    """
+    return soft_ban_count >= threshold
+
+
 def _bounds_center(bounds):
     return (
         int((bounds.get('left', 0) + bounds.get('right', 0)) / 2),
@@ -66,8 +102,13 @@ def _set_text_to_input(d, input_node, text):
             pass
 
 
-class DoubleClickLikeAction(BaseAction):
-    """点击右侧心形按钮点赞，避免双击视频区域触发长按菜单。"""
+class SingleClickLikeAction(BaseAction):
+    """点击右侧心形按钮点赞（单次点击），避免双击视频区域触发长按菜单。
+
+    注意：类名从 DoubleClickLikeAction 改为 SingleClickLikeAction 以准确描述行为。
+    human_click 仅调用一次，是单次短按不是双击。
+    """
+
     def execute(self):
         try:
             ui_xml = self.d.dump_hierarchy(compressed=True) or ""
@@ -93,6 +134,11 @@ class DoubleClickLikeAction(BaseAction):
         self.human_click(x, y, jitter_range=5)
         logger.info(f"已短按右侧喜欢按钮: ({x}, {y})")
         return True
+
+
+# 向后兼容（旧名称仍可导入）
+DoubleClickLikeAction = SingleClickLikeAction
+
 
 class FollowAuthorAction(BaseAction):
     """滑动到作者主页并关注，然后返回视频页（支持粉丝数过滤和私信功能）"""
@@ -472,12 +518,24 @@ class FollowAuthorAction(BaseAction):
         return False
 
     def _has_private_message_failure(self):
-        """识别抖音私信发送失败、隐私限制、风控提示。"""
+        """识别抖音私信发送失败、隐私限制、风控提示。
+
+        FIX-F6+: 同时累计软封禁次数，达阈值时触发全局降级告警。
+        """
         try:
             for node in self.d.xpath(L.PM_MESSAGE_TEXT_XPATH).all():
                 text = str(node.info.get('text', '') or node.info.get('contentDescription', '') or '')
                 if any(marker in text for marker in L.PM_SEND_FAILURE_TEXTS):
                     logger.warning(f"检测到私信失败提示: {text}")
+                    # FIX-F6+: 软封禁累计与全局降级判定
+                    failure_type = _classify_pm_failure(text)
+                    if failure_type == "soft_ban":
+                        self.pm_soft_ban_count = getattr(self, 'pm_soft_ban_count', 0) + 1
+                        if _should_global_cooldown_pm(self.pm_soft_ban_count):
+                            logger.error(
+                                f"🚨 私信软封禁累计 {self.pm_soft_ban_count} 次，"
+                                f"账号可能已被抖音限流，建议暂停私信功能"
+                            )
                     return True
             return False
         except Exception as e:

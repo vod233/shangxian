@@ -87,6 +87,32 @@ except ImportError:
     ChatOpenAI = None
 
 
+# 楼中楼回复有效性判断的违禁词模式（FIX-F3 锁定 retry 跳过逻辑）
+_LEAD_REPLY_BANNED_PATTERNS = [
+    re.compile(r"(微信|vx|v信|威信|加我|联系我|私信|私聊|进群)", re.IGNORECASE),
+    re.compile(r"(http[s]?://|www\.|douyin\.com|v\.douyin\.com)", re.IGNORECASE),
+    re.compile(r"(QQ|qq|电话|手机号|微信号|二维码)"),
+    re.compile(r"\d{7,}"),
+    re.compile(r"(保证|包过|稳赚|返利|刷单)"),
+    re.compile(r"(背景墙|主页|详情)"),  # 暗引流词（引导用户去主页/详情页查看广告）
+]
+
+
+def _is_valid_lead_reply_text(text):
+    """判断楼中楼回复文本是否有效（纯函数，FIX-F3 锁定 retry 判断逻辑）。
+
+    规则：非空、6-40字符、无换行、不含违禁词/引流词/URL/电话号码。
+    generate_lead_reply 连续 2 次生成无效回复后跳过，此函数是跳过的核心判断。
+    """
+    if not text:
+        return False
+    if len(text) < 6 or len(text) > 40:
+        return False
+    if "\n" in text or "\r" in text:
+        return False
+    return not any(pattern.search(text) for pattern in _LEAD_REPLY_BANNED_PATTERNS)
+
+
 class DYReplyAgent:
     """根据标题生成合规的抖音评论回复。"""
 
@@ -619,20 +645,7 @@ class DYReplyAgent:
         return cleaned[:40].strip()
 
     def _is_valid_lead_reply(self, text: Optional[str]) -> bool:
-        if not text:
-            return False
-        if len(text) < 6 or len(text) > 40:
-            return False
-        if "\n" in text or "\r" in text:
-            return False
-        banned_patterns = [
-            re.compile(r"(微信|vx|v信|威信|加我|联系我|私信|私聊|进群)", re.IGNORECASE),
-            re.compile(r"(http[s]?://|www\.|douyin\.com|v\.douyin\.com)", re.IGNORECASE),
-            re.compile(r"(QQ|qq|电话|手机号|微信号|二维码)"),
-            re.compile(r"\d{7,}"),
-            re.compile(r"(保证|包过|稳赚|返利|刷单)"),
-        ]
-        return not any(pattern.search(text) for pattern in banned_patterns)
+        return _is_valid_lead_reply_text(text)
 
     def _local_intent_guess(self, text: str, custom_keywords: list = None) -> bool:
         """本地规则判定意向：预编译正则 + 否定词过滤 + 自定义关键词。

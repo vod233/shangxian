@@ -259,8 +259,6 @@ class InteractionProbability:
         'long_watch': 0.15,    # 15% 概率长停留（看完视频）
     }
 
-    # 极速测试模式全局缓存（由 AntiDetectionEngine 初始化时注入）
-    _turbo_enabled = False
 
     @classmethod
     def should_interact(cls, action_type, config=None):
@@ -268,13 +266,11 @@ class InteractionProbability:
         根据概率决定是否执行互动
         :param action_type: like/comment/follow/private_message/comment_lead/lead_pm/long_watch
         :param config: 配置字典，可覆盖默认概率
-        """
-        # 极速测试模式：总是返回 True，每个功能都执行（但长停留除外——长停留延长等待时间，与极速测试快速性冲突）
-        if cls._turbo_enabled:
-            if action_type == 'long_watch':
-                return False
-            return True
 
+        注意：turbo_test_mode 不应绕过概率决策（防风控核心机制）。
+        turbo 只通过 HumanSleep 缩短等待时间，不改变互动概率。
+        long_watch 的 turbo 跳过由 task_runner.py 独立处理。
+        """
         anti_cfg = (config or {}).get('anti_detection', {})
         prob_cfg = anti_cfg.get('interaction_probability', {})
         probability = prob_cfg.get(action_type, cls.DEFAULT_PROBABILITIES.get(action_type, 1.0))
@@ -589,12 +585,11 @@ class AntiDetectionEngine:
         self.fingerprint = DeviceFingerprintGuard()
         self.behavior = BehaviorRandomizer()
         self._initialized = True
-        # 极速测试模式注入到静态缓存（HumanSleep/BehaviorRandomizer/InteractionProbability 全局生效）
+        # 极速测试模式注入到静态缓存（HumanSleep / BehaviorRandomizer 全局生效）
         turbo_cfg = self.config.get('anti_detection', {}).get('turbo_test_mode', {})
         turbo_enabled = bool(turbo_cfg.get('enabled', False))
         HumanSleep._turbo_enabled = turbo_enabled
         BehaviorRandomizer._turbo_enabled = turbo_enabled
-        InteractionProbability._turbo_enabled = turbo_enabled
         if turbo_enabled:
             logger.warning("⚡ 极速测试模式已启用：跳过人性化等待/行为随机化/概率决策（仅用于功能联调，生产环境请关闭）")
         logger.info("🛡️ 防风控引擎已初始化")
