@@ -407,6 +407,45 @@ def _close_comment_input_if_open(d, text=""):
     return _find_bottom_edit_text(d, timeout=0.5) is None
 
 
+def _is_comment_closed(d):
+    """快速判断评论区是否关闭：检查关键容器不存在。
+
+    安全失败：检测异常时视为已关闭（避免误判阻塞后续流程）。
+    """
+    try:
+        has_container = d(resourceId=L.COMMENT_LIST_CONTAINER).exists(timeout=0.3)
+        has_card = d(resourceId=L.COMMENT_CARD_CONTAINER_ID).exists(timeout=0.2)
+        return not (has_container or has_card)
+    except Exception:
+        return True
+
+
+def close_comment_section(d, human_sleep_fn=None, max_back=4):
+    """关闭评论区，恢复到视频页（模块级独立函数）。
+
+    幂等：评论区已关闭时立即返回 True，不调用 back。
+    参数：
+        d: uiautomator2 device 实例
+        human_sleep_fn: 可选的睡眠函数，签名 (seconds: float) -> None；
+                       未提供时退化为 time.sleep。
+        max_back: 最多按返回键次数
+    返回：
+        True 表示评论区已关闭（含幂等场景）；False 表示 max_back 用完仍未关闭。
+    """
+    sleep_fn = human_sleep_fn or (lambda t: time.sleep(t))
+    if _is_comment_closed(d):
+        return True
+    for _ in range(max_back):
+        try:
+            d.press("back")
+            sleep_fn(0.5)
+        except Exception as exc:
+            logger.debug(f"close_comment_section press back 异常: {exc}")
+        if _is_comment_closed(d):
+            return True
+    return False
+
+
 def _run_guard(stop_check):
     """执行可选的停止/超时守卫回调；回调可抛 InterruptedError 立即中断。"""
     if stop_check is not None:
@@ -768,11 +807,6 @@ class ProcessCommentSectionAction(BaseAction):
             self.lead_reply_sent = True
         # 全部回复失败时 lead_* 保持 None/False，触发 fallback（与旧代码一致）
 
-        # keep_open_after_lead=True 且有成功回复时，保留评论区供 B.5 使用
-        if keep_open_after_lead and self.lead_comment_node is not None:
-            logger.info("keep_open_after_lead=True，保留评论区打开状态供 B.5 使用")
-            return True
-
         # === 无意向客户兜底（错杀保底，核心铁律 2）===
         if self.lead_comment_node is None and self.intent_processed_count == 0:
             fallback_top_n = int(self.config.get('interaction', {}).get('fallback_top_comment_count', 5) or 5)
@@ -784,10 +818,11 @@ class ProcessCommentSectionAction(BaseAction):
                 logger.info(f"兜底策略完成：已处理 {fallback_count} 位路人评论者")
                 self.lead_reply_sent = True
                 self.lead_comment_text = "fallback"
-                return True
+                # Issue 1: 不再保留评论区，落到底部统一关闭并返回 False
 
         logger.info("评论区处理完毕，关闭面板")
-        return self._close_comment_section()
+        self._close_comment_section()
+        return False
 
     # [DEPRECATED — MVP Phase A/B replaces this. Kept for reference; not called by execute().]
     def _process_current_screen_comments(self, processed_comments, ai_agent, video_title, keyword, remaining_reviews, custom_keywords=None):
@@ -1552,16 +1587,14 @@ class ProcessCommentSectionAction(BaseAction):
         return self._comment_panel_open()
 
     def _close_comment_section(self):
-        for attempt in range(3):
-            _close_comment_input_if_open(self.d)
-            if not self._comment_panel_open():
-                logger.info("确认评论区面板已关闭")
-                return True
-            logger.info(f"尝试关闭评论区面板... ({attempt + 1}/3)")
-            self.d.press("back")
-            self.human_sleep('fast')
+        """关闭评论区面板（委托模块级 close_comment_section，Issue 3 提取）。
 
-        closed = not self._comment_panel_open()
+        保留输入态清理 _close_comment_input_if_open；通过 wrapper 适配 human_sleep 签名。
+        """
+        _close_comment_input_if_open(self.d)
+        def _sleep_fn(t):
+            self.human_sleep('fast', custom_range=(max(0.1, t * 0.6), t * 1.4))
+        closed = close_comment_section(self.d, _sleep_fn, max_back=3)
         if not closed:
             logger.warning("评论区面板关闭失败")
         return closed
@@ -1760,44 +1793,95 @@ class CommentLeadPmAction(BaseAction):
         代码每次都跌入"全局取屏幕最底部 avatar"的兜底，于是私信发给了屏幕最下面那个人。
 
         重写策略（全部基于稳定可用的能力，杜绝"猜最底部头像"）：
-          ① 用评论文本重新定位到【真实节点】(XMLElement，非 selector)。
+          ① 用评论文本+作者名重新定位到【真实节点】(XMLElement，非 selector)。
           ② 沿底层 lxml 向上找到该评论所属的 k4x 卡片。
-          ③ 仅在该卡片子树内取 clickable 头像（avatar）。
-          ④ 卡片内无头像（典型：楼中楼子评论没有独立头像）或定位不到卡片时，
-             用"几何就近"在评论文本左上方匹配头像，并要求足够接近；仍不确定则返回 None
-             （宁可这条不私信，也绝不发错人）。
+          ③ 仅在该卡片子树内取头像（avatar）——优先 clickable=true，回退非可点击（坐标点击）。
+          ④ 卡片内无头像或定位不到卡片时，用"几何就近"在评论文本左上方匹配头像。
+          ⑤ 直接定位失败时，滚动评论区查找（Phase 2 reopen 后目标可能不在可见区）。
         """
         lead_comment_text = getattr(self, 'lead_comment_text', '') or ''
-        fresh_node = comment_node
+        lead_comment_author = getattr(self, 'lead_comment_author', '') or ''
+
+        # ① 尝试直接定位（评论区当前可见区）
+        avatar = self._try_locate_avatar(comment_node, lead_comment_text, lead_comment_author)
+        if avatar is not None:
+            return avatar
+
+        # ② 直接定位失败 → 滚动查找（reopen 后目标可能不在可见区）
         if lead_comment_text:
+            logger.info(f"B.5 直接定位失败，尝试滚动查找评论: {lead_comment_text[:20]}")
+            max_scrolls = 6
+            for scroll_idx in range(max_scrolls):
+                self._guard()
+                if not self._swipe_comment_section_down():
+                    logger.info(f"B.5 滚动第 {scroll_idx+1} 次失败（可能已到底部），停止滚动")
+                    break
+                self._guard()
+                avatar = self._try_locate_avatar(None, lead_comment_text, lead_comment_author)
+                if avatar is not None:
+                    logger.info(f"B.5 滚动第 {scroll_idx+1} 次后定位到评论头像")
+                    return avatar
+            logger.warning(f"B.5 滚动 {max_scrolls} 次后仍未能定位意向评论头像")
+
+        return None
+
+    def _try_locate_avatar(self, fallback_node, text, author):
+        """单次尝试：文本重定位(+author 交叉验证) → 卡片内找头像 → 几何就近。"""
+        fresh_node = fallback_node
+        if text:
             try:
-                refound = self._refind_comment_node_by_text(lead_comment_text)
+                refound = _refind_comment_node_by_text(self.d, text, author)
                 if refound is not None:
                     fresh_node = refound
-                    logger.info(f"B.5 通过文本重新定位到意向评论节点: {lead_comment_text[:20]}")
+                    logger.info(f"B.5 通过文本重新定位到意向评论节点: {text[:20]}")
             except Exception as exc:
-                logger.debug(f"B.5 文本反查节点失败，使用原节点: {exc}")
+                logger.debug(f"B.5 文本反查节点失败: {exc}")
 
         if fresh_node is None:
             return None
 
-        # ① + ② + ③ 卡片内精确取头像
+        # 卡片内精确取头像
         card_elem = self._find_card_elem(fresh_node)
         if card_elem is not None:
             avatar = self._find_clickable_avatar_in(card_elem)
             if avatar is not None:
                 logger.info("B.5 已在意向评论所属卡片内定位到头像")
                 return avatar
-            logger.warning("B.5 意向评论所属卡片内无可点击头像（可能是楼中楼子评论），改用几何就近匹配")
+            logger.warning("B.5 意向评论所属卡片内无头像（可能是楼中楼子评论），改用几何就近匹配")
 
-        # ④ 几何就近兜底（严格：必须在文本左上方且足够接近）
+        # 几何就近兜底（严格：必须在文本左上方且足够接近）
         avatar = self._find_avatar_by_geometry(fresh_node)
         if avatar is not None:
             logger.info("B.5 通过几何就近匹配定位到意向评论头像")
             return avatar
 
-        logger.warning("B.5 未能稳妥定位意向评论头像，跳过私信（已废弃'取屏幕最底部头像'兜底，避免发错人）")
         return None
+
+    def _swipe_comment_section_down(self):
+        """向下滑动评论区（手指上滑）以加载更多评论。
+
+        Phase 2 reopen 后目标评论可能不在可见区，需要滚动查找。
+        返回 True 表示滑动成功，False 表示无法滑动（已到底部或异常）。
+        """
+        try:
+            container = self.d(resourceId=L.COMMENT_LIST_CONTAINER)
+            if container.exists(timeout=0.3):
+                bounds = container.info['bounds']
+                cx = (bounds['left'] + bounds['right']) // 2
+                sy = int(bounds['bottom'] * 0.8) + random.randint(-5, 5)
+                ey = int(bounds['top'] + (bounds['bottom'] - bounds['top']) * 0.2) + random.randint(-5, 5)
+                self.human_swipe_curve(cx, sy, cx, ey)
+            else:
+                w, h = self.d.window_size()
+                self.human_swipe_curve(
+                    w // 2 + random.randint(-10, 10), int(h * 0.7),
+                    w // 2 + random.randint(-10, 10), int(h * 0.3)
+                )
+            self.human_sleep('fast', custom_range=(0.3, 0.6))
+            return True
+        except Exception as exc:
+            logger.debug(f"B.5 滚动评论区异常: {exc}")
+            return False
 
     @staticmethod
     def _elem_of(node):
@@ -1827,14 +1911,28 @@ class CommentLeadPmAction(BaseAction):
         return None
 
     def _find_clickable_avatar_in(self, card_elem):
-        """在卡片子树内查找 clickable 头像，返回可读 .info 的节点对象；无则 None。"""
+        """在卡片子树内查找头像，返回可读 .info 的节点对象；无则 None。
+
+        优先返回 clickable=true 的头像；若无，回退到非可点击头像
+        （_enter_commenter_profile 用坐标点击，不依赖 .click() 方法）。
+        """
+        clickable_avatar = None
+        non_clickable_avatar = None
         try:
             for sub in card_elem.iter():
-                if (sub.attrib.get('resource-id', '') == L.COMMENTER_AVATAR_ID
-                        and sub.attrib.get('clickable') == 'true'):
-                    return self._wrap_elem(sub)
+                if sub.attrib.get('resource-id', '') == L.COMMENTER_AVATAR_ID:
+                    if sub.attrib.get('clickable') == 'true':
+                        clickable_avatar = sub
+                        break  # 优先取可点击的
+                    elif non_clickable_avatar is None:
+                        non_clickable_avatar = sub  # 暂存非可点击的
         except Exception as exc:
             logger.debug(f"B.5 卡片内查找头像失败: {exc}")
+        if clickable_avatar is not None:
+            return self._wrap_elem(clickable_avatar)
+        if non_clickable_avatar is not None:
+            logger.info("B.5 卡片内 avatar 非可点击，将用坐标点击进入主页")
+            return self._wrap_elem(non_clickable_avatar)
         return None
 
     def _find_avatar_by_geometry(self, node):

@@ -30,6 +30,22 @@ def _now_str():
     return datetime.datetime.now().strftime("%H:%M:%S")
 
 
+def _record_pm_failure(reason):
+    """记录 Phase 2 PM 失败尝试（可观测性增强）。
+
+    reason: 失败原因简码，如 "open_comment_failed" / "pm_exception" / "open_comment_exception"
+    """
+    logger.debug(f"PM 失败原因: {reason}")
+
+
+def _record_pm_result(status):
+    """记录 Phase 2 PM 结果分类。
+
+    status: "success" 或 "failed:{reason}"
+    """
+    logger.debug(f"PM 结果: {status}")
+
+
 def resolve_business_mode_conflicts(
     mode: int,
     enable_author_follow: bool = True,
@@ -692,7 +708,7 @@ class TikTokTaskFlow:
                 video_title=video_title,
                 keyword=keyword,
                 check_stop_callback=self._check_stop,
-                keep_open_after_lead=enable_lead_pm,  # B.5 启用时不关闭评论区
+                keep_open_after_lead=False,  # Issue 1: Phase B 后总是关闭评论区，Phase 2 私信独立开关
                 deadline_ts=deadline_ts,  # FIX: 评论区扫描/楼中楼发送纳入单视频时间预算
                 enable_lead_pm=enable_lead_pm,  # 传递私信启用状态，供内联私信使用
                 last_main_comment=main_comment_text,  # FIX-F7: 兜底过滤自己主评
@@ -727,60 +743,80 @@ class TikTokTaskFlow:
                 pm_executed = True
 
             # ═══════════════════════════════════════════════════════════
-            # Phase 2：多私信循环 — 遍历 intent_items 逐条 PM + 恢复
+            # Phase 2：独立私信循环 — 每条 PM 独立打开→私信→恢复到视频页
+            # (Issue 2: 从评论区打开状态剥离，每个循环独立开→关评论区)
+            # (Issue 4: 每步 try/except 自愈，单条失败不影响后续)
             # ═══════════════════════════════════════════════════════════
             elif enable_lead_pm and lead_reply_sent and intent_items and len(intent_items) > 0:
-                logger.info(f"B.5 Phase 2 多私信循环：{len(intent_items)} 条意向评论")
-                comment_section_open = True
+                logger.info(f"Phase 2 独立私信循环：{len(intent_items)} 条意向评论")
                 pm_executed = True
                 lead_pm_success_count = 0
 
                 for i, item in enumerate(intent_items):
-                    self._check_stop()
+                    # ① 熔断检查（InterruptedError 立即传播，不被后续 except 捕获）
+                    try:
+                        self._check_stop()
+                    except InterruptedError:
+                        raise
                     if deadline_ts is not None and time.time() > deadline_ts:
-                        logger.warning(f"B.5 多私信超时（{lead_pm_success_count}/{len(intent_items)}）")
+                        logger.warning(f"Phase 2 超时（{lead_pm_success_count}/{len(intent_items)}），跳过剩余")
                         break
 
                     text = item.get("text", "")
+                    author = item.get("author", "")
                     if not text:
                         continue
 
-                    logger.info(f"B.5 私信 [{i+1}/{len(intent_items)}]: {text[:30]}")
-
-                    pm_action = CommentLeadPmAction(
-                        u2_device=self.runner.device,
-                        app_manager=self.runner.app_mgr,
-                        config=self.config,
-                        lead_comment_node=None,       # 由文本重定位，不依赖旧节点
-                        lead_comment_text=text,
-                        check_stop_callback=self._check_stop,
-                        deadline_ts=deadline_ts,
-                    )
+                    # ② 打开评论区（每条 PM 独立打开）
+                    logger.info(f"Phase 2 私信 [{i+1}/{len(intent_items)}]: {text[:30]}")
                     try:
-                        pm_result = pm_action.perform()
+                        opened = self.runner.run_action(OpenCommentSectionAction)
+                    except InterruptedError:
+                        raise
                     except Exception as exc:
-                        logger.error(f"B.5 私信 [{i+1}] 异常: {exc}")
-                        pm_result = {"pm_sent": False, "reason": "exception"}
+                        logger.warning(f"Phase 2 打开评论区异常 [{i+1}]: {exc}")
+                        _record_pm_failure("open_comment_exception")
+                        continue
+                    if not opened:
+                        logger.warning(f"Phase 2 打开评论区失败，跳过 [{i+1}]: {text[:20]}")
+                        _record_pm_failure("open_comment_failed")
+                        continue
 
-                    if isinstance(pm_result, dict) and pm_result.get("pm_sent"):
+                    # ③ 通过文本定位评论节点并执行 PM
+                    try:
+                        found = self.runner.run_action(
+                            CommentLeadPmAction,
+                            lead_comment_node=None,
+                            lead_comment_text=text,
+                            lead_comment_author=author,
+                            check_stop_callback=self._check_stop,
+                            deadline_ts=deadline_ts,
+                        )
+                    except InterruptedError:
+                        raise
+                    except Exception as exc:
+                        logger.error(f"Phase 2 PM [{i+1}] 异常: {exc}")
+                        _record_pm_failure("pm_exception")
+                        continue  # UI 状态未知，跳过 recover，下一条从 OpenCommentSection 重新开始
+
+                    pm_sent = isinstance(found, dict) and found.get("pm_sent", False)
+                    if pm_sent:
                         lead_pm_success_count += 1
-                        logger.info(f"B.5 私信 [{i+1}] 成功")
+                        _record_pm_result("success")
+                        logger.info(f"Phase 2 PM [{i+1}] 成功")
                     else:
-                        reason = pm_result.get("reason", "unknown") if isinstance(pm_result, dict) else str(pm_result)
-                        logger.warning(f"B.5 私信 [{i+1}] 失败: {reason}")
+                        reason = found.get("reason", "unknown") if isinstance(found, dict) else "unknown"
+                        _record_pm_result(f"failed:{reason}")
+                        logger.warning(f"Phase 2 PM [{i+1}] 失败: {reason}")
 
-                    # 返回评论区供下一条私信（最后一条由统一清理处理）
-                    if i < len(intent_items) - 1:
-                        returned = action_instance._return_from_profile_to_comments(max_back=4)
-                        if not returned:
-                            # _comment_panel_open 内部已检查 card_container + list_container，
-                            # 使用 action_instance.d 确保与评论区操作同一 device 引用
-                            if not action_instance._comment_panel_open():
-                                logger.warning("B.5 返回评论区失败，执行重置恢复")
-                                self._recover_to_video_page("B.5-重置恢复", max_back=5)
-                                if not self.runner.run_action(OpenCommentSectionAction):
-                                    logger.warning("B.5 重置恢复失败，跳过当前评论者，继续下一条")
-                                    continue
+                    # ④ 恢复到视频页（为下一条做准备）
+                    try:
+                        self._recover_after_comment_pm()
+                    except InterruptedError:
+                        raise
+                    except Exception as exc:
+                        logger.warning(f"Phase 2 恢复失败 [{i+1}]: {exc}")
+                        self._reset_and_reenter_video_flow("Phase 2 恢复异常")
 
                 lead_pm_sent = lead_pm_success_count > 0
                 lead_pm_reason = "multi_pm_ok" if lead_pm_sent else "multi_pm_all_failed"
@@ -838,6 +874,24 @@ class TikTokTaskFlow:
         if not recovered:
             logger.warning(f"功能[{feature_name}]后恢复失败，跳过当前视频剩余功能")
         return {"recovered": recovered, "lead_reply_sent": lead_reply_sent, "lead_pm_sent": lead_pm_sent, "lead_pm_reason": lead_pm_reason, "lead_pm_fallback_count": lead_pm_fallback_count, "lead_reply_fallback_count": lead_reply_fallback_count, "lead_comment_text": lead_comment_text, "lead_reply_text": lead_reply_text, "lead_pm_success_count": lead_pm_success_count}
+
+    def _recover_after_comment_pm(self):
+        """Phase 2 单条 PM 后从聊天页/个人主页恢复到视频页。
+
+        每条 PM 完成后调用，保证下一条循环从视频页重新开始。
+        失败时降级到 _reset_and_reenter_video_flow 强制重置。
+        """
+        for _ in range(4):
+            if self._is_video_page_ready():
+                return True
+            try:
+                self.runner.device.press("back")
+            except Exception as exc:
+                logger.warning(f"Phase 2 PM 恢复 back 失败: {exc}")
+                break
+            time.sleep(0.5)
+        logger.warning("Phase 2 PM 后恢复到视频页失败，执行重置")
+        return self._reset_and_reenter_video_flow("Phase 2 PM 恢复失败")
 
     def start(self):
         """开始执行完整的采集与互动任务"""
